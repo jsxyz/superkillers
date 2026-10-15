@@ -1547,6 +1547,7 @@ const READINGS = {
   waitress: 'Laz9ZZ08GdvHQfJon0/YKozoaYc0Uyo+KRgHMHWCiDvzOhn14Q7sd2OkTfJ+9CBgihvrSE9g7INkq+VfRUTxKHNinOdl9H1IpqKG5iAUn4xwY46tMmgdokhxMQAx02GXDLhlwy4ZaEAAGCiY1NTGpkv6FVD7OjPgMcqKZbe1MgSxaEOxPVGGeDQ4NXpp9TWLfG3xy1GMxJaF4u7koix3YnUe6PjLkSKgDi5S3CnXe9SbgFp6c7eW9JpN+XHLjlsu2XbLcgOQHIBqiD1Ask2yZIus4JKzDXHHotnKrlcuUB0BfhhS1wg5baZxNGGlR4SmdQbEeSkgmmVUv6avOnmtCAClRNU/qfpQgQeg',
   hot: 'PYm9EGZZVajNSpfpL0OaEA76u7TLrEpplRvHSuskA5PoUkNeO3PTnpSw5syYSD1B6g9QeoPUCmBTB6gUwKYFMCmBTApgUn7xb4KVMPKrhrzspz81iZFN2U5gCwBBjMYUiSADn74PUHqD083PYm9EGZZVajNSpfpL0OaEA76u7TLrEpplRvHSuskA5PoUkNeO3PTnpSw5syYSD1B6g9QeoPUCmBTB6gUwKYFMCmBTApgUn7xb4KVMPKrhrzspz81iZFN2U5gCwBBjMYUiSADn74PUHqD083A=',
 }
+const RADIO_START = -1          // a vehicle's station until someone tunes it: off
 // B or RADIO in a vehicle; tracks: audio URLs (MP3 plays everywhere)
 const RADIO = [
   { name: 'Moon Prism FM', tracks: [
@@ -4183,7 +4184,7 @@ function makeCar(o, V, at0) {
     [x + d * W.r * 0.3 - at0[0], y + W.r * Math.cos(i * Math.PI / 4) - at0[1], z + W.r * Math.sin(i * Math.PI / 4) - at0[2]])))
   const s = carHull.get(o.K.name) || carHull.set(o.K.name, hullShape([...body, ...rims])).get(o.K.name)
   o.low = Math.min(...body.map(p => p[1]), ...rims.map(p => p[1]))
-  Object.assign(o, { V, at0, hp: V.hp, riders: V.seats.map(() => undefined), radio: 0, car: v, carRay: r, parkShape: s, parked: false })
+  Object.assign(o, { V, at0, hp: V.hp, riders: V.seats.map(() => undefined), radio: RADIO_START, car: v, carRay: r, parkShape: s, parked: false })
   world.addAction(v); setParked(o, true)
 }
 function setParked(o, parked) {
@@ -9836,7 +9837,7 @@ function detectQuality() {
 }
 
 const settings = { sens: 1, fov: 72, shadows: true, quality: 'high', sound: true, volume: 0.8,
-                   qualityChosen: false, voices: false, rate: 0, view: 'first', distance: 'normal' }
+                   qualityChosen: false, viewChosen: false, voices: false, rate: 0, view: 'third', distance: 'normal' }
 let qualityAuto = ''
 
 function loadSettings() {
@@ -9858,11 +9859,13 @@ function loadSettings() {
   settings.balance = settings.balance !== false
   if (!Object.hasOwn(CITY_SIZES, settings.city)) settings.city = 'medium'
   settings.cid = Number.isInteger(settings.cid) ? settings.cid : -1
+  if (!settings.viewChosen) settings.view = 'third'
   firstPerson = settings.view !== 'third'
 }
 function setView(first) {
   firstPerson = !!first
   settings.view = firstPerson ? 'first' : 'third'
+  settings.viewChosen = true
   saveSettings()
 }
 function saveSettings() {
@@ -10339,7 +10342,7 @@ const radio = { on: -1, k: 0, tried: 0, fail: 0, a: null }, radioEls = new Map()
 let radioOf = new Map()
 function radioSeat() {                 // [vehicle, drives, station]
   if (isHost) { const o = objs.find(o => o.V && o.riders.includes(myId)); return o && [o.id, o.riders[0] === myId, o.radio] }
-  for (const [k, p] of objSeats) if (p === myId) return [k >> 3, !(k & 7), radioOf.get(k >> 3) ?? 0]
+  for (const [k, p] of objSeats) if (p === myId) return [k >> 3, !(k & 7), radioOf.get(k >> 3) ?? RADIO_START]
 }
 function radioTick() {
   const s = settings.radio && radioSeat(), want = s && sfxWanted() ? s[2] : -1
@@ -12655,8 +12658,8 @@ function sendSnapshot(s) {
   const k = tierK(snapRateNow()), seq = ++snapSeq
   const seats = JSON.stringify(objs.flatMap(o => o.V ? o.riders.flatMap((p, i) => p === undefined ? [] : [o.id, i, p]) : []))
   const held = JSON.stringify(objs.flatMap(o => o.heldBy === undefined ? [] : [o.id, o.heldBy]))
-  // a guest reads an absent vehicle as station 0
-  const tuned = JSON.stringify(objs.flatMap(o => o.V && o.radio !== 0 ? [o.id, o.radio] : []))
+  // a guest reads an absent vehicle as RADIO_START
+  const tuned = JSON.stringify(objs.flatMap(o => o.V && o.radio !== RADIO_START ? [o.id, o.radio] : []))
   const rows = s.P.map(r => ({ id: r[0], json: JSON.stringify(wireRow(r)), state: rowState(r), c: players.get(r[0]) }))
   const head = '{"k":"s","t":' + JSON.stringify(s.t) + ',"P":['
   const rest = Object.assign({}, s, { k: undefined, t: undefined, P: undefined })
