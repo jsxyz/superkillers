@@ -2056,6 +2056,8 @@ const MODES = ['ffa', 'waves']
 let gameMode = 'waves'
 const picked = pick => BOTS.flatMap((B, i) =>
   !B.squad && Object.entries(pick).every(([k, v]) => [v].flat().includes(B[k] || false)) ? [i] : [])
+// [id, cid] for a bot row and its alt
+const botPairs = list => list.flatMap(i => [[BOT_ID0 + i, BOTS[i].cid], ...BOTS[i].altRow ? [[BOT_ID0 + i, BOTS[i].altRow.cid]] : []])
 let waveAt = -1, waveGap = 0
 const WAVE_GAP_S = 4
 
@@ -5018,7 +5020,15 @@ function fitToCapsule(inst, target, height, footY, yaw) {
   inst.rotation.y += yaw
 }
 
-const builtBounds = new Map(), walkLows = new Map()
+const builtBounds = new Map(), walkLows = new Map(), lowKey = (key, p) => key + ' ' + p.clip + ' ' + (p.stride ?? 1)
+// a clip's lowest point over 30 poses, resumed from L.i while more() holds
+function measureLows(L, more = () => true) {
+  L.m.play()
+  for (; L.i < 30 && more(); L.i++) { L.m.time = L.i / 30 * L.m.getClip().duration; L.mixer.update(0); L.low = Math.min(L.low, measureBounds(L.inst).minY) }
+  if (L.i < 30) return false
+  L.m.stop(); walkLows.set(L.k, L.low)
+  return true
+}
 function boundsFor(key, inst, M) {
   let b = builtBounds.get(key)
   if (!b) {
@@ -7395,7 +7405,6 @@ function rebuildWorld() {
   })
   worldGroup.clear()
   for (const g of geometries) g.dispose()
-  for (const m of materials) m.dispose()
   const [sky] = LV.theme.fog, s = Math.min(46, ARENA * 0.85)
   scene.background = new THREE.Color(sky)
   scene.fog = new THREE.Fog(sky); applyView()
@@ -7428,6 +7437,9 @@ function rebuildWorld() {
   still(worldGroup)
   worldGroup.traverse(n => { if (n.isMesh && !n.isInstancedMesh) scarSurfaces.push(n) })
   prepareScars()
+  // the new level takes over the old one's programs before they go
+  if (!renderHeadless && camera && renderer.compile) renderer.compile(worldGroup, camera, scene)
+  for (const m of materials) m.dispose()
 }
 function drawBoxes(list, city, clip = []) {
   const group = new THREE.Group(), surfaces = { floor: [], wall: [] }, decorated = []
@@ -7495,6 +7507,49 @@ function ghost(obj, prot, fade) {
     n.material.opacity = op
     n.material.depthWrite = true
   })
+}
+
+// Rows built while idle: their caches filled and one copy kept, its materials compiled and holding
+// their programs, so a first sight builds and compiles nothing. A step: one body, poses for PREP_MS, or one kept copy.
+const prepQueue = [], prepKept = new Map(), prepShown = [], PREP_MS = 6
+let prepAt = null
+function prepareRows(pairs) {
+  if (renderHeadless || serving || !renderer) return
+  for (const p of pairs) { const k = skinKey(...p); if (!prepKept.has(k) && !prepQueue.some(q => skinKey(...q) === k)) prepQueue.push(p) }
+}
+function prepareStep() {
+  const t0 = now(), more = () => now() - t0 < PREP_MS
+  for (let i = prepShown.length - 1; i >= 0; i--) if (--prepShown[i][1] < 0) avatarGroup.remove(prepShown.splice(i, 1)[0][0])
+  while (prepQueue.length && more()) {
+    const [id, cid] = prepQueue[0], M = modelFor(id, cid), key = skinKey(id, cid)
+    if (M.kind !== 'built' && !M.proto) return
+    if (M.proto && !prepAt) {
+      const prof = profOf(id, cid), todo = [prof[1], prof.sprint].filter(p => p && M.anims.some(c => c.name === p.clip) && !walkLows.has(lowKey(key, p)))
+      if (todo.length) {
+        const inst = bodyFor(M, id, cid, key, rowFor(id, cid)), mixer = new THREE.AnimationMixer(inst)
+        prepAt = { inst, todo: todo.map(p => ({ m: mixer.clipAction(strided(M.anims.find(c => c.name === p.clip), p.stride)), mixer, inst, k: lowKey(key, p), i: 0, low: Infinity })) }
+        return
+      }
+    }
+    if (prepAt) {
+      while (prepAt.todo.length && measureLows(prepAt.todo[0], more)) prepAt.todo.shift()
+      if (prepAt.todo.length) return
+      freeMaterials(prepAt.inst); prepAt = null
+      continue
+    }
+    prepQueue.shift()
+    const had = avatars.get(id)
+    avatars.delete(id)
+    try {
+      const mesh = avatarFor(id, cid, 0)
+      avatarGroup.remove(mesh)
+      prepKept.set(key, mesh)
+      // the spawn-protection ghost too; then one frame under the floor, never culled, for its shadow's depth programs
+      renderer.compileAsync(mesh, camera, scene).then(() => { ghost(mesh, 1); return renderer.compileAsync(mesh, camera, scene) })
+        .then(() => { mesh.position.set(0, -30, 0); mesh.traverse(n => { n.frustumCulled = false }); avatarGroup.add(mesh); prepShown.push([mesh, 1]) }).catch(() => {})
+    } finally { if (had) avatars.set(id, had); else avatars.delete(id) }
+    return
+  }
 }
 
 function rebuildAvatars() {
@@ -7565,14 +7620,10 @@ function avatarFor(id, cid, cap) {
       const clip = M.anims.find(c => c.name === p.clip)
       if (clip) actions[p.clip] = mixer.clipAction(strided(clip, p.stride))
     }
-    const first = actions[prof[0].clip], lowKey = p => key + ' ' + p.clip + ' ' + (p.stride ?? 1)
+    const first = actions[prof[0].clip]
     for (const p of [prof[1], prof.sprint]) {
-      const m = p && actions[p.clip], k = p && lowKey(p)
-      if (!m || walkLows.has(k)) continue
-      let low = Infinity
-      m.play()
-      for (let i = 0; i < 30; i++) { m.time = i / 30 * m.getClip().duration; mixer.update(0); low = Math.min(low, measureBounds(inst).minY) }
-      m.stop(); walkLows.set(k, low)
+      const m = p && actions[p.clip], k = p && lowKey(key, p)
+      if (m && !walkLows.has(k)) measureLows({ m, mixer, inst, k, i: 0, low: Infinity })
     }
     if (first) { first.play(); mixer.update(0) }
     const S = standOf(C)
@@ -7584,8 +7635,8 @@ function avatarFor(id, cid, cap) {
     fitToCapsule(inst, C.h * 2 + C.r * 2, b.h, b.minY, M.yaw)
     inst.userData.y = inst.position.y
     drop = (low - b.minY) * (C.h * 2 + C.r * 2) / b.h || 0
-    walkDrop = (walkLows.get(lowKey(prof[1])) - b.minY) * (C.h * 2 + C.r * 2) / b.h || 0
-    sprintDrop = prof.sprint ? (walkLows.get(lowKey(prof.sprint)) - b.minY) * (C.h * 2 + C.r * 2) / b.h || 0 : 0
+    walkDrop = (walkLows.get(lowKey(key, prof[1])) - b.minY) * (C.h * 2 + C.r * 2) / b.h || 0
+    sprintDrop = prof.sprint ? (walkLows.get(lowKey(key, prof.sprint)) - b.minY) * (C.h * 2 + C.r * 2) / b.h || 0 : 0
     mesh = new THREE.Group()
     mesh.add(inst)
     ankle = ankleOf(mesh)
@@ -12881,6 +12932,7 @@ function frameBody() {
   msSim = msSim * 0.9 + (now() - _s0) * 0.1
   drawT0 = now()
   try { draw(dt, t) } catch (e) { frameFailed('draw', e) }
+  try { if (phase === 'menu') prepMenu(); prepareStep() } catch (e) { prepQueue.length = 0; frameFailed('prep', e) }
 }
 
 const lastHud = {}
@@ -13332,6 +13384,11 @@ function sideTabs(wrap, on, pick) {
 }
 
 let pickedLevel = 0
+// what a Host draws first: the pick and its team, the first wave or the free-for-all's bots
+function prepMenu() {
+  const team = CHARS[myCid].team, ffa = gameMode === 'ffa' || !sideOffered(CHARS[myCid].side)
+  prepareRows([...(team ? members(team) : [myCid]).map(k => [0, k]), ...botPairs(ffa ? [...heroWant(), ...SQUAD] : picked(WAVES[0].pick))])
+}
 // a thumbnail compiles its level: drawn when idle after Ready
 const thumbsDue = [], paintThumbs = () => { for (const f of thumbsDue.splice(0)) f() }, idleThumbs = () => (window.requestIdleCallback || setTimeout)(paintThumbs)
 let thumbsOn = false
