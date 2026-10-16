@@ -46,6 +46,11 @@
   #code{font-size:28px;letter-spacing:.26em;text-align:center;padding:14px;margin:10px 0;
     background:#0d1117;border:1px solid #2d3441;border-radius:6px;color:#58a6ff;user-select:none}
   #status{margin-top:14px;color:#7d8590;min-height:1.5em}
+  #jittip{display:flex;color:#7d8590;font-size:12px}
+  #jittip span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #jittip button{padding:0 4px;font-size:12px;background:none;border:0}
+  body.starting #ui::after{content:'Starting…';position:fixed;inset:0;display:grid;place-items:center;
+    background:rgba(13,17,23,.85);color:#e6edf3;font-size:22px}
   .err{color:#f85149}.ok{color:#3fb950}
   label{display:block;color:#7d8590;margin:14px 0 4px;font-size:12.5px}
 
@@ -392,6 +397,7 @@
     </div>
   </div>
   <div id="status">Loading physics…</div>
+  <div id="jittip" style="display:none"><span id="jittip-t">Edge's 'Enhance your security' is slowing this game down. To fix it: Settings → Privacy, search, and services → Enhance your security on the web → Exceptions → Add a site → paste this page's address.</span><button id="jittip-copy" title="Copy this page's address">copy</button><button id="jittip-x" aria-label="Dismiss">×</button></div>
 </div></div>
 
 <div id="hud"></div>
@@ -9887,6 +9893,37 @@ function facing(yaw) {
   return COMPASS[Math.round(a / (Math.PI / 4)) % 8]
 }
 
+// the optimizer is off (Edge's 'Enhance your security') when no warm run, in up to three windows 2 s apart, is 6x the cold one
+function jitLoop(n) {
+  let x = 0.5, y = 0.25, z = 0.125, s = 0
+  const v = { x: 1, y: 2, z: 3 }
+  for (let i = 0; i < n; i++) {
+    const a = x * v.x + y * v.y + z * v.z
+    x = (x + a * 1e-7) % 1; y = (y * 1.0000001 + 0.1) % 1; z = Math.sqrt(x * x + y * y) % 1
+    s += a; v.x = (v.x + z) % 3
+  }
+  return s
+}
+const jit = { cold: 0, best: Infinity, windows: 0, off: null }
+function jitWindow() {
+  let t = now()
+  if (!jit.windows) { jitLoop(500); jit.cold = now() - t }
+  for (let k = 0; k < 40; k++) { t = now(); jitLoop(500); jit.best = Math.min(jit.best, now() - t) }
+  const slow = jit.cold / jit.best < 6
+  if (slow && ++jit.windows < 3) return void setTimeout(jitWindow, 2000)
+  jit.off = slow; jitTip()
+}
+const isEdge = () => /\bEdg\//.test(navigator.userAgent)
+let played = false
+function jitTip() {
+  const tip = el('#jittip'), t = el('#jittip-t')
+  t.title = t.textContent
+  tip.style.display = jit.off && isEdge() && !settings.jitTip && !played && phase === 'menu' ? '' : 'none'
+}
+// the click to frame 30: marks (ms since the click), frame times, programs then
+let startLog = null
+const markStart = k => startLog?.marks.push([k, now() - startLog.t0])
+
 function drawDebug(me, fps) {
   if (!dbgOpen) return
   const i = renderer.info
@@ -9926,6 +9963,9 @@ function drawDebug(me, fps) {
         '  touch ' + String(IS_TOUCH).padEnd(5) + ' shadows ' + String(renderer.shadowMap.enabled).padEnd(5)) +
     row('cost', 'sim ' + v(f(msSim, 5, 2)) + 'ms  phys ' + v(f(msPhys, 5, 2)) +
         'ms  draw ' + v(f(msDraw, 5, 2)) + 'ms  steps ' + p(lastSteps, 2)) +
+    (startLog ? row('start', startLog.marks.map(([k, t]) => k + ' ' + v(Math.round(t))).join('  ') + '  frames 2-30 max ' +
+        v(Math.round(Math.max(0, ...startLog.frames.slice(1)))) + ' ms  programs +' + v(i.programs.length - startLog.progs)) : '') +
+    row('js', (jit.off ? '<span class="w">optimizer off</span>' : jit.off === null ? 'checking' : 'optimizer on') + '  x' + f(jit.cold / jit.best, 1, 1)) +
     (isHost ? '' : row('predict', 'pending ' + v(p(pending.length, 2)) +
         '  replayed ' + v(p(replaySteps, 2)) + '  err ' +
         v(p(reconcileErr === Infinity ? 'resync' : reconcileErr.toFixed(3), 6)) + ' m' +
@@ -10014,6 +10054,7 @@ function loadSettings() {
   settings.balance = settings.balance !== false
   if (!Object.hasOwn(CITY_SIZES, settings.city)) settings.city = 'medium'
   settings.cid = Number.isInteger(settings.cid) ? settings.cid : -1
+  settings.jitTip = settings.jitTip === true
   if (!settings.viewChosen) settings.view = 'third'
   firstPerson = settings.view !== 'third'
 }
@@ -10180,7 +10221,7 @@ function sfxGesture() {
   if (phase !== 'menu' && settings.sound) sfxStart()
 }
 
-function sfxStart() {
+function sfxStart(starting) {
   if (!actx) {
     const AC = window.AudioContext || window.webkitAudioContext
     if (!AC) return
@@ -10197,7 +10238,7 @@ function sfxStart() {
     addEventListener('pointerdown', sfxWake, true)
     addEventListener('keydown', sfxWake, true)
   }
-  sfxApply()
+  sfxApply(starting)
 }
 
 function sfxWake() {
@@ -10205,7 +10246,7 @@ function sfxWake() {
     actx.resume().catch(() => {})
 }
 
-function sfxApply() {
+function sfxApply(starting) {
   const say = 'Sound: ' + (settings.sound ? 'on' : 'off'), sb = el('#set-sound')
   if (sb && sb.textContent !== say) sb.textContent = say
   const hb = el('#hudsound')
@@ -10220,7 +10261,7 @@ function sfxApply() {
   const v = settings.volume
   // squared: perceived loudness
   if (v !== sfxVol) sfxOut.gain.setTargetAtTime(v * v * SFX_HEAD, actx.currentTime, 0.015)
-  if (sfxWanted()) {
+  if (starting === true || sfxWanted()) {
     if (actx.state !== 'running') actx.resume().catch(() => {})
     else if (sfxVol >= 0 && v !== sfxVol && now() - sfxBlipAt > 120) {
       sfxBlipAt = now()
@@ -11863,6 +11904,7 @@ function startHost() {
   roomCodeStr = roomCode(); roomOpen = false
   scarsLater = false
   loadLevel(pickedLevel)          // before spawns/bodies
+  markStart('level')
   resultsLeft = 0
   matchLeft = timeLimit
   if (!serving) {
@@ -11873,6 +11915,7 @@ function startHost() {
   }
   if (gameMode === 'waves') startWave(0)
   else spawnBots(BOT_COUNT)
+  markStart('bots')
   el('#stage-menu').style.display = 'none'
   el('#stage-host').style.display = ''
   setStatus('Waiting for players…')
@@ -12547,6 +12590,7 @@ function initEndModal() {
 
 function beginPlay() {
   phase = 'playing'
+  played = true; jitTip()
   startVoices()
   lastRecvAt = now()
   kickedBy = null
@@ -13014,6 +13058,10 @@ function frameBody() {
   msSim = msSim * 0.9 + (now() - _s0) * 0.1
   drawT0 = now()
   try { draw(dt, t) } catch (e) { frameFailed('draw', e) }
+  if (startLog && phase === 'playing' && startLog.frames.length < 30) {
+    if (!startLog.frames.length) markStart('frame 1')
+    startLog.frames.push(t - (startLog.last ?? t)); startLog.last = t
+  }
   try { if (phase === 'menu') prepMenu(); prepareStep() } catch (e) { prepQueue.length = 0; frameFailed('prep', e) }
 }
 
@@ -13609,9 +13657,20 @@ function wireMenu() {
     myName = cleanName(nameIn.value) || suggestedName()
     // must run in the click: Fullscreen needs a user gesture
     if (IS_TOUCH && FS_OK && !isFullscreen()) enterFullscreen()
-    withLib(LIBS.peer, fn, e => setStatus(e.message, 'err'))
-    sfxGesture()
+    // sound starts in the click (a phone allows it only there); a server stays silent
+    if (fn !== startServer && settings.sound) sfxStart(true)
+    startLog = { t0: now(), marks: [], frames: [], progs: renderer?.info.programs.length }
+    // painted before the work, which runs two frames on
+    document.body.classList.add('starting')
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      document.body.classList.remove('starting'); markStart('work')
+      withLib(LIBS.peer, fn, e => setStatus(e.message, 'err'))
+      sfxApply()
+    }))
   }
+  el('#jittip-x').onclick = () => { settings.jitTip = true; saveSettings(); jitTip() }
+  el('#jittip-copy').onclick = () => navigator.clipboard?.writeText(location.protocol + '//' + location.host).catch(() => {})
+  setTimeout(jitWindow, 1500)
   el('#host-btn').disabled = false
   el('#serve-btn').disabled = false
   el('#join-btn').disabled = false
