@@ -4931,6 +4931,17 @@ function qrCanvas(text, px) {
     if (q.get(r, c)) g.fillRect((c + 4) * scale, (r + 4) * scale, scale, scale)
   return cv
 }
+// this page's public address; '' on file:, localhost and private networks
+const linkBase = (L = location) => /^https?:$/.test(L.protocol) && !/^(localhost$|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[::1\]$)/.test(L.hostname) ? L.origin + L.pathname : ''
+const qrText = (code, base = linkBase()) => base ? base + '#' + code : code
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+// a room code, bare or after this page's own link and '#'; '' for anything else
+function codeOf(text, base = linkBase()) {
+  let t = String(text || '').trim()
+  if (base && t.startsWith(base + '#')) t = t.slice(base.length + 1)
+  t = t.toUpperCase()
+  return t.length === 6 && [...t].every(ch => CODE_ALPHABET.includes(ch)) ? t : ''
+}
 
 // ---------------------------------------------------------------- avatars
 
@@ -10842,7 +10853,7 @@ function paintPicker() {
     const why = refusal(i), mine = teamOf(pre) ? teamOf(i) === teamOf(pre) : i === pre
     const d = wrap.appendChild(entryCard(i, mine && !why, () => {
       if (why || mine && !joining) return
-      if (joining) { if (!teamOf(i) || teamOf(i) !== teamOf(myCid)) myCid = settings.cid = i; saveSettings(); closeCharPick(); hello(); lockPointer(); return }
+      if (joining) { if (!teamOf(i) || teamOf(i) !== teamOf(myCid)) myCid = settings.cid = i; saveSettings(); closeCharPick(); hello(); lockPointer(); joinGesture(); return }
       requestChar(i)
       closeCharPick()
       openPause()
@@ -10990,9 +11001,8 @@ async function openScan() {
       try { text = await decodeFrame(g.getImageData(0, 0, cw, ch).data, cw, ch) }
       catch (e) { scanNote('The QR reader could not load. Type the code instead.'); return }
       if (!scanStream) return
-      // only a room code is acted on
-      const code = String(text || '').trim().toUpperCase()
-      if (code.length === 6 && [...code].every(ch2 => CODE_ALPHABET.includes(ch2))) {
+      const code = codeOf(text)
+      if (code) {
         el('#join-code').value = code
         closeScan()
         return
@@ -11030,7 +11040,7 @@ function drawCodeQR() {
   // #codeqr has no width while empty; .mbox padding is 44 px
   const card = box.parentElement
   const wide = (card && card.clientWidth ? card.clientWidth - 44 : 280)
-  const cv = qrCanvas(roomCodeStr, qrBudget(wide, innerHeight || 640))
+  const cv = qrCanvas(qrText(roomCodeStr), qrBudget(wide, innerHeight || 640))
   if (cv) box.appendChild(cv)
 }
 
@@ -11825,7 +11835,6 @@ function easeHolds(list, t) {
   return out
 }
 
-const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 const roomCode = () => {
   let out = ''
   for (let i = 0; i < 6; i++) {
@@ -13544,7 +13553,7 @@ class Arena extends ENABLE3D.Scene3D {
       initServerPanel()
       wireMenu()
       setStatus('Ready.', 'ok')
-      thumbsOn = true; idleThumbs()
+      thumbsOn = true; idleThumbs(); joinLink()
     } catch (e) {
       console.error(e)
       setStatus('Startup failed: ' + ((e && e.message) || e), 'err')
@@ -13680,9 +13689,10 @@ Promise.all([ammoReady, OBJECTS.some(K => K.shape === 'hull') && loadHull().catc
   })
 }).catch(e => setStatus('Physics failed to load: ' + e, 'err'))
 
+const nameNow = () => { myName = cleanName(nameIn.value) || suggestedName() }
 function wireMenu() {
   const go = fn => () => {
-    myName = cleanName(nameIn.value) || suggestedName()
+    nameNow()
     // must run in the click: Fullscreen needs a user gesture
     if (IS_TOUCH && FS_OK && !isFullscreen()) enterFullscreen()
     // sound starts in the click (a phone allows it only there); a server stays silent
@@ -13716,10 +13726,17 @@ function wireMenu() {
   el('#join-code').addEventListener('keydown', e => {
     if (e.key === 'Enter') el('#join-btn').click()
   })
-  // a URL #code prefills, never joins; other fragments ignored
-  const fromLink = decodeURIComponent((location.hash || '').slice(1)).trim().toUpperCase()
-  if (fromLink.length === 6 && [...fromLink].every(ch => CODE_ALPHABET.includes(ch)))
-    el('#join-code').value = fromLink
+}
+// a link's #code joins once and leaves the address, so a refresh does not rejoin; other fragments are ignored.
+// Its first gesture is the picker's tap
+const joinGesture = () => { if (IS_TOUCH && FS_OK && !isFullscreen()) enterFullscreen(); sfxGesture() }
+function joinLink() {
+  const code = codeOf(location.hash.slice(1), '')
+  if (!code) return
+  try { window.history.replaceState(null, '', location.pathname + location.search) } catch (e) {}
+  el('#join-code').value = code
+  nameNow()
+  withLib(LIBS.peer, () => startJoin(code), e => setStatus(e.message, 'err'))
 }
 })()
 </script>
