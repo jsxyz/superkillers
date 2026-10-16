@@ -159,6 +159,8 @@
   #hitmark:before{transform:rotate(45deg)}#hitmark:after{transform:rotate(-45deg)}
   #tab{position:fixed;inset:0;display:none;place-items:center;z-index:9;pointer-events:none}
   #results{position:fixed;inset:0;display:none;place-items:center;z-index:10;pointer-events:none}
+  #vote{position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:9;display:none;padding:6px 12px;border:1px solid #30363d;border-radius:8px;
+        background:#0d1117e0;text-align:center}  #vote .help{color:#8b949e;font-size:11px}  #vote.voted .b{opacity:.4;pointer-events:none}
   #restitle{color:#e3b341}
   #reslevels{display:none;margin-top:10px;flex-wrap:wrap;justify-content:center}
   #reslevels .card{width:76px;font-size:11px}
@@ -332,10 +334,11 @@
   </div>
 
   <div id="lobby-self">
-  <label>CHARACTER</label>
+  <label>CHARACTER — IF YOU HOST</label>
   <div id="sides" class="sides"></div>
   <div id="chars"></div>
   <div class="sub" style="margin:10px 0 0" id="charhint"></div>
+  <div class="sub" style="margin:4px 0 0">Joining? You pick once you're in the room, from what it plays.</div>
 
   <label>NAME</label>
   <input id="name-in" maxlength="16" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
@@ -385,6 +388,8 @@
 </div></div>
 
 <div id="hud"></div>
+<div id="vote"><div id="vote-text"></div><div class="help">Y/N to vote · no vote = no objection</div>
+  <button id="vote-yes" class="b">Yes</button><button id="vote-no" class="b">No</button><button id="vote-cancel">Cancel</button></div>
 <div id="reticle"></div>
 <div id="hitmark"></div>
 <div id="hp"><div id="teamstrip"></div><div id="hpbar"><div id="hpfill" style="width:100%"></div></div><div id="fuelbar"><div id="fuelfill"></div></div><div id="sprinting">SPRINT</div></div>
@@ -452,10 +457,11 @@
 </div></div>
 
 <div id="hostset" class="ovl"><div class="mbox">
-  <h2>Host</h2>
-  <p>Yours to set, and everyone in the room plays it.</p>
+  <h2 id="host-title">Host</h2>
+  <p id="host-note">Yours to set, and everyone in the room plays it.</p>
   <label>LEVEL</label>
   <div id="host-levels" class="cards"></div>
+  <div id="host-only">
   <label>CITY SIZE</label>
   <div id="host-city" class="cards"></div>
   <div class="row" id="set-mode-row"><button id="set-mode">Enemies: waves</button></div>
@@ -470,13 +476,14 @@
     <input type="range" id="set-rate" min="0" max="6" step="1">
     <span class="setval" id="set-rate-v"></span>
   </div>
+  </div>
   <div class="mrow" style="margin-top:16px">
     <button id="host-back">Back</button>
   </div>
 </div></div>
 
 <div id="charpick" class="ovl"><div class="mbox wide">
-  <h2>Character</h2>
+  <h2 id="pick-title">Character</h2>
   <p id="pick-note">You keep the damage you have taken — this is not a respawn.</p>
   <div id="pick-sides" class="sides"></div>
   <div id="pick-cards" class="cards"></div>
@@ -9517,6 +9524,7 @@ function initInput() {
     if (e.code === 'Space') e.preventDefault()
     if (e.code === 'KeyV') setView(!firstPerson)
     if (e.code === 'KeyM') sfxToggle()
+    if ((e.code === 'KeyY' || e.code === 'KeyN') && !e.repeat) voteBallot(e.code === 'KeyY')
     if (e.code === 'KeyB' && !e.repeat) radioCycle()
     if (e.code === 'KeyC' && !e.repeat) teamSwitch()
     if (/^Digit[1-9]$/.test(e.code) && !e.repeat && !(isHost && resultsLeft > 0)) teamSwitch(+e.code.slice(5) - 1)
@@ -9631,7 +9639,7 @@ function initTouch() {
 
   // every overlay must be listed, or a tap on it is a look-drag
   const isUI = t => !!(t && t.closest && t.closest(
-    '#trow, .tbtn, #chat, #ui, .ovl'))
+    '#trow, .tbtn, #chat, #ui, .ovl, #vote'))
   // fire sits in the look area; other buttons stay out (dragging off JUMP never turns)
   const isFire = t => !!(t && t.closest && t.closest('#btn-fire'))
 
@@ -9962,7 +9970,10 @@ function closeSettings() {
 function openHost() {
   settingsOpen = true
   const lv = el('#host-levels')
-  if (!lv.children.length) buildLevelCards(lv, levelId, i => { if (i !== levelId) setLevel(i) })
+  if (!lv.children.length) buildLevelCards(lv, levelId, i => { if (i === levelId) return; if (isHost) return setLevel(i); closeSettings(); voteFor(i); lockPointer() })
+  el('#host-only').style.display = isHost ? '' : 'none'
+  el('#host-title').textContent = isHost ? 'Host' : 'Vote level'
+  el('#host-note').textContent = isHost ? 'Yours to set, and everyone in the room plays it.' : 'Pick one to put it to the room.'
   markLevel(lv, levelId)
   const cs = el('#host-city')
   if (!cs.children.length) for (const k in CITY_SIZES) {
@@ -10575,7 +10586,7 @@ function openPause() {
   el('#pause-note').textContent = isHost
     ? 'The game keeps running for everyone else — you are standing still, not safe.'
     : 'The game keeps running on the host — you are standing still, not safe.'
-  el('#pause-host').style.display = isHost ? '' : 'none'
+  el('#pause-host').textContent = isHost ? 'Host' : 'Vote level'
   el('#pause-hint').innerHTML = IS_TOUCH ? '' :
     'WASD move · Shift sprint · Space jump/rise · Q descend (flier) · click fire · right-click your attack · E use or lift<br>' +
     'R next weapon · F shift form · T chat · Tab scores · V view · M sound · F3 debug'
@@ -10591,7 +10602,7 @@ function closePause() {
 
 const fromPause = fn => () => { pauseOpen = false; show('pause'); fn() }
 const toPause = close => () => { close(); openPause() }
-const settingsBack = toPause(closeSettings), pickBack = toPause(closeCharPick)
+const settingsBack = toPause(closeSettings), pickBack = () => joinPick() ? (closeCharPick(), leaveRoom()) : toPause(closeCharPick)()
 const backdrop = (id, fn) => el('#' + id).addEventListener('click', e => { if (e.target.id === id) fn() })
 
 let pickOpen = false
@@ -10607,40 +10618,63 @@ function closeCharPick() {
 }
 
 let pickSide = null
+// join mode: a guest connected and not yet in; its hello waits for this pick
+const joinPick = () => picking
+const pickSelf = () => joinPick() ? -1 : myId
+// why the room refuses character i to this player now, '' if it doesn't
+function refusal(i) {
+  const C = CHARS[i], L = sideLocked(C.side, pickSelf())
+  return !sideOffered(C.side) ? roomName() + ': ' + Object.keys(SIDES).filter(sideOffered).map(k => SIDES[k].name).join(', ') + ' only'
+    : L.locked ? 'Balanced: ' + L.mine + ' v ' + L.theirs : taken(C.team, pickSelf()) ? 'Taken' : ''
+}
+const roomName = () => gameMode === 'waves' ? 'Waves' : 'Free-for-all'
 function paintPicker() {
   const wrap = el('#pick-cards')
   const hint = el('#pick-note')
   wrap.innerHTML = ''
-  const live = selfChar()
+  const live = selfChar(), joining = joinPick()
   const now = live ? live.cid : myCid
-  const side = pickSide || CHARS[now].side
+  const side = pickSide || (sideOffered(CHARS[now].side) ? CHARS[now].side : Object.keys(SIDES).find(sideOffered))
+  const pre = joining && refusal(now) ? pickEntries(side).find(i => !refusal(i)) ?? now : now
+  el('#pick-title').textContent = joining ? 'Pick your character' : 'Character'
+  el('#pick-back').textContent = joining ? 'Leave' : 'Back'
   sideTabs(el('#pick-sides'), side, k => { pickSide = k; paintPicker() })
-  pickEntries(side).forEach(i => wrap.appendChild(entryCard(i, teamOf(now) ? teamOf(i) === teamOf(now) : i === now, () => {
-    if (i === now || teamOf(now) && teamOf(i) === teamOf(now)) return
-    requestChar(i)
-    closeCharPick()
-    openPause()
-  })))
+  pickEntries(side).forEach(i => {
+    const why = refusal(i), mine = teamOf(pre) ? teamOf(i) === teamOf(pre) : i === pre
+    const d = wrap.appendChild(entryCard(i, mine && !why, () => {
+      if (why || mine && !joining) return
+      if (joining) { if (!teamOf(i) || teamOf(i) !== teamOf(myCid)) myCid = settings.cid = i; saveSettings(); closeCharPick(); hello(); lockPointer(); return }
+      requestChar(i)
+      closeCharPick()
+      openPause()
+    }))
+    if (why && !d.classList.contains('taken')) { d.classList.add('taken'); const r = d.appendChild(document.createElement('div')); r.className = 'st'; r.style.color = '#f85149'; r.textContent = why }
+  })
+  if (joining) return void (hint.textContent = roomName() + (gameMode === 'waves' ? ' — ' + Object.keys(SIDES).filter(sideOffered).map(k => SIDES[k].name).join(', ') + ' only'
+    : balanced() ? ' — sides balanced' : '') + '. Pick to spawn.')
   hint.textContent = (live && live.shiftCool > 0
     ? 'Changing again in a moment.'
     : 'You keep the damage you have taken — this is not a respawn.') +
     (live && gameMode === 'ffa' ? ' You\'re on the ' + SIDES[CHARS[live.cid].side].name + '.' : '')
 }
 
+function leaveRoom() {
+  if (isHost) broadcast({ k: 'hostgone' })
+  else sendHost({ k: 'bye' })
+  setTimeout(resetToMenu, 120)     // let the goodbye flush
+}
+
 function initPause() {
   el('#pause-char').onclick = fromPause(openCharPick)
-  backdrop('charpick', pickBack)
+  el('#vote-yes').onclick = () => voteBallot(true); el('#vote-no').onclick = () => voteBallot(false); el('#vote-cancel').onclick = cancelVote
+  backdrop('charpick', () => joinPick() || pickBack())
   el('#pick-back').onclick = pickBack
   el('#pause-resume').onclick = closePause
   el('#pause-settings').onclick = fromPause(openSettings)
   el('#pause-host').onclick = fromPause(openHost)
   el('#pause-code').onclick = fromPause(() => { if (roomCodeStr) openCodeModal() })
   // deliberately not closePause(), which would re-lock the pointer and reopen this menu
-  el('#pause-leave').onclick = fromPause(() => {
-    if (isHost) broadcast({ k: 'hostgone' })
-    else sendHost({ k: 'bye' })
-    setTimeout(resetToMenu, 120)     // let the goodbye flush
-  })
+  el('#pause-leave').onclick = fromPause(leaveRoom)
   backdrop('pause', closePause)
 }
 
@@ -11028,6 +11062,7 @@ function closeChat(relock) {
 }
 
 function setLevel(i, gen) {
+  if (poll) endVote('cancelled')
   loadLevel(i, gen)
   resetMatch()
   announce('§e' + LEVELS[levelId].name + '§7 it is.')
@@ -11104,13 +11139,13 @@ const COMMANDS = {
               sysMsg('§7Enemies: §f' + BOT_COUNT) } },
   level:  { args: '<name or number>', help: 'host only, change the level', run: a => {
               if (!isHost) return sysMsg('§cOnly the host picks the level.')
-              const want = String(a || '').trim().toLowerCase()
-              let i = LEVELS.findIndex(L => L.name.toLowerCase() === want)
-              if (i < 0 && /^\d+$/.test(want)) i = parseInt(want, 10) - 1
-              if (i < 0 || i >= LEVELS.length)
-                return sysMsg('§cLevels: §f' + LEVELS.map((L, n) => (n + 1) + ' ' + L.name).join('  '))
+              const i = levelArg(a)
+              if (i < 0) return levelList()
               if (i === levelId) return sysMsg('§7Already on §f' + LEVELS[i].name)
               setLevel(i) } },
+  vote:   { args: '<level|yes|no|cancel>', help: 'ask the room to change the level, or vote', run: a => {
+              const w = String(a || '').trim().toLowerCase(), i = levelArg(w)
+              w === 'yes' || w === 'no' ? voteBallot(w === 'yes') : w === 'cancel' ? cancelVote() : i < 0 ? levelList() : voteFor(i) } },
   seed:   { args: '[n] [size 1-4]', help: 'host only, roll a generated level anew', run: a => {
               if (!isHost) return sysMsg('§cOnly the host picks the level.')
               if (!levelGen) return sysMsg('§c' + LEVELS[levelId].name + ' is not generated.')
@@ -11390,7 +11425,8 @@ const lastSeen = new Map()
 let myId = 0, myCid = START, myName = ''
 // guest: hello resent until a welcome gave us an id and a snapshot carries our row
 const HELLO_MS = 500
-let admitted = false, helloAt = 0
+let admitted = false, helloAt = 0, picking = false
+const hello = () => { picking = false; helloAt = now(); sendHost({ k: 'hello', cid: myCid, name: myName }) }
 let roomCodeStr = '', roomOpen = false             // a host's code, claimed on the signaling server once open
 const OPENING = 'opening…', codeText = () => isHost && !roomOpen ? OPENING : roomCodeStr
 let outSeq = 0, lastChatSeq = new Map()
@@ -11669,9 +11705,9 @@ function announce(raw) {
   if (isHost) broadcast({ k: 'sys', m: raw })
 }
 
+const rosterList = () => [...roster].map(([id, p]) => [id, p.cid, p.name, p.cap || ''])
 function pushRoster() {
-  const list = [...roster].map(([id, p]) => [id, p.cid, p.name, p.cap || ''])
-  broadcast({ k: 'roster', list })
+  broadcast({ k: 'roster', list: rosterList() })
 }
 
 function applyRoster(list) {
@@ -11754,7 +11790,7 @@ function openHostPeer(attempt) {
       conns.set(id, c)
       lastSeen.set(id, now())
       watchLink(c, id)
-      c.send(welcome(id))
+      c.send(welcome(id)); c.send({ k: 'roster', list: rosterList() })
     })
     c.on('data', raw => { if (!conns.has(id)) return; countDown(raw); lastSeen.set(id, now()); onHostData(id, decode(raw)) })
     c.on('close', () => {
@@ -11763,12 +11799,73 @@ function openHostPeer(attempt) {
       players.delete(id); roster.delete(id); if (dropMates(id)) teamsChanged(); inputs.delete(id); pkSent.delete(id); tierSent.delete(id); objSent.delete(id)
       inputSeq.delete(id); lastChatSeq.delete(id); lastChatAt.delete(id); lastSeen.delete(id)
       inQ.delete(id); inAck.delete(id)
+      if (poll) { poll.yes.delete(id); poll.no.delete(id); countVote() }
       if (p) announce('§e' + p.name + ' left')
       dropAvatar(id)
       pushRoster()
       if (serving && had && !conns.size) resetMatch()
     })
   })
+}
+
+// ---- level vote: a majority of the humans decides at once, else the ballots cast by the end
+const VOTE_S = 20, VOTE_CD_MS = 30000
+let poll = null, pollSeen = null, myBallot = false, myCall = -1         // the host's count (Sets of ids); what each page was told
+const voteCalled = new Map(), voteRefused = new Map()
+const voters = () => [...serving ? [] : [0], ...[...conns.keys()].filter(id => players.has(id))]
+const levelArg = a => { const w = String(a || '').trim().toLowerCase(), n = /^\d+$/.test(w) ? parseInt(w, 10) - 1 : -1
+  const i = LEVELS.findIndex(L => L.name.toLowerCase() === w); return i >= 0 ? i : LEVELS[n] ? n : -1 }
+const levelList = () => sysMsg('§cLevels: §f' + LEVELS.map((L, n) => (n + 1) + ' ' + L.name).join('  '))
+function callVote(id, lv) {
+  const t = now()
+  const why = !Number.isInteger(lv) || lv < 0 || lv >= LEVELS.length ? 'No such level.' : lv === levelId ? 'Already on ' + LEVELS[lv].name + '.'
+    : poll ? 'A vote is already on.' : !voters().includes(id) ? 'Only players vote.'
+    : t - (voteCalled.get(id) ?? -Infinity) < VOTE_CD_MS ? 'Not yet: wait a little.' : ''
+  if (why) { if (!(t - voteRefused.get(id) < 1000)) voteRefused.set(id, t), tell(id, '§7' + why); return }
+  voteCalled.set(id, t)
+  poll = { lv, by: roster.get(id)?.name || 'Someone', until: t + VOTE_S * 1000, yes: new Set([id]), no: new Set() }
+  countVote()
+}
+function ballot(id, yes) {
+  if (!poll || !voters().includes(id) || poll.yes.has(id) || poll.no.has(id)) return
+  (yes ? poll.yes : poll.no).add(id)
+  countVote()
+}
+const sayPoll = m => { broadcast(m); takePoll(m) }
+function countVote() {
+  const n = voters().length, y = poll.yes.size, x = poll.no.size, left = poll.until - now()
+  if (y > n / 2 || left <= 0 && y > x) return endVote('passed')
+  if (x >= n / 2 || left <= 0) return endVote('failed')
+  sayPoll({ k: 'poll', lv: poll.lv, by: poll.by, yes: y, no: x, left: Math.ceil(left / 1000) })
+}
+function endVote(end) {
+  const lv = poll.lv
+  poll = null
+  sayPoll({ k: 'poll', end })
+  if (end === 'passed') setLevel(lv)
+}
+const cancelVote = () => { if (isHost && poll) endVote('cancelled') }
+function takePoll(d) {
+  if (d.end !== undefined) {
+    if (pollSeen && ['passed', 'failed', 'cancelled'].includes(d.end)) sysMsg('§7The vote for §f' + LEVELS[pollSeen.lv].name + '§7 ' + (d.end === 'cancelled' ? 'was called off' : d.end) + '.')
+    pollSeen = null; myBallot = false
+    return
+  }
+  const lv = d.lv, n = v => clamp(v | 0, 0, MAX_PLAYERS)
+  if (!Number.isInteger(lv) || lv < 0 || lv >= LEVELS.length) return
+  if (!pollSeen) { myBallot = myCall === lv; myCall = -1 }
+  pollSeen = { lv, by: cleanName(d.by) || 'Someone', yes: n(d.yes), no: n(d.no), until: now() + clamp(Number(d.left) || 0, 0, VOTE_S) * 1000 }
+}
+const toHost = m => isHost ? onHostData(0, m) : sendHost(m)
+function voteFor(lv) { myCall = lv; toHost({ k: 'vote', lv }) }
+function voteBallot(yes) { if (pollSeen && !myBallot) myBallot = true, toHost({ k: 'ballot', y: yes }) }
+function drawPoll() {
+  const p = pollSeen
+  hud('voteOn', el('#vote'), 'display', p ? 'block' : 'none')
+  if (!p) return
+  hud('voteText', el('#vote-text'), 'textContent', p.by + ' wants ' + LEVELS[p.lv].name + ': ' + p.yes + ' yes / ' + p.no + ' no (' + Math.max(0, Math.ceil((p.until - now()) / 1000)) + ' s)')
+  hud('voted', el('#vote'), '.voted', myBallot)
+  hud('voteHost', el('#vote-cancel'), 'display', isHost ? '' : 'none')
 }
 
 const welcome = id => ({ k: 'welcome', id, code: roomCodeStr, lv: levelId, ...levelSeed() })
@@ -11915,7 +12012,10 @@ function onHostData(id, d) {
     if (!sideOffered(CHARS[cid].side)) {
       cid = fallbackRow(id)
       tell(id, '§eThis room plays ' + gameMode + ': ' + Object.keys(SIDES).filter(sideOffered).map(k => SIDES[k].name).join(', ') + ' only')
-    } else if (sideLocked(CHARS[cid].side, id).locked || taken(CHARS[cid].team, id)) cid = fallbackRow(id)
+    } else if (sideLocked(CHARS[cid].side, id).locked || taken(CHARS[cid].team, id)) {
+      cid = fallbackRow(id)
+      tell(id, '§eThe room changed while you picked: you play §f' + CHARS[cid].name + '§e. Pause → Character to change.')
+    }
     const name = cleanName(d.name) || 'player'
     players.set(id, Object.assign(newChar(cid, 0, 0), { id }))
     respawn(players.get(id))
@@ -11925,6 +12025,7 @@ function onHostData(id, d) {
     inQ.set(id, []); inAck.set(id, 0)
     announce('§e' + name + ' joined')
     pushRoster()
+    if (poll) countVote()
     return
   }
   if (d.k === 'c') {
@@ -11944,6 +12045,8 @@ function onHostData(id, d) {
     if (p) { p.name = cleanName(d.name) || p.name; pushRoster() }
     return
   }
+  if (d.k === 'vote') return callVote(id, d.lv)
+  if (d.k === 'ballot') return void (typeof d.y === 'boolean' && ballot(id, d.y))
   if (d.k === 'char') {
     const cid = clamp(d.cid | 0, 0, CHARS.length - 1)      // switchChar refuses hidden rows
     const c = players.get(id)
@@ -12002,7 +12105,7 @@ function startJoin(code) {
   isHost = false; phase = 'connecting'
   scarsLater = false; if (!scarMesh) prepareScars()
   roomCodeStr = code.trim().toUpperCase()
-  predicted = newChar(myCid, 6, 0); admitted = false
+  predicted = newChar(myCid, 6, 0); admitted = false; helloAt = 0; picking = true
   setStatus('Connecting…')
   peer = new Peer()
   peer.on('error', e => {
@@ -12018,7 +12121,6 @@ function startJoin(code) {
     c.on('open', () => {
       connected = true
       watchLink(c, null)
-      c.send({ k: 'hello', cid: myCid, name: myName }); helloAt = now()
       beginPlay()
     })
     c.on('data', raw => { countDown(raw); onGuestData(decode(raw)) })
@@ -12060,7 +12162,7 @@ function onGuestData(d) {
     if (d.lv === levelId) takeCraters(d.cr, d.cv)      // other level: resent after the switch
     return
   }
-  if (d.k === 'roster') { applyRoster(d.list || []); return }
+  if (d.k === 'roster') { applyRoster(d.list || []); if (pickOpen) paintPicker(); return }
   if (d.k === 'pong') {
     if ((d.s | 0) !== rttSeq) return
     rttLog.push(now() - d.t)
@@ -12074,6 +12176,7 @@ function onGuestData(d) {
   if (d.k === 'lag') { onLag(d.n); return }
   if (d.k === 'say') { say(String(d.w), d.i | 0); return }
   if (d.k === 'sys') { sysMsg(String(d.m || '').slice(0, 200)); return }
+  if (d.k === 'poll') { takePoll(d); return }
   if (d.k === 'kicked') { kickedBy = String(d.by || 'the host').slice(0, 16); return }
   if (d.k === 'full') { endSession('Room full', 'Waves takes ' + (d.n | 0) + ' players.', false); return }
   if (d.k === 'hostgone') { endSession('Host left', 'The host closed the game.', true); return }
@@ -12114,6 +12217,7 @@ function onGuestData(d) {
   fragLimit = d.fl | 0
   if (MODES.includes(d.md)) gameMode = d.md
   if (d.bl !== undefined) balanceOn = !!d.bl
+  if (joinPick() && !pickOpen && phase === 'playing') openCharPick()
   // every snapshot, not just at join: a mid-match switch
   hostLevel(d.lv, d.ls, d.lh)
   if (d.lv === levelId && Array.isArray(d.cr) && !craterHeld(d.cr) && now() - levelSwitchAt >= LEVEL_SWITCH_MS) {
@@ -12242,7 +12346,7 @@ function reconcile(a) {
 }
 
 function clearSession() {
-  pauseOpen = false; closeSettings()
+  pauseOpen = false; closeSettings(); closeCharPick(); picking = false; poll = pollSeen = null
   endServing()                       // first: nothing below may think it serves
   const pe = el('#pause')
   if (pe) pe.classList.remove('open')
@@ -12312,7 +12416,7 @@ function beginPlay() {
   kickedBy = null
   el('#ui').style.display = 'none'
   document.body.classList.add('playing')
-  lockPointer()
+  if (!joinPick()) lockPointer()
   sysMsg('§7Connected. §8T to chat · /help for codes · /code for the room code')
   if (qualityAuto && qualityAuto !== QNAMES[0])
     sysMsg('§7Quality §f' + qualityAuto + '§7 — chosen for this machine. Settings can change it.')
@@ -12592,6 +12696,7 @@ function stepSim(t) {
   acc += dt
   if (phase !== 'playing') acc = 0
   else checkLiveness(t, own)
+  if (poll && t >= poll.until) countVote()
   sampleInput()
 
   if (t - rateAt >= 1000) {
@@ -12607,7 +12712,7 @@ function stepSim(t) {
     rttSeq++; rttSentAt = t
     sendHost({ k: 'ping', t, s: rttSeq })
   }
-  if (!isHost && connected && !admitted && t - helloAt > HELLO_MS) { helloAt = t; sendHost({ k: 'hello', cid: myCid, name: myName }) }
+  if (!isHost && connected && helloAt && !admitted && t - helloAt > HELLO_MS) hello()
 
   let steps = 0
   while (acc >= TICK && steps < MAX_CATCHUP) {
@@ -12831,7 +12936,7 @@ function draw(dt, t) {
   for (const p of objSeats.values()) sits.add(p)
   for (const o of objs) if (o.riders) for (const p of o.riders) sits.add(p)
   const meMesh = avatarFor(myId, me.cid, me.cap | 0)
-  meMesh.visible = !(me.dead > 0)
+  meMesh.visible = !(me.dead > 0) && !joinPick()
   meMesh.position.set(me.x, me.y, me.z)
   const myHold = holdOf(myId, me) || me.ceil && 'ceiling'
   meMesh.rotation.y = faceYaw(myId, me, animOf(me), myHold || animOf(me) > 3 || firstPerson || carries.has(myId), t, dt, input.fire || input.alt)
@@ -12896,6 +13001,7 @@ function draw(dt, t) {
   const hage = t - hitFlash
   const ff = FC.jet ? clamp((me.fuel || 0) / FC.jet.fuel, 0, 1) : 0
   const nm = (roster.get(myId) || {}).name || myName
+  drawPoll()
 
   const seat = !(me.dead > 0) && seatOf(me), car = seat && seat[0]
   const P = primaryOf(me)
@@ -13201,21 +13307,20 @@ const pickCard = (wrap, d) => { for (const c of wrap.children) c.classList.remov
 const pickEntries = side => PICKABLE.filter(i => CHARS[i].side === side && (!CHARS[i].team || CHARS.findIndex(C => C.team === CHARS[i].team) === i))
 const teamOf = i => CHARS[i].team, members = t => CHARS.flatMap((C, i) => C.team === t ? [i] : [])
 function teamCard(i, sel, onclick) {
-  const t = teamOf(i), T = TEAMS[t], M = members(t), gone = taken(t, myId), d = document.createElement('div')
+  const t = teamOf(i), T = TEAMS[t], M = members(t), gone = taken(t, pickSelf()), d = document.createElement('div')
   d.className = 'card' + (sel ? ' sel' : '') + (gone ? ' taken' : '')
   d.innerHTML = '<div class="swatch" style="background:linear-gradient(90deg,' + M.map((m, k) =>
       css(CHARS[m].color) + ' ' + (100 * k / M.length) + '% ' + (100 * (k + 1) / M.length) + '%').join(',') + ')"></div>' +
     '<div class="nm">' + T.name + '</div>' +
     '<div class="st">' + T.role + '<br>' + M.length + ' together' + (gone ? '<br><span style="color:#f85149">taken</span>' : '') + '</div>'
-  d.onclick = () => { if (!taken(t, myId)) onclick() }
+  d.onclick = () => { if (!taken(t, pickSelf())) onclick() }
   return d
 }
 const entryCard = (i, sel, onclick) => (teamOf(i) ? teamCard : charCard)(i, sel, onclick)
 function sideTabs(wrap, on, pick) {
   wrap.innerHTML = ''
   for (const k in SIDES) {
-    if (phase === 'playing' && !sideOffered(k)) continue
-    const L = phase === 'playing' && sideLocked(k, myId), b = wrap.appendChild(document.createElement('button'))
+    const L = phase === 'playing' && sideLocked(k, pickSelf()), b = wrap.appendChild(document.createElement('button'))
     b.textContent = SIDES[k].name + (L.locked ? ' · Balanced: ' + L.mine + ' v ' + L.theirs : '')
     b.className = (k === on ? 'on' : '') + (L.locked ? ' locked' : '')
     b.style.borderLeftColor = css(SIDES[k].color)
