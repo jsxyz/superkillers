@@ -571,6 +571,41 @@
 <script>
 (() => {
 'use strict'
+/* CODE MAP — real-time 3D rooms, host authority, guest prediction.
+   Labels describe today's sections; mixed sections still contain game rules.
+   CONTENT: tuning tables (characters, attacks, objects, levels, models, sounds).
+   ENGINE: helpers; raycast; camera; physics; rewind; input; touch; debug F3;
+     settings; pause; code modal; scanning; fullscreen; chat; net; server mode;
+     loop; boot. Character's body/controller, bots' ray/nav helpers, tuning's
+     level compiler/visible faces and textures' QR level M are also engine.
+   RULES: character's inventory, abilities, teams and respawn; bots' decisions;
+     tornado; guns; commands' game handlers. Also mixed into engine: admission,
+     contact damage, hostTick, snapshot fields, reconcile, match/HUD/menu logic.
+   LOOKS: textures; avatars (mesh kit, Artie, Vito, Vito's screen); render;
+     sound, radio, voices; loop's draw/HUD. Their recipes/lines are content.
+
+   Host: stepSim consumes fixed TICK inputs -> hostTick (intent, carry/drive,
+     attacks) -> one Bullet step -> contacts/history -> sendSnapshot per guest.
+   Guest: sampleInput -> predictObjects/tickChars -> pending + redundant 'i'.
+     Host onHostData queues it; takeInput acknowledges simulation, not receipt.
+     's' -> onGuestData -> tracks + reconcile: restore authority, replay pending.
+     draw uses predicted self, remoteAt(renderT), and objectsDrawn; a background
+     ticker owns simulation when hidden/headless. hello/welcome/roster admit;
+     chat, vote and other commands share the bounded JSON message dispatch.
+
+   packPlayer indices (29 today; 0..27 is the legacy prefix):
+     0 id, 1 x, 2 y, 3 z, 4 yaw, 5 hp, 6 gun, 7 ammo, 8 dead, 9 cid,
+     10 vy, 11 kills, 12 fuel, 13 prot, 14 vx, 15 vz, 16 ack, 17 jLock,
+     18 anim, 19 pow, 20 powT, 21 sp, 22 markT, 23 bag, 24 cap,
+     25 gun proficiency, 26 primary proficiency, 27 mark, 28 web.
+   wireRow trims trailing zeros to 16 columns; absent tail fields read as 0.
+   ammo/sp use -1 for unlimited; anim is one integer; cid selects the row.
+
+   Reskin: edit CONTENT tables and look recipes. Different rules also require
+   the RULES code and the mixed dependencies above: this file does not yet
+   expose a single game-adapter seam. Keep pack/unpack and wire guards aligned.
+*/
+
 const THREE = ENABLE3D.THREE
 
 // ---------------------------------------------------------------- tuning
