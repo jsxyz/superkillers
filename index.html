@@ -980,6 +980,8 @@ const VEHICLE_SHAPES = Object.fromEntries([
 // [front, rear] per wheel per step; hand: rear brake on handbrake; steer rad; turn: sideways cap m/s²; ram: dmg per m/s;
 // boom: burn hp fraction, fuse s; rows: Bus seat rows z. WHEEL_RIDE: rest/travel m, slip grip [front, rear]. DRIVE
 // (row overrides): steerTime/handBack s; reverse/handGrip fractions; bail: driverless slowdown m/s²; chase: cam pull-back
+// variants: the colours it comes in, each with its own driving (speed: x speed and engine; grip: x slip and turn); entry 0 is
+// the row as it stands; a vehicle is one of them by its seed (or id), the same on every machine
 const WHEEL_RIDE = { rest: 0.35, stiff: 33, damp: [3.8, 2.7], slip: [1.1, 1.35], roll: 0.4, travel: 0.25 }
 const DRIVE = { steerTime: 0.2, turnIn: 0.12, turn: 20, hand: 1, reverse: 0.28, chase: 0.2, handGrip: 0.2, handBack: 0.1, bail: 2.5 }, drive = (V, k) => V[k] ?? DRIVE[k]
 const BOOM = { burn: 0.25, fuse: 3 }
@@ -989,10 +991,14 @@ const vehicleRow = ({ rows, ...V }) => { const S = VEHICLE_SHAPES[V.name]
   return { ...V, ...S, wheels: { ...S.wheels, ...WHEEL_RIDE, ...V.wheels }, boom: { ...BOOM, ...V.boom },
     seats: S.seats.flatMap(([x, y, z]) => [[x, y, z], ...rows ? rows.flatMap(d => [[-x, y, z + d], [x, y, z + d]]) : [[-x, y, z]]]) } }
 const VEHICLES = [
-  { name: 'Car', engine: 50, brake: [1.24, 0.76], hand: 0.6, steer: 0.65, turn: 30, speed: 59, hp: 300, ram: 3.2, boom: { radius: 7, dmg: 120, knock: 16 }, com: 0.55, wheels: {"slip":[1.4,1.5]}, wreck: 'Wreck' },
-  { name: 'Van', engine: 46, brake: [1.49, 0.91], hand: 1.5, steer: 0.611, turn: 26, speed: 44.5, wheels: {"slip":[1.45,1.35],"roll":0.5}, hp: 400, ram: 4, boom: { radius: 8, dmg: 130, knock: 17 }, com: 0.85, steerTime: 0.12, wreck: 'Van Wreck' },
-  { name: 'Truck', engine: 76, brake: [1.32, 0.44], hand: 1, steer: 0.646, turn: 20, speed: 50, wheels: {"slip":[1.4,1.35],"roll":0.5}, hp: 500, ram: 4.8, boom: { radius: 9, dmg: 150, knock: 18 }, com: 1.1, steerTime: 0.12, wreck: 'Truck Wreck' },
-  { name: 'Bus', engine: 24, brake: [1.65, 0.68], hand: 1.25, steer: 0.611, turn: 18, speed: 34, wheels: {"slip":[1.3,1.3],"roll":0.6}, hp: 600, ram: 5.6, boom: { radius: 9, dmg: 150, knock: 18 }, com: 1.1, bal: -0.07677201926708221, inertia: [173.30255126953125, 175.9712371826172, 30.871807098388672], steerTime: 0.12, wreck: 'Bus Wreck', rows: [1.3, 3.7] },
+  { name: 'Car', engine: 50, brake: [1.24, 0.76], hand: 0.6, steer: 0.65, turn: 30, speed: 59, hp: 300, ram: 3.2, boom: { radius: 7, dmg: 120, knock: 16 }, com: 0.55, wheels: {"slip":[1.4,1.5]},
+    variants: [{}, { name: 'Sport', color: 0xffd400, speed: 1.15, grip: 1.1 }, { color: 0x2c6fbb }, { color: 0xb8bec6 }, { name: 'Beater', color: 0x8c7b5c, speed: 0.85, grip: 0.85 }], wreck: 'Wreck' },
+  { name: 'Van', engine: 46, brake: [1.49, 0.91], hand: 1.5, steer: 0.611, turn: 26, speed: 44.5, wheels: {"slip":[1.45,1.35],"roll":0.5}, hp: 400, ram: 4, boom: { radius: 8, dmg: 130, knock: 17 }, com: 0.85, steerTime: 0.12,
+    variants: [{}, { color: 0xe6e6df, speed: 0.95 }, { color: 0x3a7d44, speed: 1.05, grip: 0.95 }, { color: 0x6b7178, grip: 1.05 }], wreck: 'Van Wreck' },
+  { name: 'Truck', engine: 76, brake: [1.32, 0.44], hand: 1, steer: 0.646, turn: 20, speed: 50, wheels: {"slip":[1.4,1.35],"roll":0.5}, hp: 500, ram: 4.8, boom: { radius: 9, dmg: 150, knock: 18 }, com: 1.1, steerTime: 0.12,
+    variants: [{}, { color: 0x24282e, speed: 1.05 }, { color: 0xdcdcd6, grip: 1.05 }, { color: 0xa8322b, speed: 0.95, grip: 1.05 }], wreck: 'Truck Wreck' },
+  { name: 'Bus', engine: 24, brake: [1.65, 0.68], hand: 1.25, steer: 0.611, turn: 18, speed: 34, wheels: {"slip":[1.3,1.3],"roll":0.6}, hp: 600, ram: 5.6, boom: { radius: 9, dmg: 150, knock: 18 }, com: 1.1, bal: -0.07677201926708221, inertia: [173.30255126953125, 175.9712371826172, 30.871807098388672], steerTime: 0.12,
+    variants: [{}, { color: 0xb8322a, speed: 1.05 }, { color: 0x2f7d4f, grip: 1.05 }, { color: 0x3a6fb5, speed: 0.95, grip: 1.05 }], wreck: 'Bus Wreck', rows: [1.3, 3.7] },
 ].map(vehicleRow)
 // GLTFLoader has no SRI check; keep the asset commit pinned.
 // sha384-Oa+BcLukVPbtZ7kColOygKyQvDUR0mmaZq4Wrj5BNFylre7BPJZVju/2zVCTMAO4
@@ -1784,6 +1790,15 @@ const DROPS = GUNS.map((G, i) => i).filter(i => i > 0 && GUNS[i].drop !== false)
 const gunNamed = n => Math.max(0, GUNS.findIndex(G => G.name === n))
 const gunless = R => (R?.guns ?? SIDES[R?.side]?.guns) === false, handsOf = R => gunless(R) ? gunNamed([].concat(R.atk ?? [])[0]) : 0
 const vehicleOf = K => K && K.drive ? K.vehicle ??= VEHICLES.find(V => V.name === K.drive) : undefined
+const variantAt = (V, seed, id) => V?.variants?.length ? (Math.imul((seed || id + 1) ^ 0x2545f491, 2654435761) >>> 0) % V.variants.length : 0
+const variantRows = new WeakMap()
+// the row a vehicle drives with: its variant's multipliers on the row's own speed, engine, slip and turn
+function driveRow(V, seed, id) {
+  const i = variantAt(V, seed, id), v = V.variants?.[i] || {}, s = v.speed ?? 1, g = v.grip ?? 1
+  const rows = variantRows.get(V) || variantRows.set(V, []).get(V)
+  return rows[i] ||= s === 1 && g === 1 ? V : { ...V, speed: V.speed * s, engine: V.engine * s, turn: drive(V, 'turn') * g, wheels: { ...V.wheels, slip: Array.isArray(V.wheels.slip) ? V.wheels.slip.map(x => x * g) : V.wheels.slip * g } }
+}
+const variantColor = (K, seed, id) => vehicleOf(K)?.variants?.[variantAt(vehicleOf(K), seed, id)]?.color
 const hullAt = K => hullOf(K)?.at || [0, 0, 0]
 
 const FOV_MAX = 110                 // deg, vertical
@@ -3983,6 +3998,7 @@ function placeObject(k, at, yaw) {
 }
 
 let objSeeds = []
+const seedOf = id => objSeeds[id] ?? parked.get(objFirst.get(id)) ?? 0
 const carHull = new Map()
 const objFirst = new Map()          // guest: first-seen spot of an unseeded object
 function addObject(k, at, id, yaw = 0) {
@@ -4001,8 +4017,8 @@ function addObject(k, at, id, yaw = 0) {
   world.addRigidBody(body, ...COLLIDE.object)
   if (K.carry) { body.setCcdMotionThreshold(objR(K)); body.setCcdSweptSphereRadius(0.6 * objR(K)) }   // no tunnelling a thin wall
   const o = { k, id, K, at, body, shape, row: '', R: objR(K),
-              x: at[0], y: at[1], z: at[2], q, off: [0, 0, 0], seed: objSeeds[id] || 0 }
-  if (K.drive) makeCar(o, vehicleOf(K), hullAt(K))
+              x: at[0], y: at[1], z: at[2], q, off: [0, 0, 0], seed: seedOf(id) }
+  if (K.drive) makeCar(o, driveRow(vehicleOf(K), o.seed, id), hullAt(K))
   objs.push(o)
   return o
 }
@@ -4259,6 +4275,8 @@ function wheelsOf(d, t, eye) {
   out.steer = s.steer
   return out
 }
+// slip: one grip for every wheel, or [front, rear]
+const slipOf = (W, front) => Array.isArray(W.slip) ? W.slip[front ? 0 : 1] : W.slip
 function makeCar(o, V, at0) {
   const W = V.wheels, t = carTuning || (carTuning = new A.btVehicleTuning()), r = new A.btDefaultVehicleRaycaster(world), v = new A.btRaycastVehicle(t, o.body, r)
   v.setCoordinateSystem(0, 1, 2)
@@ -4266,7 +4284,7 @@ function makeCar(o, V, at0) {
     posVec.setValue(x - at0[0], wheelHang(W, [x, y, z], at0[2]) - at0[1], z - at0[2]); velVec.setValue(0, -1, 0); relVec.setValue(-1, 0, 0)
     const w = v.addWheel(posVec, velVec, relVec, W.rest, W.r, t, !!front)
     w.set_m_suspensionStiffness(W.stiff); w.set_m_wheelsDampingRelaxation(W.damp[0])
-    w.set_m_wheelsDampingCompression(W.damp[1]); w.set_m_frictionSlip(W.slip[front ? 0 : 1]); w.set_m_rollInfluence(W.roll)
+    w.set_m_wheelsDampingCompression(W.damp[1]); w.set_m_frictionSlip(slipOf(W, front)); w.set_m_rollInfluence(W.roll)
   }
   const H = hullOf(o.K), sides = o.K.half ? [-1, 1] : []
   const body = H ? H.pts : sides.flatMap(a => sides.flatMap(b => sides.map(c => [a, b, c].map((v, j) => v * o.K.half[j]))))
@@ -4336,7 +4354,7 @@ function driveStep(c, inp) {
   W.at.forEach(([, , , front], k) => {
     o.car.applyEngineForce(front || inp.j ? 0 : -f * V.engine, k)
     o.car.setBrake(front ? brake * B[0] : Math.max(brake * (B[1] ?? B[0]), inp.j ? drive(V, 'hand') : 0), k)
-    o.car.getWheelInfo(k).set_m_frictionSlip(W.slip[front ? 0 : 1] * (front ? 1 : 1 - hand * (1 - drive(V, 'handGrip'))))
+    o.car.getWheelInfo(k).set_m_frictionSlip(slipOf(W, front) * (front ? 1 : 1 - hand * (1 - drive(V, 'handGrip'))))
     if (front) o.car.setSteeringValue(o.steer, k)
   })
   o.body.activate()
@@ -5362,10 +5380,10 @@ const PROP_CACHE = new Map()
 const PROP_PALETTE = { shell: 0x344052, steel: 0xb9c8d8, dark: 0x151e2a, white: 0xf0f1df, gold: 0xd8ac45, wood: 0x936239, red: 0xc0392b, glass: 0x2c4257, shine: 0x9fb8cc }
 
 const propRow = (kind, id) => ({ gun: GUNS, power: POWERS, heal: HEALS, object: OBJECTS }[kind] || [])[id]
-function buildProp(kind, id) {
+function buildProp(kind, id, paint) {
   const source = propRow(kind, id)
   if (!source) throw new Error('unknown prop: ' + kind + ':' + id)
-  const K = meshKit({ ...PROP_PALETTE, accent: source.color }), add = K.add
+  const K = meshKit({ ...PROP_PALETTE, accent: paint ?? source.color }), add = K.add
   const box = (m, s, p, tag, r, bevel = 0.015) => add({ g: ['box', ...s, bevel], m, p, tag, r })
   const tube = (m, pts, r, tag) => add({ g: ['tube', pts, r, 10, 6], m, tag })
   const barrel = (r, length, x, y, z) => {
@@ -5396,10 +5414,11 @@ function buildProp(kind, id) {
   return finishKit(K)
 }
 const GLOW_OP = 0.6
-function propModel(kind, id, whole = false) {
-  const key = 'prop:' + kind + ':' + id + (whole ? ':whole' : '')
+// paint: a vehicle variant's colour for its accent
+function propModel(kind, id, whole = false, paint) {
+  const key = 'prop:' + kind + ':' + id + (whole ? ':whole' : '') + (paint === undefined ? '' : ':' + paint)
   if (!PROP_CACHE.has(key)) {
-    const root = buildProp(kind, id)
+    const root = buildProp(kind, id, paint)
     batchMeshes(root, key, whole ? {} : { joints: ['wheel'] })
     const hid = []; root.traverse(n => n.visible || hid.push(n)); hid.forEach(n => n.removeFromParent())      // hidden parts only feed the hull
     root.traverse(n => { if (n.isMesh) n.castShadow = false; if (n.material && propRow(kind, id).glow !== undefined) ghostMaterial(n.material) })
@@ -8590,13 +8609,14 @@ function drawObjects(list, wheelsAt = () => null) {
       const H = hullOf(K), m = H && poolMesh(objPool, objGroup, () => new THREE.Group())
       if (!m) continue
       if (m.parent !== objGroup) objGroup.add(m)
-      if (m.userData.k !== o.k) {
+      const paint = K.drive ? variantColor(K, o.seed, o.id) : undefined
+      if (m.userData.k !== o.k || m.userData.paint !== paint) {
         const mats = new Set()
         m.traverse(n => { if (n.material) mats.add(n.material) })
         mats.forEach(x => x.dispose())
-        m.clear(); m.userData = { k: o.k }
+        m.clear(); m.userData = { k: o.k, paint }
         for (const whole of K.drive ? [false, true] : [true]) {
-          const look = propModel('object', o.k, whole).clone()
+          const look = propModel('object', o.k, whole, paint).clone()
           ownMaterials(look)
           look.traverse(c => { if (c.isMesh) c.castShadow = c.receiveShadow = true
             if (K.drive && c.userData.part === 'wheel') c.visible = false })
@@ -11792,7 +11812,7 @@ function objectsAt(t) {
     const u = b.t === a.t ? 1 : (t - a.t) / (b.t - a.t)
     const s = P[4] * Q[4] + P[5] * Q[5] + P[6] * Q[6] + P[7] * Q[7] < 0 ? -1 : 1   // the short way round
     const v = P.map((x, i) => lerp(x, (i > 3 ? s : 1) * Q[i], u)), q = v.slice(4), n = Math.hypot(...q)
-    out.push({ id, held: objHeld.has(id), k: Q[0], K: OBJECTS[Q[0]], x: v[1], y: v[2], z: v[3], q: q.map(x => x / n), seed: objSeeds[id] ?? parked.get(objFirst.get(id)) ?? 0 })
+    out.push({ id, held: objHeld.has(id), k: Q[0], K: OBJECTS[Q[0]], x: v[1], y: v[2], z: v[3], q: q.map(x => x / n), seed: seedOf(id) })
   }
   return out
 }
