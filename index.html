@@ -414,7 +414,7 @@
   <div class="g"></div><div class="a"></div>
   <div id="bag"></div>
 </div>
-<div id="tab"><div class="tabinner"><h3>STANDINGS</h3><table id="tabrows"></table>
+<div id="tab"><div class="tabinner"><h3 id="tabhead">STANDINGS</h3><table id="tabrows"></table>
   <div id="prof"></div></div></div>
 <div id="results"><div class="tabinner">
   <h3 id="restitle">MATCH OVER</h3><table id="resrows"></table>
@@ -484,6 +484,16 @@
     <span class="setval" id="set-bots-v"></span>
   </div>
   <div class="row" id="set-balance-row"><button id="set-balance">Balance teams: on</button></div>
+  <div class="setrow" id="set-frags-row">
+    <label for="set-frags">Kills to win</label>
+    <input type="range" id="set-frags" min="0" step="1">
+    <span class="setval" id="set-frags-v"></span>
+  </div>
+  <div class="setrow" id="set-time-row">
+    <label for="set-time">Time limit</label>
+    <input type="range" id="set-time" min="0" step="1">
+    <span class="setval" id="set-time-v"></span>
+  </div>
   <div class="setrow" id="set-rate-row">
     <label for="set-rate">Updates</label>
     <input type="range" id="set-rate" min="0" max="6" step="1">
@@ -10052,6 +10062,8 @@ function loadSettings() {
   settings.volume = clamp(Number.isFinite(+settings.volume) ? +settings.volume : 0.8, 0, 1)
   settings.rate = SNAP_STEPS.includes(+settings.rate) ? +settings.rate : 0
   settings.balance = settings.balance !== false
+  settings.frags = clamp(Number.isFinite(+settings.frags) ? Math.round(+settings.frags) : FRAG_LIMIT, 0, 200)
+  settings.mins = clamp(Number.isFinite(+settings.mins) ? +settings.mins : TIME_LIMIT / 60, 0, 60)
   if (!Object.hasOwn(CITY_SIZES, settings.city)) settings.city = 'medium'
   settings.cid = Number.isInteger(settings.cid) ? settings.cid : -1
   settings.jitTip = settings.jitTip === true
@@ -10149,7 +10161,7 @@ function openHost() {
   markLevel(cs, Object.keys(CITY_SIZES).indexOf(settings.city))
   el('#set-mode').textContent =
     'Enemies: ' + (gameMode === 'waves' ? 'waves' : 'free-for-all')
-  el('#set-bots-row').style.display = el('#set-balance-row').style.display = gameMode === 'ffa' ? '' : 'none'
+  for (const id of ['bots', 'balance', 'frags', 'time']) el('#set-' + id + '-row').style.display = gameMode === 'ffa' ? '' : 'none'
   const bots = el('#set-bots'), out = el('#set-bots-v')
   bots.max = regulars()
   bots.value = BOT_COUNT
@@ -10161,6 +10173,19 @@ function openHost() {
   re.value = SNAP_STEPS.indexOf(settings.rate)
   ro.textContent = rateText()
   re.oninput = () => { settings.rate = SNAP_STEPS[+re.value] || 0; ro.textContent = rateText(); saveSettings() }
+  // "no limit" at the right end
+  const fr = el('#set-frags'), fo = el('#set-frags-v'), fn = FRAG_STEPS.length
+  const fragText = () => fragLimit ? String(fragLimit) : 'no limit'
+  fr.max = fn - 1
+  fr.value = (FRAG_STEPS.findIndex(v => v >= fragLimit) + fn - 1) % fn
+  fo.textContent = fragText()
+  fr.oninput = () => { setFragLimit(FRAG_STEPS[(+fr.value + 1) % fn]); fo.textContent = fragText() }
+  const tm = el('#set-time'), to = el('#set-time-v')
+  const timeText = () => timeLimit ? +(timeLimit / 60).toFixed(2) + ' min' : 'untimed'
+  tm.max = MINUTE_STEPS.length - 1
+  tm.value = MINUTE_STEPS.findIndex(v => v >= timeLimit / 60)
+  to.textContent = timeText()
+  tm.oninput = () => { setMatchMinutes(MINUTE_STEPS[+tm.value]); to.textContent = timeText() }
   show('hostset', 1)
 }
 
@@ -11241,10 +11266,11 @@ function setLevel(i, gen) {
   resetMatch()
   announce('§e' + LEVELS[levelId].name + '§7 it is.')
 }
-function setFragLimit(n) { fragLimit = n }
+function setFragLimit(n) { fragLimit = settings.frags = n; saveSettings() }
 function setMatchMinutes(n) {
   timeLimit = n * 60
   matchLeft = timeLimit              // a new length is a new clock
+  settings.mins = n; saveSettings()
 }
 
 // ---- commands
@@ -11906,6 +11932,7 @@ function startHost() {
   loadLevel(pickedLevel)          // before spawns/bodies
   markStart('level')
   resultsLeft = 0
+  fragLimit = settings.frags; timeLimit = settings.mins * 60
   matchLeft = timeLimit
   if (!serving) {
     if (!sideOffered(CHARS[myCid].side)) gameMode = 'ffa'
@@ -13379,6 +13406,7 @@ function drawTab(others) {
   const tab = el('#tab')
   tab.style.display = tabOpen ? 'grid' : 'none'
   if (!tabOpen) { lastTabSig = null; return }
+  hud('tabHead', el('#tabhead'), 'textContent', 'STANDINGS' + (gameMode === 'ffa' ? ' · ' + (fragLimit ? 'first to ' + fragLimit : 'no limit') : ''))
   const rows = standings(others)
   const sig = rows.map(r => r.id + ':' + r.kills).join(',')
   const me = isHost ? players.get(0) : predicted
