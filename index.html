@@ -6990,6 +6990,14 @@ const slamParts = (f, T) => {
 }
 
 const WALL_EASE = 0.15, wallTurns = new WeakMap(), wallRolls = new WeakMap(), eased = (k, on, dt) => Math.min(1, Math.max(0, k + (on ? dt : -dt) / WALL_EASE))
+function drawSeat(m, c, seat, list) {
+  const o = seat && list.find(o => o.id === seat[0]), V = o && vehicleOf(o.K)
+  if (!V?.seats[seat[1]]) return false
+  m.position.set(...seatAt({ ...o, at0: hullAt(o.K) }, seatFit(V.seats[seat[1]], rowFor(c.id, c.cid))))
+  m.quaternion.set(...o.q)
+  wallTurns.delete(m); wallRolls.delete(m); ceilingTurns.delete(m)
+  return true
+}
 function drawTurned(m, c, on, dt) {
   const k = eased(wallTurns.get(m) || 0, on, dt), th = k * Math.PI / 2
   wallTurns.set(m, k)
@@ -8200,8 +8208,11 @@ function posePunch(a, t, restore = false, hold) {
       k.position.y += d * Math.cos(p.th); k.position.z += d * Math.sin(p.th)
     }
   }
-  if (hold === 'sit' && p.hip)    // its hips onto the cushion, SIT_HIP·(h + r) under the seated centre
-    a.mesh.position.y += (a.mesh.getWorldPosition(p.v ||= new THREE.Vector3()).y - p.hip.getWorldPosition(p.v).y - SIT_HIP * (a.spec.h + a.spec.r)) * weight
+  if (hold === 'sit' && p.hip) {
+    const v = a.mesh.worldToLocal(p.hip.getWorldPosition(p.v ||= new THREE.Vector3()))
+    v.set(0, (-SIT_HIP * (a.spec.h + a.spec.r) - v.y) * weight, 0).multiply(a.mesh.scale).applyQuaternion(a.mesh.quaternion)
+    a.mesh.position.add(v)
+  }
   if (hold === 'climb') {
     if (weight === 1 && a.actions[a.prof[a.anim].clip]?.getEffectiveWeight() === 1) {
       a.mesh.updateMatrixWorld(true)
@@ -13034,7 +13045,7 @@ function drawRadar(me, others, t) {
   g.restore()
 }
 
-const lifts = new Set(), sits = new Set(), carries = new Set()
+const lifts = new Set(), sits = new Map(), carries = new Set()
 function draw(dt, t) {
   let me, others, pkl
   for (const m of shellPool) m.visible = false
@@ -13065,14 +13076,15 @@ function draw(dt, t) {
   const obl = easeHolds(objectsDrawn(others), t), holdOf = (id, p) => sits.has(id) ? 'sit' : lifts.has(id) ? 'lift' : p.web > 0 ? 'swing' : (diving(p) ? 'dive' : flightOf(p, avatars.get(id)?.hold))
   lifts.clear(); sits.clear(); carries.clear()
   for (const o of obl) (o.K.carry ? carries : lifts).add(o.heldBy ?? objHeld.get(o.id) ?? o.liftBy)
-  for (const p of objSeats.values()) sits.add(p)
-  for (const o of objs) if (o.riders) for (const p of o.riders) sits.add(p)
+  for (const [s, p] of objSeats) sits.set(p, [s >> 3, s & 7])
+  if (isHost) for (const o of objs) o.riders?.forEach((p, i) => { if (p !== undefined) sits.set(p, [o.id, i]) })
+  else { const s = seatOf(me); sits.delete(myId); if (s) sits.set(myId, [s[0].id, s[1]]) }
   const meMesh = avatarFor(myId, me.cid, me.cap | 0)
   meMesh.visible = !(me.dead > 0) && !joinPick()
   meMesh.position.set(me.x, me.y, me.z)
   const myHold = holdOf(myId, me) || me.ceil && 'ceiling'
   meMesh.rotation.y = faceYaw(myId, me, animOf(me), myHold || animOf(me) > 3 || firstPerson || carries.has(myId), t, dt, input.fire || input.alt)
-  if (!drawCeiling(meMesh, me, myHold === 'ceiling', dt)) drawTurned(meMesh, me, animOf(me) === 4 && rowOf(me)?.wallRun, dt)
+  if (!drawSeat(meMesh, me, sits.get(myId), obl) && !drawCeiling(meMesh, me, myHold === 'ceiling', dt)) drawTurned(meMesh, me, animOf(me) === 4 && rowOf(me)?.wallRun, dt)
   setAnim(myId, crouchOf(myId, me.cid, animOf(me), me.springT > 0, myHold), dt, t, myHold)
   drawHealth(myId, me.hp)
 
@@ -13089,7 +13101,7 @@ function draw(dt, t) {
     const hold = holdOf(o.id, o) || o.ceil && 'ceiling'
     m.rotation.y = faceYaw(o.id, o, o.anim || 0, hold || o.anim > 3 || carries.has(o.id), t, dt)
     if (o.anim === 4 && C.wallRun && o.wy === undefined) o.wy = wallYawAt(o.x, o.y, o.z, C.h + C.r + 0.4)
-    if (!drawCeiling(m, o, hold === 'ceiling', dt)) drawTurned(m, o, o.anim === 4 && C.wallRun, dt)
+    if (!drawSeat(m, o, sits.get(o.id), obl) && !drawCeiling(m, o, hold === 'ceiling', dt)) drawTurned(m, o, o.anim === 4 && C.wallRun, dt)
     const still = !posed(m.position)
     setAnim(o.id, crouchOf(o.id, o.cid, o.anim || 0, o.jl, hold), dt, t, hold, still)
     drawHealth(o.id, o.hp)
