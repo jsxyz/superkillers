@@ -13479,8 +13479,9 @@ function prepMenu() {
   const team = CHARS[myCid].team, ffa = gameMode === 'ffa' || !sideOffered(CHARS[myCid].side)
   prepareRows([...(team ? members(team) : [myCid]).map(k => [0, k]), ...botPairs(ffa ? [...heroWant(), ...SQUAD] : picked(WAVES[0].pick))])
 }
-// a thumbnail compiles its level: drawn when idle after Ready
-const thumbsDue = [], paintThumbs = () => { for (const f of thumbsDue.splice(0)) f() }, idleThumbs = () => (window.requestIdleCallback || setTimeout)(paintThumbs)
+// a thumbnail compiles its level: drawn when idle after Ready, at most half a second later on a page that never idles
+const thumbsDue = [], paintThumbs = () => { for (const f of thumbsDue.splice(0)) try { f() } catch (e) { console.error(e) } }
+const idleThumbs = () => window.requestIdleCallback ? requestIdleCallback(paintThumbs, { timeout: 500 }) : setTimeout(paintThumbs)
 let thumbsOn = false
 function buildLevelCards(wrap = el('#levels'), sel = pickedLevel, pick = i => { pickedLevel = i }, numbered) {
   if (!wrap) return
