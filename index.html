@@ -549,12 +549,11 @@
      edit the URL and recompute its hash with:
 
          curl -sL <url> | openssl dgst -sha384 -binary | openssl base64 -A -->
+<link rel="preload" href="https://cdn.jsdelivr.net/gh/regnaio/ammo.js@9ca25a5a8e5e1314ba4d86d1bc6960c4d8fb9288/dist/ammo.wasm.wasm" as="fetch" crossorigin="anonymous" integrity="sha384-HgN7yatv37JwEQHHK1BbN08OnpCFnk4h9XFJULvZ7sL2IAw0mvept2ASi3iCt7yv">
 <script src="https://cdn.jsdelivr.net/gh/regnaio/ammo.js@9ca25a5a8e5e1314ba4d86d1bc6960c4d8fb9288/dist/ammo.wasm.js" integrity="sha384-/Tm8WfPyrpGz6Mwzy7oeRZ2j912C6z7K5PDUGTHJCL1CngR1BXcFKES1m9kUKxyV" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/gh/enable3d/enable3d@v0.26.1/bundles/enable3d.framework.0.26.1.min.js" integrity="sha384-QTy5CYAjKg5FzOXYy6T6GnYx+oRXjOEzFBQMao+DqJBLX+e5Z1uR65+H9sQNHpvH" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js" integrity="sha384-nlUQ8ZqCbvStErob+biJNzSgltf6urV3VGqhfIfzhmg9RXmpeRm76ELw0pYnKlTR" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/stats.js@0.17.0/build/stats.min.js" integrity="sha384-6Bk69P4Sz9X/z+xSnouMa3aujEM8KgF0+RYnGGZOemLXHBlrVuLmyE0N46Ih5MvH" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js" integrity="sha384-8FWZA6BGMXhsfO+BLtrJK0We6gg5o1JyO8xQm6peWDEUs17ACA5ziE/NIAkl9z2k" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.4/dist/iife/reader/index.js" integrity="sha384-PN2+TcV6o3ygq0xnuFCxKBra0Yt4uPsZhoQ/vGYAwE57BrG9nHTvynv6YPyluWaU" crossorigin="anonymous"></script>
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js" as="script" crossorigin="anonymous" integrity="sha384-nlUQ8ZqCbvStErob+biJNzSgltf6urV3VGqhfIfzhmg9RXmpeRm76ELw0pYnKlTR">
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js" as="script" crossorigin="anonymous" integrity="sha384-8FWZA6BGMXhsfO+BLtrJK0We6gg5o1JyO8xQm6peWDEUs17ACA5ziE/NIAkl9z2k">
 <script>
 (() => {
 'use strict'
@@ -1989,8 +1988,7 @@ const HULL_LIB = { url: 'https://cdn.jsdelivr.net/npm/three@0.171.0/examples/jsm
   sri: 'sha384-XgyJyta94KWI7lZhmHx5tVSnRPNxypE/N3sLoba4Rf0lsIu+G8r0T48ohgz3zm+x' }
 const HULL_MAX = 4096
 
-function levelThumb(L, px) {
-  const cv = document.createElement('canvas')
+function levelThumb(L, px, cv = document.createElement('canvas')) {
   cv.width = cv.height = px
   const g = cv.getContext('2d')
   g.fillStyle = '#0a0d13'
@@ -2080,6 +2078,25 @@ async function pinnedUrl(lib, type = 'text/javascript') {
 async function pinnedImport(lib) { return import(await pinnedUrl(lib)) }
 const pinnedWorker = main =>
   new Worker(URL.createObjectURL(new Blob([pinnedUrl + '\n' + pinnedImport + '\n(' + main + ')()'])))
+// libraries as pinned script tags: the room's at startup, never blocking the page; the rest on first use. A failed load is forgotten so the next use retries
+const LIBS = {
+  peer: { url: 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js',
+    sri: 'sha384-nlUQ8ZqCbvStErob+biJNzSgltf6urV3VGqhfIfzhmg9RXmpeRm76ELw0pYnKlTR', global: 'Peer' },
+  stats: { url: 'https://cdn.jsdelivr.net/npm/stats.js@0.17.0/build/stats.min.js',
+    sri: 'sha384-6Bk69P4Sz9X/z+xSnouMa3aujEM8KgF0+RYnGGZOemLXHBlrVuLmyE0N46Ih5MvH', global: 'Stats' },
+  qr: { url: 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js',
+    sri: 'sha384-8FWZA6BGMXhsfO+BLtrJK0We6gg5o1JyO8xQm6peWDEUs17ACA5ziE/NIAkl9z2k', global: 'qrcode' },
+  zxing: { url: 'https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.4/dist/iife/reader/index.js',
+    sri: 'sha384-PN2+TcV6o3ygq0xnuFCxKBra0Yt4uPsZhoQ/vGYAwE57BrG9nHTvynv6YPyluWaU', global: 'ZXingWASM' },
+}
+const loadLib = L => L.p ||= window[L.global] ? Promise.resolve() : new Promise((ok, no) => {
+  const s = document.createElement('script')
+  s.integrity = L.sri; s.crossOrigin = 'anonymous'; s.src = L.url; s.onload = ok
+  s.onerror = () => { L.p = null; s.remove(); no(new Error('Could not load ' + L.url.split('/').slice(-3).join('/') + ': check the connection and try again.')) }
+  document.head.appendChild(s)
+})
+// fn now when the library is here, else once it is
+const withLib = (L, fn, fail) => window[L.global] ? fn() : loadLib(L).then(fn, fail)
 
 // ---------------------------------------------------------------- character
 // dynamic, not btKinematicCharacterController (it rests inside the floor)
@@ -2125,7 +2142,7 @@ function attachBody(c) {
   c.body.setRestitution(0)
   c.body.setDamping(0, 0)
   c.body.setActivationState(CF_NEVER_SLEEP)
-  world.addRigidBody(c.body, ...COLLIDE.capsule)
+  if (!seatOf(c)) world.addRigidBody(c.body, ...COLLIDE.capsule)
   c.body.setCcdMotionThreshold(c.r); c.body.setCcdSweptSphereRadius(c.r)   // re-set each tick (applyIntent)
 
 }
@@ -8673,7 +8690,7 @@ function decalOp({ level, meshes: rows = [], jobs = [], clear, drop = [], hole }
   return { reply: { pos, nrm, uv }, transfer: [pos.buffer, nrm.buffer, uv.buffer] }
 }
 
-let scarAtlas, scarMesh, scarBusy = true
+let scarAtlas, scarMesh, scarBusy = true, scarsLater = false
 const scarQueue = [], scarSurfaces = []
 function clearScars() {
   geoLevelChanged()
@@ -8692,6 +8709,7 @@ function queueScars(list) {
   }
 }
 function prepareScars() {
+  if (scarsLater) return
   const m = scarMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ map: scarMap(), alphaTest: .5,
     depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }))
   m.renderOrder = 1
@@ -9723,6 +9741,7 @@ function initDebug() {
 function toggleDebug(on) {
   dbgOpen = on === undefined ? !dbgOpen : !!on
   document.body.classList.toggle('dbg', dbgOpen)
+  if (dbgOpen && !stats) return void withLib(LIBS.stats, () => { stats || initDebug(); toggleDebug(dbgOpen) }, e => sysMsg('§c' + e.message))
   if (stats) stats.dom.style.display = dbgOpen ? 'block' : 'none'
 }
 
@@ -10650,7 +10669,7 @@ const QR_WASM = { url: 'https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.4/dist/reade
                   sri: 'sha384-uU3W9ksDBq9UOyHhv5S9GtsH9dlOsIMpeSy3WpglpRsLh12aEnMYcjZeSJq5MEum' }
 let qrReady = null
 async function decodeFrame(px, cw, ch) {
-  qrReady ??= fetch(QR_WASM.url, { integrity: QR_WASM.sri }).then(r => r.arrayBuffer())
+  qrReady ??= loadLib(LIBS.zxing).then(() => fetch(QR_WASM.url, { integrity: QR_WASM.sri })).then(r => r.arrayBuffer())
     .then(wasmBinary => ZXingWASM.prepareZXingModule({ overrides: { wasmBinary }, fireImmediately: true }))
     .catch(e => { qrReady = null; throw e })
   await qrReady
@@ -10767,6 +10786,7 @@ const anyoneSees = () => { el('#codenote').textContent = 'Anyone who can see you
 function drawCodeQR() {
   const box = el('#codeqr')
   if (!box) return
+  if (!window.qrcode) return void withLib(LIBS.qr, drawCodeQR, e => { box.textContent = e.message })
   box.innerHTML = ''
   if (!roomCodeStr) return
   // #codeqr has no width while empty; .mbox padding is 44 px
@@ -11362,6 +11382,9 @@ const GUEST_DEAD_MS = 12000      // host: guest silence
 let lastRecvAt = 0
 const lastSeen = new Map()
 let myId = 0, myCid = START, myName = ''
+// guest: hello resent until a welcome gave us an id and a snapshot carries our row
+const HELLO_MS = 500
+let admitted = false, helloAt = 0
 let roomCodeStr = ''
 let outSeq = 0, lastChatSeq = new Map()
 const lastChatAt = new Map()
@@ -11662,6 +11685,7 @@ function applyRoster(list) {
 function startHost() {
   isHost = true; myId = 0; phase = 'connecting'
   roomCodeStr = roomCode()
+  scarsLater = false
   loadLevel(pickedLevel)          // before spawns/bodies
   resultsLeft = 0
   matchLeft = timeLimit
@@ -11718,21 +11742,24 @@ function openHostPeer(attempt) {
       conns.set(id, c)
       lastSeen.set(id, now())
       watchLink(c, id)
-      c.send({ k: 'welcome', id, code: roomCodeStr, lv: levelId, ...levelSeed() })
+      c.send(welcome(id))
     })
     c.on('data', raw => { if (!conns.has(id)) return; countDown(raw); lastSeen.set(id, now()); onHostData(id, decode(raw)) })
     c.on('close', () => {
-      const had = conns.delete(id); players.delete(id); if (dropMates(id)) teamsChanged(); inputs.delete(id); pkSent.delete(id); tierSent.delete(id); objSent.delete(id)
+      const had = conns.delete(id), p = roster.get(id)
+      if (players.has(id)) detachBody(players.get(id))
+      players.delete(id); roster.delete(id); if (dropMates(id)) teamsChanged(); inputs.delete(id); pkSent.delete(id); tierSent.delete(id); objSent.delete(id)
       inputSeq.delete(id); lastChatSeq.delete(id); lastChatAt.delete(id); lastSeen.delete(id)
       inQ.delete(id); inAck.delete(id)
-      const p = roster.get(id)
       if (p) announce('§e' + p.name + ' left')
-      roster.delete(id); dropAvatar(id)
+      dropAvatar(id)
       pushRoster()
       if (serving && had && !conns.size) resetMatch()
     })
   })
 }
+
+const welcome = id => ({ k: 'welcome', id, code: roomCodeStr, lv: levelId, ...levelSeed() })
 
 // BOTS row i = BOT_ID0 + i; other ids below it, wrapping, skipping any in use
 function takeId() {
@@ -11870,7 +11897,7 @@ function setMode(m) {
 function onHostData(id, d) {
   if (!d) return
   if (d.k === 'hello') {
-    if (players.has(id)) return
+    if (players.has(id)) { const c = conns.get(id); if (!(now() - c.welcomedAt < HELLO_MS)) c.welcomedAt = now(), c.send(welcome(id)); return }
     let cid = clamp(d.cid | 0, 0, CHARS.length - 1)
     if (CHARS[cid].hidden) cid = START
     if (!sideOffered(CHARS[cid].side)) {
@@ -11960,8 +11987,9 @@ function onHostData(id, d) {
 
 function startJoin(code) {
   isHost = false; phase = 'connecting'
+  scarsLater = false; if (!scarMesh) prepareScars()
   roomCodeStr = code.trim().toUpperCase()
-  predicted = newChar(myCid, 6, 0)
+  predicted = newChar(myCid, 6, 0); admitted = false
   setStatus('Connecting…')
   peer = new Peer()
   peer.on('error', e => {
@@ -11977,7 +12005,7 @@ function startJoin(code) {
     c.on('open', () => {
       connected = true
       watchLink(c, null)
-      c.send({ k: 'hello', cid: myCid, name: myName })
+      c.send({ k: 'hello', cid: myCid, name: myName }); helloAt = now()
       beginPlay()
     })
     c.on('data', raw => { countDown(raw); onGuestData(decode(raw)) })
@@ -12098,7 +12126,7 @@ function onGuestData(d) {
     burnHeard.set(f[10], now())
   }
   const mine = (d.P || []).find(p => p[0] === myId)
-  if (mine) reconcile(mine)
+  if (mine) { admitted ||= myId > 0; reconcile(mine) }
 }
 
 // lag in ticks; bounded: the host is not trusted
@@ -12300,7 +12328,7 @@ function remoteAt(t) {
     for (const [s, id] of objSeats) {
       const c = out.find(p => p.id === id), o = c && ob.find(o => o.id === s >> 3), K = o && OBJECTS[o.k]
       const V = vehicleOf(K)
-      const C = rowFor(id, c.cid)
+      const C = c && rowFor(id, c.cid)
       if (V && V.seats[s & 7]) [c.x, c.y, c.z] = seatAt({ ...o, at0: hullAt(K) }, onSeat(V.seats[s & 7], C))
     }
   }
@@ -12564,6 +12592,7 @@ function stepSim(t) {
     rttSeq++; rttSentAt = t
     sendHost({ k: 'ping', t, s: rttSeq })
   }
+  if (!isHost && connected && !admitted && t - helloAt > HELLO_MS) { helloAt = t; sendHost({ k: 'hello', cid: myCid, name: myName }) }
 
   let steps = 0
   while (acc >= TICK && steps < MAX_CATCHUP) {
@@ -12673,7 +12702,7 @@ function sendSnapshot(s) {
     if (!had) tierSent.set(gid, had = new Map())
     const out = [], fx = me ? -Math.sin(me.yaw) : 0, fz = me ? -Math.cos(me.yaw) : 0
     for (const r of rows) {
-      const dx = r.c ? r.c.x - me.x : 0, dz = r.c ? r.c.z - me.z : 0
+      const dx = r.c && me ? r.c.x - me.x : 0, dz = r.c && me ? r.c.z - me.z : 0
       const due = r.id === gid || !me || !r.c ||
         had.get(r.id) !== r.state ||
         (seq + r.id) % k === 0 ||
@@ -12715,12 +12744,8 @@ const drawing = () => !serving && !document.hidden
 let frameFails = 0, lastFrameFail = ''
 function frameFailed(where, e) {
   frameFails++
-  const what = where + ': ' + ((e && e.message) || e)
+  lastFrameFail = where + ': ' + ((e && e.message) || e)
   try { console.error('[SKs] frame failed in ' + where, e) } catch (err) {}
-  if (what === lastFrameFail) return
-  lastFrameFail = what
-  sysMsg('§cA frame failed in §f' + where + '§c — §7' + what.slice(0, 140))
-  sysMsg('§8The game keeps running. F3 counts them; please report this.')
 }
 
 let drawT0 = 0
@@ -13124,6 +13149,7 @@ class Arena extends ENABLE3D.Scene3D {
       initServerPanel()
       wireMenu()
       setStatus('Ready.', 'ok')
+      thumbsOn = true; idleThumbs()
     } catch (e) {
       console.error(e)
       setStatus('Startup failed: ' + ((e && e.message) || e), 'err')
@@ -13182,12 +13208,17 @@ function sideTabs(wrap, on, pick) {
 }
 
 let pickedLevel = 0
+// a thumbnail compiles its level: drawn when idle after Ready
+const thumbsDue = [], paintThumbs = () => { for (const f of thumbsDue.splice(0)) f() }, idleThumbs = () => (window.requestIdleCallback || setTimeout)(paintThumbs)
+let thumbsOn = false
 function buildLevelCards(wrap = el('#levels'), sel = pickedLevel, pick = i => { pickedLevel = i }, numbered) {
   if (!wrap) return
   LEVELS.forEach((L, i) => {
     const d = document.createElement('div')
     d.className = 'card lv' + (i === sel ? ' sel' : '')
-    d.appendChild(levelThumb(L, 128))
+    const cv = d.appendChild(document.createElement('canvas'))
+    cv.width = cv.height = 128
+    thumbsDue.push(() => levelThumb(L, 128, cv))
     const nm = document.createElement('div')
     nm.className = 'nm'
     nm.textContent = (numbered ? i + 1 + ' ' : '') + L.name
@@ -13195,6 +13226,7 @@ function buildLevelCards(wrap = el('#levels'), sel = pickedLevel, pick = i => { 
     d.onclick = () => { pick(i); pickCard(wrap, d) }
     wrap.appendChild(d)
   })
+  if (thumbsOn) idleThumbs()
 }
 const markLevel = (wrap, i) => [...wrap.children].forEach((d, k) => d.classList.toggle('sel', k === i))
 
@@ -13211,6 +13243,8 @@ function buildCharCards(side = CHARS[myCid].side) {
   say(CHARS[myCid])
 }
 
+scarsLater = true            // the landing page: scars and their worker wait for a game
+for (const L of [LIBS.peer, LIBS.qr]) loadLib(L).catch(() => {})       // preloaded in the head; Host / Join wait for them only if they beat them
 el('#host-btn').disabled = true
 el('#serve-btn').disabled = true
 el('#join-btn').disabled = true
@@ -13251,7 +13285,7 @@ function wireMenu() {
     myName = cleanName(nameIn.value) || suggestedName()
     // must run in the click: Fullscreen needs a user gesture
     if (IS_TOUCH && FS_OK && !isFullscreen()) enterFullscreen()
-    fn()
+    withLib(LIBS.peer, fn, e => setStatus(e.message, 'err'))
     sfxGesture()
   }
   el('#host-btn').disabled = false
