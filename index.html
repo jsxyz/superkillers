@@ -1555,13 +1555,12 @@ const READINGS = {
   waitress: 'Laz9ZZ08GdvHQfJon0/YKozoaYc0Uyo+KRgHMHWCiDvzOhn14Q7sd2OkTfJ+9CBgihvrSE9g7INkq+VfRUTxKHNinOdl9H1IpqKG5iAUn4xwY46tMmgdokhxMQAx02GXDLhlwy4ZaEAAGCiY1NTGpkv6FVD7OjPgMcqKZbe1MgSxaEOxPVGGeDQ4NXpp9TWLfG3xy1GMxJaF4u7koix3YnUe6PjLkSKgDi5S3CnXe9SbgFp6c7eW9JpN+XHLjlsu2XbLcgOQHIBqiD1Ask2yZIus4JKzDXHHotnKrlcuUB0BfhhS1wg5baZxNGGlR4SmdQbEeSkgmmVUv6avOnmtCAClRNU/qfpQgQeg',
   hot: 'PYm9EGZZVajNSpfpL0OaEA76u7TLrEpplRvHSuskA5PoUkNeO3PTnpSw5syYSD1B6g9QeoPUCmBTB6gUwKYFMCmBTApgUn7xb4KVMPKrhrzspz81iZFN2U5gCwBBjMYUiSADn74PUHqD083PYm9EGZZVajNSpfpL0OaEA76u7TLrEpplRvHSuskA5PoUkNeO3PTnpSw5syYSD1B6g9QeoPUCmBTB6gUwKYFMCmBTApgUn7xb4KVMPKrhrzspz81iZFN2U5gCwBBjMYUiSADn74PUHqD083A=',
 }
-const RADIO_START = -1          // a vehicle's station until someone tunes it: off
-// B or RADIO in a vehicle; tracks: audio URLs (MP3 plays everywhere)
+const RADIO_START = -1          // a vehicle's station until a driver tunes it: off
+// B or RADIO in a vehicle changes station, and a driver's last station goes with them into the next vehicle. A station
+// plays its tracks in turn; a track is an audio URL (MP3 plays everywhere) or { url, end }: on to the next at `end` s
 const RADIO = [
   { name: 'Moon Prism FM', tracks: [
-    'https://static.wikia.nocookie.net/sailormoon/images/5/51/Moonlight_Densetsu_%28DALI%2C_TV_Size%29.mp3/revision/latest?cb=20260917192819',
-  ] },
-  { name: 'Eurobeat FM', tracks: [
+    { url: 'https://static.wikia.nocookie.net/sailormoon/images/5/51/Moonlight_Densetsu_%28DALI%2C_TV_Size%29.mp3/revision/latest?cb=20260917192819', end: 108 },
     'https://static.wikia.nocookie.net/fridaynightfunking/images/5/5c/Max_Coveri_-_RUNNING_IN_THE_90%27S_%28Initial_D_~D_Selection~_Ver.%29.mp3/revision/latest?cb=20250509233605',
   ] },
 ]
@@ -9922,7 +9921,7 @@ function detectQuality() {
 }
 
 const settings = { sens: 1, fov: 72, shadows: true, quality: 'high', sound: true, volume: 0.8,
-                   qualityChosen: false, viewChosen: false, voices: false, rate: 0, view: 'third', distance: 'normal' }
+                   qualityChosen: false, viewChosen: false, voices: false, rate: 0, station: RADIO_START, view: 'third', distance: 'normal' }
 let qualityAuto = ''
 
 function loadSettings() {
@@ -9939,6 +9938,7 @@ function loadSettings() {
   settings.sound = settings.sound !== false
   settings.voices = settings.voices === true
   settings.radio = settings.radio !== false
+  settings.station = Number.isInteger(settings.station) && settings.station >= -1 && settings.station < RADIO.length ? settings.station : RADIO_START
   settings.volume = clamp(Number.isFinite(+settings.volume) ? +settings.volume : 0.8, 0, 1)
   settings.rate = SNAP_STEPS.includes(+settings.rate) ? +settings.rate : 0
   settings.balance = settings.balance !== false
@@ -10425,30 +10425,37 @@ function sfxJet(on, who) {
 }
 
 // ---- radio
-// one element per track, kept: one download a session
-const radio = { on: -1, k: 0, tried: 0, fail: 0, a: null }, radioEls = new Map()
+// one element per track, kept: one download a session; radioAt: the track each station is on
+const radio = { on: -1, k: 0, tried: 0, fail: 0, a: null, end: Infinity, car: undefined }, radioEls = new Map(), radioAt = new Map()
 let radioOf = new Map()
 function radioSeat() {                 // [vehicle, drives, station]
   if (isHost) { const o = objs.find(o => o.V && o.riders.includes(myId)); return o && [o.id, o.riders[0] === myId, o.radio] }
   for (const [k, p] of objSeats) if (p === myId) return [k >> 3, !(k & 7), radioOf.get(k >> 3) ?? RADIO_START]
 }
 function radioTick() {
+  const d = settings.radio && radioSeat()
+  if (d && d[1] && radio.car !== d[0] && d[2] !== settings.station) radioTune(d[0], settings.station)
+  radio.car = d && d[1] ? d[0] : undefined
   const s = settings.radio && radioSeat(), want = s && sfxWanted() ? s[2] : -1
   hud('invehicle', document.body, '.invehicle', !!s && phase === 'playing')
   hud('radio', el('#radio'), 'textContent', !s ? '' : RADIO[s[2]] ? RADIO[s[2]].name + (radio.fail && radio.on === s[2] ? ' — unavailable' : '') : 'Radio off')
-  if (want !== radio.on) { radio.on = want; radio.k = radio.tried = 0; radioPlay() }
+  if (want !== radio.on) { radio.on = want; radio.k = radioAt.get(want) ?? 0; radio.tried = 0; radioPlay() }
   if (radio.a) radio.a.volume = settings.volume ** 2 * SFX_HEAD
 }
 function radioCycle() {
   const s = settings.radio && radioSeat(), n = s && (s[2] + 1 < RADIO.length ? s[2] + 1 : -1)
   if (!s || !s[1]) return
-  if (isHost) objs.find(o => o.id === s[0]).radio = n
+  settings.station = n; saveSettings()
+  radioTune(s[0], n)
+}
+function radioTune(id, n) {
+  if (isHost) objs.find(o => o.id === id).radio = n
   else sendHost({ k: 'radio', s: n })
 }
 function radioPlay(fail) {
   radio.a?.pause()
   radio.a = null; radio.fail = fail
-  const st = RADIO[radio.on], url = st && !fail && st.tracks[radio.k]
+  const st = RADIO[radio.on], tr = st && !fail && st.tracks[radio.k], url = tr?.url ?? tr
   if (!url) return
   let a = radioEls.get(url)
   if (!a) {
@@ -10456,15 +10463,17 @@ function radioPlay(fail) {
     a.src = url
     a.onerror = () => a === radio.a && radioNext(1)
     a.onended = () => a === radio.a && radioNext(0)
+    a.ontimeupdate = () => { if (a === radio.a && a.currentTime >= radio.end) { a.currentTime = 0; radioNext(0) } }
   }
   if (a.error) return radioNext(1)
-  radio.a = a
+  radio.a = a; radio.end = tr.end ?? Infinity
   if (a.ended) a.currentTime = 0
   a.play().catch(() => {})
 }
 function radioNext(fail) {
   const n = RADIO[radio.on].tracks.length
   radio.tried = fail ? radio.tried + 1 : 0; radio.k = (radio.k + 1) % n
+  radioAt.set(radio.on, radio.k)
   radioPlay(radio.tried >= n)
 }
 function takeRadio(r) {
