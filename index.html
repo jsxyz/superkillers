@@ -4417,7 +4417,9 @@ function recordHistory(t, all) {
 function rewindTargets(all, shooter, viewT) {
   if (hist.length < 2 || !isFinite(viewT)) return all
   const newest = hist[hist.length - 1].t
-  const t = clamp(viewT, Math.max(hist[0].t, newest - MAX_REWIND), newest)
+  const _c = shooter && shooter.id > 0 && conns.get(shooter.id)
+  const _cap = _c && _c.rtt > 0 ? clamp(_c.rtt + 300, MAX_REWIND, 1000) : MAX_REWIND
+  const t = clamp(viewT, Math.max(hist[0].t, newest - _cap), newest)
   let a = hist[0], b = hist[hist.length - 1]
   for (let i = hist.length - 1; i > 0; i--) {
     if (hist[i - 1].t <= t && t <= hist[i].t) { a = hist[i - 1]; b = hist[i]; break }
@@ -11378,8 +11380,8 @@ function fadeChat(t) {
 let phase = 'menu'
 let isHost = false, connected = false, peer = null
 let kickedBy = null
-const LINK_DEAD_MS = 3500        // guest: host silence
-const ICE_GRACE_MS = 1200        // 'disconnected' can recover; 'failed' cannot
+const LINK_DEAD_MS = 8000        // guest: host silence
+const ICE_GRACE_MS = 4000        // 'disconnected' can recover; 'failed' cannot
 const GUEST_DEAD_MS = 12000      // host: guest silence
 let lastRecvAt = 0
 const lastSeen = new Map()
@@ -11958,6 +11960,7 @@ function onHostData(id, d) {
     if (c && c.open) { try { c.send(JSON.stringify({ k: 'pong', t: d.t, s: d.s | 0 })) } catch (e) {} }
     return
   }
+  if (d.k === 'rtt') { const c = conns.get(id); if (c) c.rtt = clamp(+d.ms || 0, 0, 2000); return }
   if (d.k === 'radio') { const o = objs.find(o => o.V && o.riders[0] === id)
     if (o && Number.isInteger(d.s) && d.s >= -1 && d.s < RADIO.length) o.radio = d.s; return }
   if (d.k === 'cap') {
@@ -12060,8 +12063,10 @@ function onGuestData(d) {
     if ((d.s | 0) !== rttSeq) return
     rttLog.push(now() - d.t)
     if (rttLog.length > RTT_KEEP) rttLog.shift()
+    const _wasRttMax = rttMax
     rtt = Math.min(...rttLog)
     rttMax = Math.max(...rttLog)
+    if (!isHost && connected && (rttMax - _wasRttMax > 20 || _wasRttMax - rttMax > 20 || _wasRttMax < 0)) sendHost({ k: 'rtt', ms: rttMax | 0 })
     return
   }
   if (d.k === 'lag') { onLag(d.n); return }
@@ -12558,14 +12563,16 @@ function stopBg() {
   last = now()            // no catch-up for the hidden gap
 }
 
-function checkLiveness(t) {
+function checkLiveness(t, own) {
   if (!connected) return
   if (!isHost) {
+    if (own) { lastRecvAt = t; return }
     if (lastRecvAt && t - lastRecvAt > LINK_DEAD_MS) {
       endSession('Disconnected', 'The host stopped responding.', true)
     }
     return
   }
+  if (own) { for (const id of lastSeen.keys()) lastSeen.set(id, t); return }
   for (const [id, seen] of [...lastSeen]) {
     if (t - seen <= GUEST_DEAD_MS) continue
     const c = conns.get(id)
@@ -12575,14 +12582,14 @@ function checkLiveness(t) {
 }
 
 function stepSim(t) {
-  let dt = (t - last) / 1000
+  let dt = (t - last) / 1000, own = dt > 1
   last = t
   if (dt > 0.25) dt = 0.25
   fps = fps * 0.92 + (1 / Math.max(dt, 1e-4)) * 0.08
   if (lagGive > 0) lagGive--
   acc += dt
   if (phase !== 'playing') acc = 0
-  else checkLiveness(t)
+  else checkLiveness(t, own)
   sampleInput()
 
   if (t - rateAt >= 1000) {
