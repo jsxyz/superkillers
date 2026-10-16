@@ -8209,7 +8209,7 @@ function setAnim(id, want, dt, t, hold, still) {
 }
 let turnIn, turnBy
 const diving = p => !!p.dove || p.anim === 6
-const flightOf = p => (p.flying || p.anim === 5) && (flyFast(p) ? 'fly' : p.vy > 2 ? 'ascend' : p.vy < -2 ? 'descend' : 'hover')
+const flightOf = (p, prev) => (p.flying || p.anim === 5) && (Math.hypot(p.vx || 0, p.vz || 0) > FLY_V * (prev === 'fly' ? 0.6 : 1) ? 'fly' : p.vy > 2 ? 'ascend' : p.vy < -2 ? 'descend' : 'hover')
 const turnCache = new WeakMap()
 function turnsOf(root, list) {
   let byList = turnCache.get(root)
@@ -10771,7 +10771,7 @@ let roomTagOn = false
 function setRoomTag(on) {
   roomTagOn = !!on && !!roomCodeStr
   const tag = el('#roomtag')
-  if (tag) tag.textContent = roomTagOn ? roomCodeStr : ''
+  if (tag) tag.textContent = roomTagOn ? codeText() : ''
   document.body.classList.toggle('tagon', roomTagOn)
   const btn = el('#code-pin')
   if (btn) btn.textContent = roomTagOn ? 'Hide from corner' : 'Show in corner'
@@ -10789,6 +10789,7 @@ function drawCodeQR() {
   if (!window.qrcode) return void withLib(LIBS.qr, drawCodeQR, e => { box.textContent = e.message })
   box.innerHTML = ''
   if (!roomCodeStr) return
+  if (codeText() === OPENING) return void (box.textContent = OPENING)
   // #codeqr has no width while empty; .mbox padding is 44 px
   const card = box.parentElement
   const wide = (card && card.clientWidth ? card.clientWidth - 44 : 280)
@@ -10798,7 +10799,7 @@ function drawCodeQR() {
 
 function revealCode() {
   const rev = el('#codereveal')
-  rev.textContent = roomCodeStr
+  rev.textContent = codeText()
   rev.classList.remove('masked')
   anyoneSees()
 }
@@ -10810,6 +10811,7 @@ function dropSelection() {
 }
 
 async function copyCode() {
+  if (codeText() === OPENING) return
   let ok = false
   // no navigator.clipboard on file://: selection trick, then give up
   try {
@@ -11385,7 +11387,8 @@ let myId = 0, myCid = START, myName = ''
 // guest: hello resent until a welcome gave us an id and a snapshot carries our row
 const HELLO_MS = 500
 let admitted = false, helloAt = 0
-let roomCodeStr = ''
+let roomCodeStr = '', roomOpen = false             // a host's code, claimed on the signaling server once open
+const OPENING = 'opening…', codeText = () => isHost && !roomOpen ? OPENING : roomCodeStr
 let outSeq = 0, lastChatSeq = new Map()
 const lastChatAt = new Map()
 const CHAT_MIN_MS = 250        // chat flood gate: we relay it
@@ -11684,7 +11687,7 @@ function applyRoster(list) {
 
 function startHost() {
   isHost = true; myId = 0; phase = 'connecting'
-  roomCodeStr = roomCode()
+  roomCodeStr = roomCode(); roomOpen = false
   scarsLater = false
   loadLevel(pickedLevel)          // before spawns/bodies
   resultsLeft = 0
@@ -11702,6 +11705,7 @@ function startHost() {
   setStatus('Waiting for players…')
 
   openHostPeer(0)
+  if (!serving) { connected = true; beginPlay() }       // playable at once; the room opens behind it
 }
 
 function openHostPeer(attempt) {
@@ -11709,22 +11713,26 @@ function openHostPeer(attempt) {
   peer = new Peer(roomCodeStr)
   peer.on('error', e => {
     // open room: its code IS the room; re-rolling on 'unavailable-id' kills every guest's peer
-    if (phase === 'playing') {
+    if (phase === 'playing' && roomOpen) {
       if (e.type === 'unavailable-id') relinkLater()
       return
     }
+    const note = (m, k) => phase === 'playing' ? sysMsg((k ? '§c' : '§7') + m) : setStatus(m, k)
     if (e.type === 'unavailable-id' && attempt < 4) {
       try { peer.destroy() } catch (err) {}
       roomCodeStr = roomCode()
-      setStatus('Room code taken, re-rolling…')
+      note('Room code taken, re-rolling…')
       openHostPeer(attempt + 1)
       return
     }
-    if (e.type === 'unavailable-id') { setStatus('Could not claim a room code.', 'err'); return }
-    setStatus('Signaling error: ' + e.type, 'err')
+    if (e.type === 'unavailable-id') { note('Could not claim a room code.', 'err'); return }
+    note('Signaling error: ' + e.type, 'err')
   })
   peer.on('open', () => {
     relinkTries = 0
+    if (!roomOpen) { roomOpen = true; setRoomTag(roomTagOn)
+      if (el('#codereveal')?.textContent === OPENING) revealCode()
+      if (el('#codeqr')?.textContent === OPENING) drawCodeQR() }
     if (phase === 'playing') return
     connected = true
     if (serving) beginServing(); else beginPlay()
@@ -12207,17 +12215,15 @@ function reconcile(a) {
     return
   }
 
-  predicted.jLock = !!a[17]
-  predicted.fuel = a[12]
-
   reconcileErr = predAt
     ? Math.hypot(predAt.x - a[1], predAt.y - a[2], predAt.z - a[3])
     : Infinity
-  if (reconcileErr <= REWIND_EPS && objErr <= REWIND_EPS && (predAt.web || 0) === web) { replaySteps = 0; return }
+  if (reconcileErr <= REWIND_EPS && objErr <= REWIND_EPS && (predAt.web || 0) === web && Math.abs(predAt.fuel - a[12]) <= 0.006 && predAt.jl === !!a[17]) { replaySteps = 0; return }
 
   restore()
   restoreChar(predicted, a[1], a[2], a[3], a[14], a[10], a[15], a[12])
   tie(predicted, web)
+  predicted.jLock = !!a[17]
   const n = Math.min(pending.length, MAX_PENDING)
   for (let i = 0; i < n; i++) {
     const e = pending[i]
@@ -12612,7 +12618,7 @@ function stepSim(t) {
       tickChars([predicted], () => inp, TICK)
       msPhys = msPhys * 0.9 + (now() - _p1) * 0.1
       const seq = ++outSeq
-      pending.push({ seq, inp, x: predicted.x, y: predicted.y, z: predicted.z, web: predicted.web || 0, ob: objs.map(o => [o.id, ...objState(o)]) })
+      pending.push({ seq, inp, x: predicted.x, y: predicted.y, z: predicted.z, fuel: predicted.fuel, jl: !!predicted.jLock, web: predicted.web || 0, ob: objs.map(o => [o.id, ...objState(o)]) })
       // a dropped unacked input breaks the replay chain: flag it
       while (pending.length > MAX_PENDING) { pending.shift(); predLost = true }
       // [f, r, bits, yaw, pitch, renderT (host clock), d]; d and 1e-4 angles only on a shot
@@ -12778,7 +12784,8 @@ function faceYaw(id, c, anim, own, t, dt, firing) {
   if (!a) return c.yaw
   const G = GUNS[a.shotGun], C = GUNS[a.chargeGun], y = a.face ?? c.yaw
   const attack = firing || t - a.shotAt < Math.max(FACE_MS, G?.punchMs ?? G?.rate * 1000) || t - a.chargeAt < (C?.windup ?? 0) * 1000
-  const want = own || attack || anim === 0 ? c.yaw : anim === 1 && Math.hypot(c.vx, c.vz) > 0.8 ? Math.atan2(-c.vx, -c.vz) : y, k = dt * FACE_RATE * (own ? 4 : attack ? 2 : 1)
+  const flyWant = anim === 5 && Math.hypot(c.vx, c.vz) > FLY_V * 0.6 ? Math.atan2(-c.vx, -c.vz) : null
+  const want = attack ? c.yaw : own && flyWant === null ? c.yaw : flyWant ?? (anim === 0 ? c.yaw : anim === 1 && Math.hypot(c.vx, c.vz) > 0.8 ? Math.atan2(-c.vx, -c.vz) : y), k = dt * FACE_RATE * (own ? 4 : attack ? 2 : 1)
   return a.face = y + clamp(Math.atan2(Math.sin(want - y), Math.cos(want - y)), -k, k)
 }
 const lifts = new Set(), sits = new Set(), carries = new Set()
@@ -12809,7 +12816,7 @@ function draw(dt, t) {
     pkl = snapPk
   }
 
-  const obl = easeHolds(objectsDrawn(others), t), holdOf = (id, p) => sits.has(id) ? 'sit' : lifts.has(id) ? 'lift' : p.web > 0 ? 'swing' : (diving(p) ? 'dive' : flightOf(p))
+  const obl = easeHolds(objectsDrawn(others), t), holdOf = (id, p) => sits.has(id) ? 'sit' : lifts.has(id) ? 'lift' : p.web > 0 ? 'swing' : (diving(p) ? 'dive' : flightOf(p, avatars.get(id)?.hold))
   lifts.clear(); sits.clear(); carries.clear()
   for (const o of obl) (o.K.carry ? carries : lifts).add(o.heldBy ?? objHeld.get(o.id) ?? o.liftBy)
   for (const p of objSeats.values()) sits.add(p)
