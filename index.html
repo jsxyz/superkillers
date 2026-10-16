@@ -1733,7 +1733,8 @@ const INPUT_DUP = 5
 // Never drain a guest's input queue: the loop keeps only the LAST (draining n drops n-1); the guest gives back
 const INQ_WINDOW_MS = 1000 // over which a queue's floor is its surplus
 const INQ_FLOOR = 2        // ticks of jitter margin never asked back for
-const LAG_GIVE_FRAMES = 15 // a guest gives back at most one tick per this many
+const LAG_GIVE_TICKS = 15 // a guest gives back at most one tick per this many
+const SYNC_RATE = -60 * Math.log(0.92)      // /s a guest's render clock eases onto the host's
 const HIST_MS = 1000
 const MAX_REWIND = maxRewind(SNAP_MIN)   // 500 ms at any rate; older shots lead
 const RESPAWN_S = 2.2
@@ -3651,6 +3652,8 @@ function wallLook(inp, k, dt) {
   const step = clamp(k * WALL_LOOK - looked, -dt * WALL_LOOK / 0.25, dt * WALL_LOOK / 0.25)
   looked += step; inp.pitch = clamp(inp.pitch + step, -PITCH_MAX, PITCH_MAX)
 }
+// a tick's look up a wall run: the aim the sim reads, stepped with it
+const lookStep = (me, inp) => me && wallLook(inp, animOf(me) === 4 && rowOf(me)?.wallRun ? wallUp(me) : 0, TICK)
 const camHold = { r: 0, from: 0, to: 0, at: 0 }
 let heldF = 1
 function updateCamera(me, inp, cam, firstPerson) {
@@ -4501,7 +4504,7 @@ function recordHistory(t, all) {
   const rec = []
   for (const c of all) rec.push([c.id, c.x, c.y, c.z, c.dead, c.prot, axisOf(c)])
   hist.push({ t, rec })
-  while (hist.length > 1 && t - hist[0].t > HIST_MS) hist.shift()
+  while (hist.length > 1 && t - hist[1].t >= HIST_MS) hist.shift()
 }
 
 // stand-ins at viewT; .live is the real character, for damage
@@ -12688,7 +12691,7 @@ function remoteAt(t) {
   return out
 }
 // ---------------------------------------------------------------- loop
-let acc = 0, last = now(), snapAcc = 0
+let acc = 0, last = now(), snapAcc = 0, tickAt = 0      // ms: when the last tick fell due
 // server panel: rates per second, bytes per session
 let ticksRun = 0, tickRate = 0, snapsOut = 0, snapOutRate = 0, bytesUpAll = 0, bytesDownAll = 0
 
@@ -12838,7 +12841,7 @@ function hostTick(dt) {
   const touch = objs.some(o => o.thrownBy !== undefined || o.V && (!o.parked || o.body.isActive())) ? touching(all) : []
   strikeObjects(all, dt, touch, credit)
   vehicleTick(all, credit, touch, dt)
-  recordHistory(now(), all)
+  recordHistory(tickAt, all)
 }
 
 
@@ -12928,7 +12931,6 @@ function stepSim(t) {
   last = t
   if (dt > 0.25) dt = 0.25
   fps = fps * 0.92 + (1 / Math.max(dt, 1e-4)) * 0.08
-  if (lagGive > 0) lagGive--
   acc += dt
   if (phase !== 'playing') acc = 0
   else checkLiveness(t, own)
@@ -12952,11 +12954,12 @@ function stepSim(t) {
 
   let steps = 0
   while (acc >= TICK && steps < MAX_CATCHUP) {
-    acc -= TICK; steps++
+    acc -= TICK; steps++; tickAt = t - acc * 1000
+    if (lagGive > 0) lagGive--
     if (LV.grow && (isHost || connected)) growTick()
-    if (isHost && players.size) { hostTick(TICK); ticksRun++; input.sw = input.sh = input.use = false }
+    if (isHost && players.size) { hostTick(TICK); lookStep(players.get(0), input); ticksRun++; input.sw = input.sh = input.use = false }
     else if (connected && predicted && lagOwed > 0 && lagGive <= 0) {
-      lagOwed--; lagGive = LAG_GIVE_FRAMES
+      lagOwed--; lagGive = LAG_GIVE_TICKS
     }
     else if (connected && predicted) {
       predicted.pitch = input.pitch
@@ -12966,6 +12969,7 @@ function stepSim(t) {
       const _p1 = now()
       predictObjects(predicted)
       tickChars([predicted], () => inp, TICK)
+      lookStep(predicted, input)
       msPhys = msPhys * 0.9 + (now() - _p1) * 0.1
       const seq = ++outSeq
       pending.push({ seq, inp, x: predicted.x, y: predicted.y, z: predicted.z, fuel: predicted.fuel, jl: !!predicted.jLock, web: predicted.web || 0, ob: objs.map(o => [o.id, ...objState(o)]) })
@@ -12992,7 +12996,7 @@ function stepSim(t) {
       snapAcc -= every
       if (snapAcc > every) snapAcc = 0
       snapsOut++
-      sendSnapshot({ k: 's', t,
+      sendSnapshot({ k: 's', t: tickAt,
         P: [...players].map(([id, c]) => packPlayer(id, c)),
         pk: pickups.filter(p => p.respawn <= 0).map(p => [p.x, p.y, p.z, p.gun, p.pow, p.heal]),
         mo: resultsLeft > 0 ? r2(resultsLeft) : 0,
@@ -13218,7 +13222,7 @@ function draw(dt, t) {
     me = predicted
     if (!me) return
     renderT += dt * 1000
-    if (buf.length) renderT += ((t - offBase - interpD) - renderT) * 0.08
+    if (buf.length) renderT += ((t - offBase - interpD) - renderT) * (1 - Math.exp(-dt * SYNC_RATE))
     if (fxWait.length) {
       let n = 0
       while (n < fxWait.length && fxWait[n].t <= renderT) n++
@@ -13272,7 +13276,6 @@ function draw(dt, t) {
   sfxFrame(me, others, t, obl)
   radioTick()
 
-  wallLook(input, animOf(me) === 4 && rowOf(me)?.wallRun ? wallUp(me) : 0, dt)
   const cam = updateCamera(me, input, camera, firstPerson)
   drawRadar(me, others, t)
   const held = cam.ray && obl.find(o => !o.K.carry && (o.heldBy ?? objHeld.get(o.id)) === myId)
