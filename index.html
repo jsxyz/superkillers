@@ -954,7 +954,9 @@ const MODELS = {
     stand: [['body_IK', -0.18, 0, 0], ['leg_upper', 0.554, 0, 0], ['leg_lower', -0.647, 0, 0]],
     // stand/rest: [bone, x, y, z] rad; rest applies on top of stand; sway: [time scale ms, turns]
     crouchRun: [['leg_upper', -0.6, 0, 0], ['leg_lower', 1, 0, 0], ['body_upper', 0.35, 0, 0]],      // a crouched run, over the walk
-    rest: [['leg_upperL', 0.26, 0, 0], ['leg_lowerL', -0.45, 0, 0], ['leg_upperL', 0, 0, -0.05], ['leg_upperR', 0, 0, 0.05], ['body_lower', 0, 0, 0.11],
+    // a knee's and an elbow's turn about its hinge (x) from the rig rest, straight: each bends one way only
+    hinge: { leg_lower: [0, 3], arm_lower: [-3, 0] },
+    rest: [['leg_upperL', -0.26, 0, 0], ['leg_lowerL', 0.45, 0, 0], ['leg_upperL', 0, 0, -0.05], ['leg_upperR', 0, 0, 0.05], ['body_lower', 0, 0, 0.11],
       ['body_upper', 0, 0, -0.16], ['arm_upperL', 0, 0, 0.04], ['arm_upperR', 0, 0, 0.17], ['arm_lower', 0.25, 0, 0]],
     sway: [[640, [['body_upper', 0.015, 0, 0]]], [1100, [['body_lower', 0, 0, 0.02], ['leg_upperL', 0, 0, -0.012], ['leg_upperR', 0, 0, 0.012]]]],
     bones: { leg_upper: [1, 2.09, 1], leg_lower: [1, 2.09, 1.25], arm_upper: [1, 1.46, 1], arm_lower: [1, 1.46, 1], head: [0.69, 0.69, 0.69], body_upper: [0.71, 1.09, 1], body_lower: [1, 1.15, 1] },
@@ -8288,7 +8290,22 @@ function setAnim(id, want, dt, t, hold, still) {
   if (want === 'crouchRun') { const k = a.mesh.children[0], y = ankleOf(a.mesh); turn(a.mesh, MODELS[a.spec.model || 'man'].crouchRun); k.position.y += y - ankleOf(a.mesh) }
   posePunch(a, t, false, hold || want === 4 && !a.spec.wallRun && 'climb')
   fitCeiling(a, t)
+  bendLimit(a)
 }
+// a knee or elbow posed past straight is turned back to it about its hinge
+function bendLimit(a) {
+  const H = MODELS[a.spec.model || 'man'].hinge, S = H && a.mesh.getObjectByProperty('isSkinnedMesh', true)?.skeleton
+  if (!S) return
+  const inv = b => S.boneInverses[S.bones.indexOf(b)], q = bendQ ||= new THREE.Quaternion()
+  a.hinges ||= S.bones.filter(b => H[b.name.slice(0, -1)]).map(b => [b, new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().copy(inv(b.parent)).multiply(inv(b).clone().invert())).invert(), H[b.name.slice(0, -1)]])
+  for (const [b, r, [lo, hi]] of a.hinges) {
+    q.copy(r).multiply(b.quaternion)
+    const t = 2 * Math.atan2(q.w < 0 ? -q.x : q.x, Math.abs(q.w))
+    if (t < lo || t > hi) b.quaternion.multiply(q.setFromAxisAngle(bendX, Math.min(hi, Math.max(lo, t)) - t))
+  }
+}
+let bendQ
+const bendX = new THREE.Vector3(1, 0, 0)
 let turnIn, turnBy
 const diving = p => !!p.dove || p.anim === 6
 const flightOf = (p, prev) => (p.flying || p.anim === 5) && (Math.hypot(p.vx || 0, p.vz || 0) > FLY_V * (prev === 'fly' ? 0.6 : 1) ? 'fly' : p.vy > 2 ? 'ascend' : p.vy < -2 ? 'descend' : 'hover')
