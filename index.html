@@ -747,7 +747,7 @@ const CHARS = [
     color: 0xf07ab8, jet: JETPACK, skin: ranger(0xf07ab8) },
   { name: 'Black', side: 'heroes', team: 'Rangers', role: 'Hits like a moving van · Power Hammer', costume: 'ranger', variant: 'heavy', atk: 'Hammer', h: 0.56, r: 0.43, speed: 4.7, jump: 6.98,
     hp: 175, color: 0x3d3d4a, skin: ranger(0x6a6a7a) },
-  { name: 'Flash', side: 'heroes', role: 'Never late, never still · fists, tornadoes', costume: 'speedster', atk: 'Flurry', h: 0.50, r: 0.33, jump: 8.89, run: 6, wallRun: { at: 0.8 }, shove: { mass: 4, sprint: true, cap: 12 }, color: 0xdf282e,
+  { name: 'Flash', side: 'heroes', role: 'Never late, never still · fists, tornadoes', costume: 'speedster', atk: 'Flurry', far: 'Speed Dash', h: 0.50, r: 0.33, jump: 8.89, run: 6, wallRun: { at: 0.8 }, shove: { mass: 4, sprint: true, cap: 12 }, color: 0xdf282e,
     speed: 38, hp: 55, gib: true, trail: true, skin: { ...ranger(0xdf282e, 0xe6b64e), hand: 0xdf282e },
     spins: { r0: 1.8, rLap: 0.35, dps0: 6, dpsLap: 2.5, cap: 20, speed: 6, pull: 0.35, life: 22, fade: 7 } },
   { name: 'Ryu', side: 'heroes', role: 'Travels the world to punch it · Hadoken', atk: 'Shoryuken', h: 0.54, r: 0.40, jump: 8.28, color: 0xf2f2f2, speed: 6.4, hp: 150, far: 'Hadoken',
@@ -784,6 +784,7 @@ const CHARS = [
 ]
 // rate: s/shot, spread: rad, range: m. Gun 0 never runs dry. look: line|beam|slash|blast; held: glow, heldScale, tether
 // kind: ray|pierce|chain|radius. dive: speed m/s, pull m/s²; dmg, knock × clamp(impact/ref, 1, cap), range × its root
+// kind dash: held, runs along the aim at speed m/s through people; each it passes takes dmg and knock once a hold
 // gate: effect key it needs. dmg or lethal; knock; apply: POWERS effect; extra: the fifth upgrade
 // Append rows only; Beck's 32-bit bag holds no 33rd gun.
 // ground marks a GUNS row's `scar` names: r m, color centre, edge rim
@@ -868,6 +869,7 @@ const GUNS = [
     held:false, look:'beam', apply:'Webbed', kind:'ray' },
   { name:'Ground Slam', kind:'radius', rate:1.40, dmg:10, range: 4, knock:12.0, color:0xf2c53d,
     held:false, punch:'slam', punchMs:600, dive:{ speed:10, pull:40, ref:12, cap:2.5 } },
+  { name:'Speed Dash', kind:'dash', speed:80, rate:0, dmg:30, range:0, knock:12.0, color:0xffd23f, held:false },
 ].map(G => ({ ...GUN_ROW, ...G }))
 // POWERS: dur s, then scales of move jump rate give take fuel jet reach lift (jet 0 grounds; reach 0 spares melee)
 // drop:false: by `apply` only. look: an EFFECT_LOOKS overlay
@@ -2663,6 +2665,11 @@ function pressesOn(c, o, x, z) {
 }
 function applyIntent(c, inp, dt) {
   if (!c.body) attachBody(c)
+  // held, a dash row runs him along the aim at its speed; Bullet pairs him with no other person meanwhile
+  c.dashing = inp.alt && !(c.dead > 0) && !seatOf(c) && primaryOf(c)?.kind === 'dash' ? primaryId(c) : 0
+  if (c.dashing || c.dashOn) { const bh = c.body.getBroadphaseHandle(), m = A.getPointer(bh) && bh.get_m_collisionFilterMask()
+    if (A.getPointer(bh)) bh.set_m_collisionFilterMask(c.dashing ? m & ~G_CAPSULE : m | G_CAPSULE); c.dashOn = !!c.dashing }
+  if (c.dashing) c.dashFrom = [c.x, c.y, c.z]; else c.dashHit = null
 
   if (c.prot > 0) c.prot -= dt
   if (c.dead > 0) {
@@ -2689,6 +2696,7 @@ function applyIntent(c, inp, dt) {
   if (c.dove && c.grounded) c.slam = -c.fallVy, c.slamGun = c.dove, c.dove = false
   if (c.air) c.fallVy = c.vy
 
+  if (c.dashing) inp = { ...inp, f: 1, r: 0, sprint: true }
   const sy = Math.sin(inp.yaw), cy = Math.cos(inp.yaw)
   let wx = -sy * inp.f + cy * inp.r
   let wz = -cy * inp.f - sy * inp.r
@@ -2764,7 +2772,7 @@ function applyIntent(c, inp, dt) {
 
   // a shove: decaying floor on speed along the throw; across it untouched
   if (c.knUp) { vy = Math.max(vy, 0) + c.knUp; c.knUp = 0 }
-  const spd = stat(c, 'move', J && !c.grounded ? (inp.sprint ? J.sprint ?? c.speed : c.speed) : (inp.sprint ? rowOf(c).sprintSpd ?? c.speed : rowOf(c).run ?? c.speed * RUN))
+  const spd = c.dashing ? stat(c, 'move', GUNS[c.dashing].speed) : stat(c, 'move', J && !c.grounded ? (inp.sprint ? J.sprint ?? c.speed : c.speed) : (inp.sprint ? rowOf(c).sprintSpd ?? c.speed : rowOf(c).run ?? c.speed * RUN))
   const S = rowOf(c)?.shove, ram = S && (!S.sprint || inp.sprint), M = ram ? S.mass : 1
   if (c.ramM !== M) { c.ramM = M; c.body.setMassProps(M, zeroVec) }
   if (ram) c.vehT = 0
@@ -3321,7 +3329,7 @@ function botThink(b, all, dt) {
   const yaw = ai.yaw + ai.aimX
   const pitch = ai.pitch + ai.aimY
 
-  const farGun = spec.far ?? (b.sp > 0 ? spec.primary : undefined)
+  const farGun = (spec.far && GUNS[gunNamed(spec.far)].kind !== 'dash' ? spec.far : undefined) ?? (b.sp > 0 ? spec.primary : undefined)      // no bot dashes
   if ((farGun || spec.primary || spec.atk.map) && tgt) {
     if ((spec.atk.map || farGun?.map) && !((ai.pickT -= dt) > 0)) ai.pickT = 6, ai.pick = Math.random()
     // list: a dive attack from above, else reaching ones (mostly the nearest-reaching), else the farthest-reaching
@@ -3690,8 +3698,9 @@ function camBlock(px, py, pz, nx, ny, nz, len) {
 
 const chase = { yaw: NaN, t: 0, look: 0, inYaw: NaN, idle: 0, x: NaN, z: NaN, v: 0, vb: 0, vFilt: 0, lag: 0 }
 const LOOK_REST = 1500          // ms idle, moving, before free look recentres
-function vehicleCamera(o, me, inp, cam, firstPerson) {
-  const V = o.V, f = rotq(o.q, [0, 0, -1]), want = Math.atan2(-f[0], -f[2]), now_ = now(), dt = now_ - chase.t, on = chase.yaw === chase.yaw && dt < 500
+// a tick of the chase camera's easing: heading, speed, lag and free look
+function chaseStep(o, inp) {
+  const f = rotq(o.q, [0, 0, -1]), want = Math.atan2(-f[0], -f[2]), now_ = tickAt, dt = now_ - chase.t, on = chase.yaw === chase.yaw && dt < 500
   chase.yaw = on ? chase.yaw + wrapPi(want - chase.yaw) * (1 - Math.exp(-dt / 150)) : want
   const turned = on ? wrapPi(inp.yaw - chase.inYaw) : 0, v = on && dt > 0 ? Math.hypot(o.x - chase.x, o.z - chase.z) / dt * 1000 : 0
   chase.v = on ? chase.v + (v - chase.v) * (1 - Math.exp(-dt / 300)) : 0
@@ -3704,7 +3713,10 @@ function vehicleCamera(o, me, inp, cam, firstPerson) {
   if (turned) { chase.look = wrapPi(chase.look + turned); chase.idle = 0 } else chase.idle += on ? dt : 0
   if (chase.v > 3 && chase.idle > LOOK_REST) chase.look *= Math.exp(-dt / 250)
   chase.inYaw = inp.yaw; chase.x = o.x; chase.z = o.z; chase.t = now_
-  const yaw = chase.yaw + chase.look, sx = -Math.sin(yaw), sz = -Math.cos(yaw), cp = Math.cos(inp.pitch)
+}
+function vehicleCamera(o, me, inp, cam, firstPerson) {
+  if (chase.yaw !== chase.yaw || tickAt - chase.t >= 500) chaseStep(o, inp)
+  const V = o.V, yaw = chase.yaw + chase.look, sx = -Math.sin(yaw), sz = -Math.cos(yaw), cp = Math.cos(inp.pitch)
   const wantFov = Math.min(FOV_MAX, settings.fov + 5 * (firstPerson ? 0 : clamp(chase.v / o.V.speed, 0, 1)))
   if (cam.fov !== wantFov) { cam.fov = wantFov; if (cam.updateProjectionMatrix) cam.updateProjectionMatrix() }
   if (firstPerson) {        // eye where the top's front edge sits 27° down
@@ -3739,8 +3751,13 @@ function wallLook(inp, k, dt) {
   const step = clamp(k * WALL_LOOK - looked, -dt * WALL_LOOK / 0.25, dt * WALL_LOOK / 0.25)
   looked += step; inp.pitch = clamp(inp.pitch + step, -PITCH_MAX, PITCH_MAX)
 }
-// a tick's look up a wall run: the aim the sim reads, stepped with it
-const lookStep = (me, inp) => me && wallLook(inp, animOf(me) === 4 && rowOf(me)?.wallRun ? wallUp(me) : 0, TICK)
+// a tick's look: up a wall run (the aim the sim reads), and the chase camera's easing
+function lookStep(me, inp) {
+  if (!me) return
+  wallLook(inp, animOf(me) === 4 && rowOf(me)?.wallRun ? wallUp(me) : 0, TICK)
+  const s = !(me.dead > 0) && seatOf(me)
+  if (s) chaseStep(s[0], inp)
+}
 const camHold = { r: 0, from: 0, to: 0, at: 0 }
 let heldF = 1
 function updateCamera(me, inp, cam, firstPerson) {
@@ -4307,11 +4324,10 @@ const seatOf = c => { const s = c.seat; return s && s[0].V && s[0].riders[s[1]] 
 const onSeat = (s, c) => seatFit(s, c.id !== undefined ? rowFor(c.id, c.cid) : c)      // c: character or row
 const WHEELS_NEAR = 40                    // m: past it, wheel travel < a pixel
 const wheelState = new Map(), wq = [0, 0, 0, 1], wv = [0, 0, 0], wsteer = [0, 0, 0, 1], wspin = [0, 0, 0, 1]
-let wheelT = NaN, wheelFrame = 0, wheelK = 0
 // spin capped at SPIN_STEP a frame (faster, the 12-sided tyre strobes); rolling toward -Z spins it backward
 const SPIN_STEP = 0.2, roll = (s, d) => { s.spin -= clamp(d, -SPIN_STEP, SPIN_STEP) }
 // [{ pos, quat }] reused, `.steer` on it; null: the model's own stand (parked, still or past WHEELS_NEAR)
-const settle = (s, k, W, on, L) => on ? (s.staticL[k] += (L - s.staticL[k]) * 0.2, L) : Math.min(W.rest, s.staticL[k] + 0.1)
+const settle = (s, k, W, on, L, dt) => on ? (s.staticL[k] += (L - s.staticL[k]) * timeShare(Math.max(0, dt), 0.2), L) : Math.min(W.rest, s.staticL[k] + 0.1)
 function wheelsOf(d, t, eye) {
   const K = OBJECTS[d.k], V = vehicleOf(K), W = V && V.wheels
   if (!V || eye && (d.x - eye.x) ** 2 + (d.z - eye.z) ** 2 > WHEELS_NEAR * WHEELS_NEAR) return null
@@ -4326,12 +4342,13 @@ function wheelsOf(d, t, eye) {
     if (own.parked) return null
     const v = own.body.getLinearVelocity()
     rotqTo(wv, own.q, 0, 0, -1)
-    if (t > s.t) roll(s, (v.x() * wv[0] + v.z() * wv[2]) * (t - s.t) / 1000 / W.r)
+    const dt = t > s.t ? (t - s.t) / 1000 : 0
+    if (dt) roll(s, (v.x() * wv[0] + v.z() * wv[2]) * dt / W.r)
     s.t = t; s.fresh = true
     wspin[0] = Math.sin(s.spin / 2); wspin[3] = Math.cos(s.spin / 2)
     for (let k = 0; k < out.length; k++) {
       const I = own.car.getWheelInfo(k), R = I.get_m_raycastInfo(), h = R.get_m_hardPointWS(), d = R.get_m_wheelDirectionWS()
-      const len = settle(s, k, W, R.get_m_isInContact(), Math.max(R.get_m_suspensionLength(), W.rest - W.travel)), st = I.get_m_steering(), w = out[k], off = own.off
+      const len = settle(s, k, W, R.get_m_isInContact(), Math.max(R.get_m_suspensionLength(), W.rest - W.travel), dt), st = I.get_m_steering(), w = out[k], off = own.off
       w.pos[0] = h.x() + d.x() * len + off[0]; w.pos[1] = h.y() + d.y() * len + off[1]; w.pos[2] = h.z() + d.z() * len + off[2]
       wsteer[1] = Math.sin(st / 2); wsteer[3] = Math.cos(st / 2)
       qmulTo(w.quat, qmulTo(wq, own.q, wsteer), wspin)
@@ -4351,15 +4368,16 @@ function wheelsOf(d, t, eye) {
   const at0 = hullAt(K)
   wspin[0] = Math.sin(s.spin / 2); wspin[3] = Math.cos(s.spin / 2); wsteer[1] = Math.sin(s.steer / 2); wsteer[3] = Math.cos(s.steer / 2)
   rotqTo(wv, d.q, 0, -1, 0)
-  if (t !== wheelT) { wheelT = t; wheelFrame++; wheelK = 0 }
-  const dx = wv[0], dy = wv[1], dz = wv[2], ray = (wheelFrame + wheelK++) % 4 === 0      // a quarter of the cars cast per frame
+  const slot = Math.floor((t / (TICK * 1000) + d.id) / 4)      // a car casts every 4 ticks, staggered by id
+  const dx = wv[0], dy = wv[1], dz = wv[2], ray = slot !== s.slot
+  s.slot = slot
   for (let i = 0; i < out.length; i++) {
     const a = W.at[i], p = rotqTo(out[i].pos, d.q, a[0] - at0[0], wheelHang(W, a, at0[2]) - at0[1], a[2] - at0[2])
     p[0] += d.x; p[1] += d.y; p[2] += d.z
     const f = ray || s.gy[i] !== s.gy[i] ? castRay(p[0], p[1], p[2], dx, dy, dz, W.rest + W.r) : 2
     if (f <= 1) s.gy[i] = f < 1 ? p[1] + dy * f * (W.rest + W.r) : -Infinity
     const len = Math.max(W.rest - W.travel, dy < 0 ? Math.min(W.rest, (s.gy[i] - p[1]) / dy - W.r) : W.rest)
-    const L = settle(s, i, W, dy < 0 && s.gy[i] > -Infinity && s.gy[i] === s.gy[i], len)
+    const L = settle(s, i, W, dy < 0 && s.gy[i] > -Infinity && s.gy[i] === s.gy[i], len, dt)
     p[0] += dx * L; p[1] += dy * L; p[2] += dz * L
     qmulTo(out[i].quat, a[3] ? qmulTo(wq, d.q, wsteer) : d.q, wspin)
   }
@@ -4527,6 +4545,22 @@ function sweepHits(c, x, y, z, tx, ty, tz, mask) {
   sweepCb.set_m_collisionFilterMask(mask); sweepCb.get_m_hitCollisionObjects().clear(); sweepCb.get_m_hitFractions().clear(); sweepCb.set_m_closestHitFraction(1)
   world.convexSweepTest(c.body.getCollisionShape(), sweepFrom, sweepTo, sweepCb, 0)
   return sweepCb
+}
+// host, after the step: Bullet sweeps a dasher's capsule over this tick's run; each person it passes is struck once a hold
+function dashStrikes(list, credit) {
+  for (const c of list) {
+    if (!c.dashing || !c.dashFrom || c.dead > 0 || seatOf(c)) continue
+    const [x, y, z] = c.dashFrom, d = Math.hypot(c.x - x, c.z - z)
+    if (d < 1e-3) continue
+    const at = new Map(list.map(v => [A.getPointer(v.body), v]))
+    const hits = sweepHits(c, x, y, z, c.x, c.y, c.z, G_CAPSULE).get_m_hitCollisionObjects(), G = GUNS[c.dashing], ux = (c.x - x) / d, uz = (c.z - z) / d
+    for (let i = 0; i < hits.size(); i++) {
+      const v = at.get(A.getPointer(hits.at(i)))
+      if (!v || v === c || v.dead > 0 || v.prot > 0 || seatOf(v) || (c.dashHit ??= new Set()).has(v.id)) continue
+      c.dashHit.add(v.id); strike(c, v, G, ux, 0.3, uz)
+      if (downed(v)) credit(c.id, c)(v, G)
+    }
+  }
 }
 // after the step, each way round: [ours, other (undefined: static), manifold, touching]
 function touching(list) {
@@ -4894,7 +4928,7 @@ function gibFx(v, gunId) {
 
 function firePrimary(c, targets, onKill, viewT, v) {
   const R = primaryOf(c), P = R && dived(R, v)
-  if (!P || c.dead > 0 || c.spCool > 0 || !(c.sp > 0) || holdsFire(c, P) || P.windup && !(c.altCharge >= P.windup)) return []
+  if (!P || P.kind === 'dash' || c.dead > 0 || c.spCool > 0 || !(c.sp > 0) || holdsFire(c, P) || P.windup && !(c.altCharge >= P.windup)) return []
   c.spCool = stat(c, 'rate', P.rate * profRate(c, P.name))
   if (c.sp !== Infinity && !(Math.random() < profExtra(c, P.name, 'free'))) {
     c.sp--
@@ -7618,6 +7652,7 @@ function rebuildWorld() {
   scene.background = new THREE.Color(sky)
   scene.fog = new THREE.Fog(sky); applyView()
   if (sunLight) {
+    sunHome.set(12, 22, 8).multiplyScalar(ARENA > 96 && LV.scenery?.length ? Math.max(4, (LV.theme.ramp[1] + 30) / 22) : 4)
     sunLight.position.copy(sunHome); sunLight.target.position.set(0, 0, 0)
     sunLight.target.updateMatrixWorld()
     const c = sunLight.shadow.camera
@@ -8445,12 +8480,12 @@ function setAnim(id, want, dt, t, hold, still, ticks) {
   }
   if (id >= 0) drawAvatarShadow(a)
   // smoothed drawn speed, a tick at a time where the ticks are known (the last is the drawn mesh; trail points go by tick
-  // time); a step past any run speed over at least a tick (the sim moves whole ticks) is a teleport
+  // time); a step past 240 m/s, faster than any dash or dive, over at least a tick (the sim moves whole ticks) is a teleport
   const m = a.mesh.position, n = ticks ? ticks.length : 1
   for (let i = 0; i < n; i++) {
     const s = i < n - 1 && ticks[i], h = ticks ? TICK : dt, x = s ? s.px ?? s.x : m.x, y = s ? s.py ?? s.y : m.y, z = s ? s.pz ?? s.z : m.z
     const d = !a.at ? 0 : ticks?.[i].fresh ? Infinity : Math.hypot(x - a.at.x, z - a.at.z)
-    if (d < 60 * Math.max(h, TICK)) a.v += (d / Math.max(h, 1e-3) - a.v) * timeShare(h, TICK / 0.15)
+    if (d < 240 * Math.max(h, TICK)) a.v += (d / Math.max(h, 1e-3) - a.v) * timeShare(h, TICK / 0.15)
     ;(a.at ||= new THREE.Vector3()).set(x, y, z)
     if (s && a.spec.trail) (a.runAt ||= []).push([x, y, z, tickAt - (n - 1 - i) * TICK * 1000, s.anim === 1 && a.v > 1.5 * (a.spec.run ?? a.spec.speed * RUN)])
   }
@@ -9123,10 +9158,10 @@ function addTracers(list, t) {
     const a = avatars.get(f[8])
     if (!a || f[7] === 4 || f[7] === 5 || f[7] === 6 || f[7] === 9) continue
     if (f[9] === 1) {
-      if (G && G.charge === 'palms') { a.chargeAt = t; a.chargeGun = f[6] }
+      if (G && G.charge === 'palms') { a.chargeAt = f.firedAt ?? t; a.chargeGun = f[6] }
       continue
     }
-    a.shotAt = t; a.shotGun = f[6]
+    a.shotAt = f.firedAt ?? t; a.shotGun = f[6]
     const length = Math.hypot(f[3] - f[0], f[4] - f[1], f[5] - f[2])
     if (f[7] !== 7 && length > 0.01 && !G?.melee) a.shotPitch = Math.asin((f[4] - f[1]) / length)
   }
@@ -11486,8 +11521,10 @@ function mcHtml(raw) {
 }
 
 const OBF = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%?*'
-let obfNodes = null
-function tickObfuscated() {
+let obfNodes = null, obfSlot = NaN
+function tickObfuscated(t) {
+  if (Math.floor(t / (TICK * 1000)) === obfSlot) return
+  obfSlot = Math.floor(t / (TICK * 1000))
   if (obfNodes === null) obfNodes = document.querySelectorAll('#chatlog [data-obf="1"]')
   if (!obfNodes.length) return
   for (const n of obfNodes) {
@@ -13119,6 +13156,7 @@ function hostTick(dt) {
   stepPhysics(dt)                          // once per tick
   msPhys = msPhys * 0.9 + (now() - _p0) * 0.1
   postTick(all)
+  dashStrikes(all, credit)
   // Bullet's contacts matter only with something thrown, or a vehicle in play or knocked awake
   const touch = objs.some(o => o.thrownBy !== undefined || o.V && (!o.parked || o.body.isActive())) ? touching(all) : []
   strikeObjects(all, dt, touch, credit)
@@ -13241,7 +13279,7 @@ function stepSim(t) {
   let dt = (t - last) / 1000, own = dt > 1
   last = t
   if (dt > 0.25) dt = 0.25
-  fps = fps * 0.92 + (1 / Math.max(dt, 1e-4)) * 0.08
+  fps += (1 / Math.max(dt, 1e-4) - fps) * timeShare(dt, 0.08)
   acc += dt
   if (phase !== 'playing') acc = 0
   else checkLiveness(t, own)
@@ -13276,7 +13314,7 @@ function stepSim(t) {
     else if (connected && predicted) {
       predicted.pitch = input.pitch
       const aim = input.fire || input.alt || input.descend
-      const inp = { f: input.f, r: input.r, j: input.j, fire: input.fire, use: input.use, sprint: input.sprint, descend: input.descend,
+      const inp = { f: input.f, r: input.r, j: input.j, fire: input.fire, alt: input.alt, use: input.use, sprint: input.sprint, descend: input.descend,
                     yaw: (aim ? r4 : r2)(input.yaw), pitch: (aim ? r4 : r2)(input.pitch), ...input.descend && { d: r2(input.d || 0) } }
       const _p1 = now()
       predictObjects(predicted)
@@ -13297,7 +13335,7 @@ function stepSim(t) {
       lastSeqOut = seq
       input.sw = input.sh = input.use = false
     }
-    if (isHost && players.size) for (const [id, c] of players) sampleTick(id, c, false, !id && (input.fire || input.alt))
+    if (isHost && players.size) { for (const [id, c] of players) sampleTick(id, c, false, !id && (input.fire || input.alt)); for (const f of tracers) f.firedAt ??= tickAt }
   }
   // one packet a frame: INPUT_DUP >= MAX_CATCHUP (asserted at the constants), so the ring covers every tick
   if (steps && !isHost && connected && predicted) sendHost({ k: 'i', s: lastSeqOut, a: sendRing })
@@ -13462,7 +13500,7 @@ function faceYaw(id, c, anim, own, t, dt, firing, ticks) {
   if (!a) return c.yaw
   const G = GUNS[a.shotGun], C = GUNS[a.chargeGun], n = ticks ? ticks.length : 1
   for (let i = 0; i < n; i++) {
-    const s = i < n - 1 ? ticks[i] : c, an = s === c ? anim : s.anim, at = t - (n - 1 - i) * TICK * 1000, y = a.face ?? s.yaw, mine = own || an > 3
+    const s = i < n - 1 ? ticks[i] : c, an = s === c ? anim : s.anim, at = ticks ? tickAt - (n - 1 - i) * TICK * 1000 : t, y = a.face ?? s.yaw, mine = own || an > 3
     const attack = (s === c ? firing : s.fire) || at - a.shotAt < Math.max(FACE_MS, G?.punchMs ?? G?.rate * 1000) || at - a.chargeAt < (C?.windup ?? 0) * 1000
     const flyWant = an === 5 && Math.hypot(s.vx, s.vz) > FLY_V * 0.6 ? Math.atan2(-s.vx, -s.vz) : null
     const want = attack ? s.yaw : mine && flyWant === null ? s.yaw : flyWant ?? (an === 0 ? s.yaw : an === 1 && Math.hypot(s.vx, s.vz) > 0.8 ? Math.atan2(-s.vx, -s.vz) : y), k = (ticks ? TICK : dt) * FACE_RATE * (mine ? 4 : attack ? 2 : 1)
@@ -13736,7 +13774,7 @@ function draw(dt, t) {
   drawResults(others)
   drawDebug(me, fps)
   fadeChat(t)
-  tickObfuscated()
+  tickObfuscated(t)
 }
 
 const dives = G => G?.dive ? ' (dives in the air)' : ''
