@@ -7917,9 +7917,12 @@ function prepareStep() {
 
 function rebuildAvatars() {
   for (const id of [...avatars.keys()]) {
-    const { cid, cap } = avatars.get(id)
+    const { cid, cap, mesh } = avatars.get(id), parent = mesh.parent
+    mesh.removeFromParent()
     dropAvatar(id)
-    avatarFor(id, cid, cap)
+    const next = avatarFor(id, cid, cap)
+    if (parent) parent.add(next)
+    else next.removeFromParent()
   }
 }
 
