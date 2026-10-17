@@ -46,6 +46,7 @@
   #code{font-size:28px;letter-spacing:.26em;text-align:center;padding:14px;margin:10px 0;
     background:#0d1117;border:1px solid #2d3441;border-radius:6px;color:#58a6ff;user-select:none}
   #status{margin-top:14px;color:#7d8590;min-height:1.5em}
+  #status:empty{display:none}
   #jittip{display:flex;color:#7d8590;font-size:12px}
   #jittip span{flex:1}
   #jittip button{padding:0 4px;font-size:12px;background:none;border:0}
@@ -68,7 +69,7 @@
   #host-btn{width:100%;margin-top:16px}
   #join-code{font-size:20px;padding:12px;margin-top:12px}
   #join-btn{flex:1.6}
-  #join-scan{flex:1}
+  #join-scan{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:8px}
   #menu-foot{justify-content:center;margin-top:18px}
   button.link{background:none;border:0;color:#7d8590;text-decoration:underline}
   @media (max-aspect-ratio:1/1){ #join-card{order:-1} }
@@ -9874,7 +9875,7 @@ function pickShoot(id, cid, cv, x0, x1, head, yaw, t) {
     setAnim(id, 0, 1 / 60, t)
     const fh = head ? 0.58 * H : 1.12 * H, cy = head ? 0.25 * H : 0, d = fh / 2 / Math.tan(S.cam.fov * Math.PI / 360)
     S.cam.aspect = w / h; S.cam.updateProjectionMatrix()
-    S.cam.position.set(d * 0.3, cy + fh * 0.05, d); S.cam.lookAt(0, cy, 0)
+    S.cam.position.set(d * 0.3, cy + fh * 0.05, -d); S.cam.lookAt(0, cy, 0)
     S.scene.background = new THREE.Color(SIDES[C.side].color).multiplyScalar(0.18)
     R.setRenderTarget(null); R.autoClear = true; R.setScissorTest(true)
     R.setViewport(0, 0, w / pr, h / pr); R.setScissor(0, 0, w / pr, h / pr)
@@ -9895,7 +9896,7 @@ function pickFrame(t) {
     return
   }
   pickHeld = -1
-  pickShoot(PICK_VIEW, pickAt, cv, 0, w, false, t / 2600, t)
+  pickShoot(PICK_VIEW, pickAt, cv, 0, w, false, (t - pickAtT) / 2600, t)
 }
 function pickDrop() {
   for (const id of [PICK_VIEW, PICK_SHOT]) { avatars.get(id)?.mesh.removeFromParent(); dropAvatar(id) }
@@ -9920,7 +9921,7 @@ const IS_TOUCH = (matchMedia && matchMedia('(pointer: coarse)').matches) ||
                  ('ontouchstart' in window && navigator.maxTouchPoints > 0)
 
 function lockPointer() {
-  if (IS_TOUCH || !renderer) return
+  if (IS_TOUCH || !renderer || serving) return
   try { renderer.domElement.requestPointerLock() } catch (e) {}
 }
 
@@ -11098,7 +11099,7 @@ const backdrop = (id, fn) => el('#' + id).addEventListener('click', e => { if (e
 let pickOpen = false, pickAt = -1, pickAtT = 0
 function openCharPick() {
   pickOpen = true
-  pickAt = -1
+  pickAt = -1; pickAtT = now()
   paintPicker()
   pickPlan()
   show('charpick', 1)
@@ -12943,7 +12944,7 @@ function resetToMenu() {
   el('#stage-host').style.display = 'none'
   el('#stage-menu').style.display = ''
   el('#ui').style.display = ''
-  setStatus('Ready.', 'ok')
+  setStatus('')
 }
 
 function initEndModal() {
@@ -13938,7 +13939,7 @@ class Arena extends ENABLE3D.Scene3D {
       initEndModal()
       initServerPanel()
       wireMenu()
-      setStatus('Ready.', 'ok')
+      setStatus('')
       thumbsOn = true; idleThumbs(); joinLink()
     } catch (e) {
       console.error(e)
