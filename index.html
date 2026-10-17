@@ -13209,7 +13209,7 @@ function reconcile(a) {
   reconcileErr = predAt
     ? Math.hypot(predAt.x - a[F.x], predAt.y - a[F.y], predAt.z - a[F.z])
     : Infinity
-  if (reconcileErr <= REWIND_EPS && objErr <= REWIND_EPS && (predAt.web || 0) === web && Math.abs(predAt.fuel - a[F.fuel]) <= 0.006 && predAt.jl === !!a[F.jLock]) { replaySteps = 0; return }
+  if (reconcileErr <= REWIND_EPS && objErr <= REWIND_EPS && (predAt.web || 0) === web && Math.abs(predAt.fuel - a[F.fuel]) <= 0.011 && predAt.jl === !!a[F.jLock]) { replaySteps = 0; return }
 
   if (predAt?.sp !== undefined) { predicted.flying = predAt.fl; predicted.springT = predAt.sp; predicted.flyTurn = predAt.ft }      // not in the snapshot
   restore()
@@ -13220,7 +13220,7 @@ function reconcile(a) {
   for (let i = 0; i < n; i++) {
     const e = pending[i]
     tickChars([predicted], () => e.inp, TICK)
-    e.x = predicted.x; e.y = predicted.y; e.z = predicted.z; e.web = predicted.web || 0; e.fl = !!predicted.flying; e.sp = predicted.springT || 0; e.ft = !!predicted.flyTurn; e.ob = objs.map(o => [o.id, ...objState(o)]); e.sh = objs.filter(o => o.V).map(o => [o.id, o.steer || 0, o.hand || 0])
+    e.x = predicted.x; e.y = predicted.y; e.z = predicted.z; e.fuel = predicted.fuel; e.jl = !!predicted.jLock; e.web = predicted.web || 0; e.fl = !!predicted.flying; e.sp = predicted.springT || 0; e.ft = !!predicted.flyTurn; e.ob = objs.map(o => [o.id, ...objState(o)]); e.sh = objs.filter(o => o.V).map(o => [o.id, o.steer || 0, o.hand || 0])
   }
   blend()
   replaySteps = n; predJump = true
