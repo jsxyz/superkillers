@@ -4633,11 +4633,15 @@ function postTick(list) {
 }
 // one tick for list: the rules phases P (the host's; prediction and replay run none) around intent, carry/drive, the one step and
 // postTick; returns the step's ms
+// the tick's list, in place, with only those still in the game: a removal mid-tick leaves no body-less one for later steps
+const present = list => { let n = 0; for (const c of list) if (players.get(c.id) === c) list[n++] = c; list.length = n }
 function tickChars(list, inputFor, dt, P, t) {
   if (P) P.beforeIntent(t)
   preTick(list, inputFor, dt)
+  if (P) present(list)
   for (const c of list) { carryStep(c, inputFor(c), dt); driveStep(c, inputFor(c)) }
   if (P) P.beforePhysics(t)
+  if (P) present(list)
   const p0 = now()
   stepPhysics(dt)
   const ms = now() - p0
@@ -13559,6 +13563,7 @@ const HOST_PHASES = {
 
   stepWaves(dt)
   stepSquad()
+  present(all)
   stepPickups(dt, all)
   weakenNear(all)
   t.credit = credit
@@ -13871,7 +13876,8 @@ const drawing = () => !serving && !document.hidden
 let frameFails = 0, lastFrameFail = ''
 function frameFailed(where, e) {
   frameFails++
-  lastFrameFail = where + ': ' + ((e && e.message) || e)
+  const at = String(e?.stack).match(/(?:at (\S+) \(|^\s*([^@\s]+)@)[^\n]*\.html[^:\n]*:(\d+)/m)      // the first named frame of the game's own
+  lastFrameFail = where + (at ? ' @ ' + (at[1] || at[2]) + ':' + at[3] : '') + ': ' + ((e && e.message) || e)
   try { console.error('[SKs] frame failed in ' + where, e) } catch (err) {}
 }
 
