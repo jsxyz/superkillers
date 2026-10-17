@@ -1042,7 +1042,7 @@ const VEHICLE_SHAPES = Object.fromEntries([
 }))
 // VEHICLES (OBJECTS `drive`; seat 0 drives): engine N per rear wheel, fading over the last 4 m/s to speed m/s; brake
 // [front, rear] per wheel per step; hand: rear brake on handbrake; steer rad; turn: sideways cap m/s²; ram: dmg per m/s;
-// boom: burn hp fraction, fuse s; rows: Bus seat rows z. WHEEL_RIDE: rest/travel m, slip grip [front, rear]. DRIVE
+// share: City parking weight (absent = 1); boom: burn hp fraction, fuse s; rows: Bus seat rows z. WHEEL_RIDE: rest/travel m, slip grip [front, rear]. DRIVE
 // (row overrides): steerTime/handBack s; reverse/handGrip fractions; bail: driverless slowdown m/s²; chase: cam pull-back
 // variants: the colours it comes in, each with its own driving (speed: x speed and engine; grip: x slip and turn); entry 0 is
 // the row as it stands; a vehicle is one of them by its seed (or id), the same on every machine
@@ -1055,15 +1055,15 @@ const vehicleRow = ({ rows, ...V }) => { const S = VEHICLE_SHAPES[V.name]
   return { ...V, ...S, wheels: { ...S.wheels, ...WHEEL_RIDE, ...V.wheels }, boom: { ...BOOM, ...V.boom },
     seats: S.seats.flatMap(([x, y, z]) => [[x, y, z], ...rows ? rows.flatMap(d => [[-x, y, z + d], [x, y, z + d]]) : [[-x, y, z]]]) } }
 const VEHICLES = [
-  { name: 'Car', engine: 50, brake: [1.24, 0.76], hand: 0.6, steer: 0.65, turn: 30, speed: 59, hp: 300, ram: 3.2, boom: { radius: 7, dmg: 120, knock: 16 }, com: 0.55, wheels: {"slip":[1.4,1.5]},
+  { name: 'Car', share: 1, engine: 50, brake: [1.24, 0.76], hand: 0.6, steer: 0.65, turn: 30, speed: 59, hp: 300, ram: 3.2, boom: { radius: 7, dmg: 120, knock: 16 }, com: 0.55, wheels: {"slip":[1.4,1.5]},
     variants: [{}, { name: 'Sport', color: 0xffd400, speed: 1.15, grip: 1.1 }, { color: 0x2c6fbb }, { color: 0xb8bec6 }, { name: 'Beater', color: 0x8c7b5c, speed: 0.85, grip: 0.85 }], wreck: 'Wreck' },
-  { name: 'Van', engine: 46, brake: [1.49, 0.91], hand: 1.5, steer: 0.611, turn: 26, speed: 44.5, wheels: {"slip":[1.45,1.35],"roll":0.5}, hp: 400, ram: 4, boom: { radius: 8, dmg: 130, knock: 17 }, com: 0.85, steerTime: 0.12,
+  { name: 'Van', share: 0.6, engine: 46, brake: [1.49, 0.91], hand: 1.5, steer: 0.611, turn: 26, speed: 44.5, wheels: {"slip":[1.45,1.35],"roll":0.5}, hp: 400, ram: 4, boom: { radius: 8, dmg: 130, knock: 17 }, com: 0.85, steerTime: 0.12,
     variants: [{}, { color: 0xe6e6df, speed: 0.95 }, { color: 0x3a7d44, speed: 1.05, grip: 0.95 }, { color: 0x6b7178, grip: 1.05 }], wreck: 'Van Wreck' },
-  { name: 'Truck', engine: 76, brake: [1.32, 0.44], hand: 1, steer: 0.646, turn: 20, speed: 50, wheels: {"slip":[1.4,1.35],"roll":0.5}, hp: 500, ram: 4.8, boom: { radius: 9, dmg: 150, knock: 18 }, com: 1.1, steerTime: 0.12,
+  { name: 'Truck', share: 0.4, engine: 76, brake: [1.32, 0.44], hand: 1, steer: 0.646, turn: 20, speed: 50, wheels: {"slip":[1.4,1.35],"roll":0.5}, hp: 500, ram: 4.8, boom: { radius: 9, dmg: 150, knock: 18 }, com: 1.1, steerTime: 0.12,
     variants: [{}, { color: 0x24282e, speed: 1.05 }, { color: 0xdcdcd6, grip: 1.05 }, { color: 0xa8322b, speed: 0.95, grip: 1.05 }], wreck: 'Truck Wreck' },
-  { name: 'Bus', engine: 24, brake: [1.65, 0.68], hand: 1.25, steer: 0.611, turn: 18, speed: 34, wheels: {"slip":[1.3,1.3],"roll":0.6}, hp: 600, ram: 5.6, boom: { radius: 9, dmg: 150, knock: 18 }, com: 1.1, bal: -0.07677201926708221, inertia: [173.30255126953125, 175.9712371826172, 30.871807098388672], steerTime: 0.12,
+  { name: 'Bus', share: 0.15, engine: 24, brake: [1.65, 0.68], hand: 1.25, steer: 0.611, turn: 18, speed: 34, wheels: {"slip":[1.3,1.3],"roll":0.6}, hp: 600, ram: 5.6, boom: { radius: 9, dmg: 150, knock: 18 }, com: 1.1, bal: -0.07677201926708221, inertia: [173.30255126953125, 175.9712371826172, 30.871807098388672], steerTime: 0.12,
     variants: [{}, { color: 0xb8322a, speed: 1.05 }, { color: 0x2f7d4f, grip: 1.05 }, { color: 0x3a6fb5, speed: 0.95, grip: 1.05 }], wreck: 'Bus Wreck', rows: [1.3, 3.78] },
-  { name: 'Sports car', engine: 65, brake: [1.4, 0.85], hand: 0.6, steer: 0.65, turn: 36, speed: 72, hp: 280, ram: 3.2, boom: { dmg: 120, knock: 16, radius: 7 }, com: 0.46, bal: 0, wheels: { slip: [1.8, 1.9], stiff: 100, travel: 0.04, damp: [6, 5] }, wreck: 'Sports wreck', variants: [{}, { color: 0xd63c32, speed: 1.04, grip: 0.96 }, { color: 0xe2e4e7, speed: 0.96, grip: 1.04 }, { color: 0x284b89 }] },
+  { name: 'Sports car', share: 0.5, engine: 65, brake: [1.4, 0.85], hand: 0.6, steer: 0.65, turn: 36, speed: 72, hp: 280, ram: 3.2, boom: { dmg: 120, knock: 16, radius: 7 }, com: 0.46, bal: 0, wheels: { slip: [1.8, 1.9], stiff: 100, travel: 0.04, damp: [6, 5] }, wreck: 'Sports wreck', variants: [{}, { color: 0xd63c32, speed: 1.04, grip: 0.96 }, { color: 0xe2e4e7, speed: 0.96, grip: 1.04 }, { color: 0x284b89 }] },
 ].map(vehicleRow)
 // GLTFLoader has no SRI check; keep the asset commit pinned.
 // sha384-Oa+BcLukVPbtZ7kColOygKyQvDUR0mmaZq4Wrj5BNFylre7BPJZVju/2zVCTMAO4
@@ -2018,7 +2018,8 @@ function cityChunk(seed, S, ci, cj, B = [], scenery = [], spot = [[], [], [], []
   }
   if (ci && cj) spot[1].push([X, 0, Z])
   for (const [d, edge] of [[0, ci], [1, cj]]) for (const t of [30, 66]) if (edge < S - 1 && VEHICLES.length && rng() < 0.5) {
-    const V = VEHICLES[rng() * VEHICLES.length | 0], at = 89.4 + (V.w || 1.8) / 2
+    let ticket = rng() * VEHICLES.reduce((sum, V) => sum + (V.share ?? 1), 0)
+    const V = VEHICLES.find(V => (ticket -= V.share ?? 1) < 0) || VEHICLES.at(-1), at = 89.4 + (V.w || 1.8) / 2
     spot[3].push([d ? X + t : X + at, d ? Z + at : Z + t, d ? 1.5708 : 3.1416, V.name, rng() * 2 ** 32 >>> 0])
   }
   return { brushes: B, scenery, spot }
