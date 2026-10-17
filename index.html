@@ -6471,6 +6471,9 @@ function variantOf(base) {
   g.boundingSphere = base.boundingSphere && base.boundingSphere.clone()
   return g
 }
+// a variant reads base's float arrays and writes its own copies: getX/setXYZ, Box3 and Color.lerp's arithmetic, without a call
+// or an object a vertex
+const STAIN_X = [0.42, -0.50, 0.15], STAIN_Y = [0.18, -0.55, 0.70]
 function damageGeometry(source, kind, level) {
   const base = cleanGeometry.get(source) || source
   if (!level) return base
@@ -6479,41 +6482,51 @@ function damageGeometry(source, kind, level) {
   const key = kind + level
   if (variants.has(key)) return variants.get(key)
   const g = variantOf(base)
-  const p = base.attributes.position, color = base.attributes.color, point = new THREE.Vector3()
+  const p = base.attributes.position, color = base.attributes.color
   if (color) g.setAttribute('color', color.clone())
   const ink = new THREE.Color(kind === 'blood' ? 0x781523 : 0x333640)
-  const tint = (i, amount) => {
-    if (!color) return
-    const c = new THREE.Color().fromBufferAttribute(color, i).lerp(ink, Math.max(0, Math.min(1, amount)))
-    g.attributes.color.setXYZ(i, c.r, c.g, c.b)
-  }
   if (kind !== 'blood') { g.setAttribute('position', p.clone()); g.setAttribute('normal', base.attributes.normal.clone()) }
+  const P = p.array, B = color && color.array, C = color && g.attributes.color.array, Q = g.attributes.position.array, I = base.index.array
+  const tint = (i, amount) => {
+    if (!C) return
+    const a = Math.max(0, Math.min(1, amount)), k = 3 * i
+    C[k] = B[k] + (ink.r - B[k]) * a; C[k + 1] = B[k + 1] + (ink.g - B[k + 1]) * a; C[k + 2] = B[k + 2] + (ink.b - B[k + 2]) * a
+  }
+  const seen = new Uint32Array(p.count), ids = [], radius = 0.30 + level * 0.08, ry = radius * 0.65
+  let stamp = 0
   for (const part of base.userData.parts || []) {
     const tags = part.tags.split('|')
     if (kind === 'blood' ? !tags.some(t => ['jacket', 'sleeve', 'trousers', 'face', 'hair', 'forelock', 'hand'].includes(t)) :
         kind === 'dent' ? !tags.includes('head') : !tags.includes('ear')) continue
-    const ids = new Set()
-    for (let i = part.start; i < part.start + part.count; i++) ids.add(base.index.getX(i))
-    const box = new THREE.Box3()
-    for (const i of ids) box.expandByPoint(point.fromBufferAttribute(p, i))
+    stamp++; ids.length = 0
+    for (let i = part.start; i < part.start + part.count; i++) { const v = I[i]; if (seen[v] !== stamp) { seen[v] = stamp; ids.push(v) } }
+    let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity
+    const grow = v => { const k = 3 * v, x = P[k], y = P[k + 1], z = P[k + 2]
+      x0 = Math.min(x0, x); y0 = Math.min(y0, y); z0 = Math.min(z0, z); x1 = Math.max(x1, x); y1 = Math.max(y1, y); z1 = Math.max(z1, z) }
+    for (const v of ids) grow(v)
     const hair = tags.includes('hair') || tags.includes('forelock')
     if (kind === 'blood' && level === 1 && (hair || tags.includes('trousers'))) continue
     if (kind === 'blood' && hair) for (const other of base.userData.parts) {
       if (!other.tags.split('|').some(t => t === 'hair' || t === 'forelock')) continue
-      for (let i = other.start; i < other.start + other.count; i++) box.expandByPoint(point.fromBufferAttribute(p, base.index.getX(i)))
+      for (let i = other.start; i < other.start + other.count; i++) grow(I[i])
     }
-    const center = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3())
-    const shift = Math.sin(center.x * 91 + center.y * 17) * 0.24
+    const cx = (x0 + x1) * 0.5, cy = (y0 + y1) * 0.5, cz = (z0 + z1) * 0.5, sx = x1 - x0, sy = y1 - y0, sz = z1 - z0
+    const shift = Math.sin(cx * 91 + cy * 17) * 0.24
     for (const i of ids) {
-      point.fromBufferAttribute(p, i)
-      const x = 2 * (point.x - center.x) / (size.x || 1), y = 2 * (point.y - center.y) / (size.y || 1), z = 2 * (point.z - center.z) / (size.z || 1)
+      const k = 3 * i
+      let px = P[k], py = P[k + 1], pz = P[k + 2]
+      const x = 2 * (px - cx) / (sx || 1), y = 2 * (py - cy) / (sy || 1), z = 2 * (pz - cz) / (sz || 1)
       if (kind === 'blood') {
+        // a stain reaches d < 1 + noise <= 1.14: a vertex past 1.2 of every blot takes the zero tint (a part shares vertices
+        // with the next, and a later zero tint undoes an earlier one)
+        let near = false
+        for (let j = 0; j < level && !near; j++) { const u = (x - STAIN_X[j] - shift) / radius, v = (y - STAIN_Y[j] + shift) / ry; near = u * u + v * v < 1.44 }
+        if (!near) { tint(i, 0); continue }
+        const noise = Math.sin(x * 31 + y * 17 + z * 7) * 0.14
         let stain = 0
         for (let j = 0; j < level; j++) {
-          const cx = [0.42, -0.50, 0.15][j] + shift, cy = [0.18, -0.55, 0.70][j] - shift
-          const radius = 0.30 + level * 0.08
-          const d = Math.hypot((x - cx) / radius, (y - cy) / (radius * 0.65))
-          const noise = Math.sin(x * 31 + y * 17 + z * 7) * 0.14
+          const sxj = STAIN_X[j] + shift, syj = STAIN_Y[j] - shift
+          const d = Math.hypot((x - sxj) / radius, (y - syj) / ry)
           stain = Math.max(stain, (1 - d + noise) * 5)
         }
         tint(i, stain)
@@ -6521,21 +6534,21 @@ function damageGeometry(source, kind, level) {
         const dent = Math.max(0, 1 - Math.hypot((x - 0.70) / 0.65, (y - 0.45) / 0.62, (z + 0.50) / 0.65))
         const second = level > 1 ? Math.max(0, 1 - Math.hypot((x + 0.80) / 0.55, (y + 0.15) / 0.48, (z + 0.30) / 0.80)) : 0
         const depth = Math.max(dent, second) * level * 0.17
-        point.lerp(center, depth)
-        g.attributes.position.setXYZ(i, point.x, point.y, point.z)
+        px += (cx - px) * depth; py += (cy - py) * depth; pz += (cz - pz) * depth
+        Q[k] = px; Q[k + 1] = py; Q[k + 2] = pz
         tint(i, depth * 2)
       } else {
-        const hinge = 0.19, bend = Math.max(0, point.y - hinge), angle = [0, 0.32, 0.55, 1.05][level]
-        if (level === 3 && Math.abs(p.getY(i) - 0.23) < 0.015) {
-          point.x *= 0.55
+        const hinge = 0.19, bend = Math.max(0, py - hinge), angle = [0, 0.32, 0.55, 1.05][level]
+        if (level === 3 && Math.abs(P[k + 1] - 0.23) < 0.015) {
+          px *= 0.55
           tint(i, 0.65)
         }
         if (bend) {
-          const x = point.x
-          point.x = Math.cos(angle) * x + Math.sin(angle) * bend
-          point.y = hinge + Math.cos(angle) * bend - Math.sin(angle) * x
+          const x = px
+          px = Math.cos(angle) * x + Math.sin(angle) * bend
+          py = hinge + Math.cos(angle) * bend - Math.sin(angle) * x
         }
-        g.attributes.position.setXYZ(i, point.x, point.y, point.z)
+        Q[k] = px; Q[k + 1] = py; Q[k + 2] = pz
       }
     }
   }
