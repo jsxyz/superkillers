@@ -4537,6 +4537,9 @@ function boom(o, list, credit) {
   const m = o.K.mass, a = rng() * Math.PI * 2
   o.body.activate(); impVec.setValue(Math.cos(a) * m * 1.5, m * 9, Math.sin(a) * m * 1.5); o.body.applyCentralImpulse(impVec)
   const s = rng() * Math.PI * 2; velVec.setValue(Math.cos(s) * 2, 0, Math.sin(s) * 2); o.body.setAngularVelocity(velVec)
+  // a wreck draws no wheels: its body is the bare hull, the one a guest builds for it
+  world.removeRigidBody(o.body); o.body.setCollisionShape(o.shape); o.shape.calculateLocalInertia(m, impVec)
+  o.body.setMassProps(m, impVec); o.body.updateInertiaTensor(); world.addRigidBody(o.body, ...COLLIDE.object)
 }
 
 function strikeObjects(list, dt, touch, credit) {
