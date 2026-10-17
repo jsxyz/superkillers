@@ -4631,11 +4631,19 @@ function preTick(list, inputFor, dt) {
 function postTick(list) {
   for (const c of list) syncFromBody(c)
 }
-function tickChars(list, inputFor, dt) {
+// one tick for list: the rules phases P (the host's; prediction and replay run none) around intent, carry/drive, the one step and
+// postTick; returns the step's ms
+function tickChars(list, inputFor, dt, P, t) {
+  if (P) P.beforeIntent(t)
   preTick(list, inputFor, dt)
   for (const c of list) { carryStep(c, inputFor(c), dt); driveStep(c, inputFor(c)) }
+  if (P) P.beforePhysics(t)
+  const p0 = now()
   stepPhysics(dt)
+  const ms = now() - p0
   postTick(list)
+  if (P) P.afterPhysics(t)
+  return ms
 }
 
 function stepPhysics(dt) {
@@ -13456,16 +13464,7 @@ function hostTick(dt) {
   }
 
   t.all = all; t.cur = cur
-  HOST_PHASES.beforeIntent(t)
-  preTick(all, c => cur.get(c.id) || IDLE_INPUT, dt)
-  for (const c of all) { carryStep(c, cur.get(c.id) || IDLE_INPUT, dt); driveStep(c, cur.get(c.id) || IDLE_INPUT) }
-
-  HOST_PHASES.beforePhysics(t)
-  const _p0 = now()
-  stepPhysics(dt)                          // once per tick
-  msPhys = msPhys * 0.9 + (now() - _p0) * 0.1
-  postTick(all)
-  HOST_PHASES.afterPhysics(t)
+  msPhys = msPhys * 0.9 + tickChars(all, c => cur.get(c.id) || IDLE_INPUT, dt, HOST_PHASES, t) * 0.1      // the one step
   recordHistory(tickAt, all)
 }
 // a host tick's rules, in its order around the engine's own steps (see hostTick); t: the tick's dt, all (players), cur (their
