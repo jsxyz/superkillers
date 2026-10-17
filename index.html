@@ -635,7 +635,7 @@ const THREE = ENABLE3D.THREE
 // jet: thrust m/s², rise m/s, fuel s, refuel /s, fall m/s, grav ×; aura; grounded:true holds fire
 //   aloft: stat scales while flying (as POWERS). leap: same, airborne off a jet (BOTS rows too)
 // wallRun: { at: share of run speed }, entered and held sprinting. climb: m/s on walls and ceilings. spring: { full s, k × jump }
-// shove: { mass: its capsule's, so Bullet's contacts knock vehicles; sprint: only sprinting; cap: m/s it meets a vehicle at }
+// shove: { mass: its capsule's, so Bullet's contacts knock vehicles; sprint: only sprinting; cap: m/s faster than a vehicle moves away that it closes on it }
 // sprintSpd: on-foot sprint m/s (default speed); jet.sprint: flight sprint m/s
 // swing: { range m }. bones: { box_man bone: [x, y, z] } (y: length). sparks: running-spark colour
 const VITOSCREEN_SKIN = { shell: 0xe1dec7, rim: 0x536651, screen: 0x78d72b,
@@ -689,7 +689,7 @@ const CHARS = [
     color: 0xf07ab8, jet: JETPACK, skin: ranger(0xf07ab8) },
   { name: 'Black', side: 'heroes', team: 'Rangers', role: 'Hits like a moving van · Power Hammer', costume: 'ranger', variant: 'heavy', atk: 'Hammer', h: 0.56, r: 0.43, speed: 4.7, jump: 6.98,
     hp: 175, color: 0x3d3d4a, skin: ranger(0x6a6a7a) },
-  { name: 'Flash', side: 'heroes', role: 'Never late, never still · fists, tornadoes', costume: 'speedster', atk: 'Flurry', h: 0.50, r: 0.33, jump: 8.89, run: 6, wallRun: { at: 0.8 }, shove: { mass: 4, sprint: true, cap: 38 }, color: 0xdf282e,
+  { name: 'Flash', side: 'heroes', role: 'Never late, never still · fists, tornadoes', costume: 'speedster', atk: 'Flurry', h: 0.50, r: 0.33, jump: 8.89, run: 6, wallRun: { at: 0.8 }, shove: { mass: 4, sprint: true, cap: 12 }, color: 0xdf282e,
     speed: 38, hp: 55, gib: true, trail: true, skin: { ...ranger(0xdf282e, 0xe6b64e), hand: 0xdf282e },
     spins: { r0: 1.8, rLap: 0.35, dps0: 6, dpsLap: 2.5, cap: 20, speed: 6, pull: 0.35, life: 22, fade: 7 } },
   { name: 'Ryu', side: 'heroes', role: 'Travels the world to punch it · Hadoken', atk: 'Shoryuken', h: 0.54, r: 0.40, jump: 8.28, color: 0xf2f2f2, speed: 6.4, hp: 150, far: 'Hadoken',
@@ -2695,10 +2695,17 @@ function applyIntent(c, inp, dt) {
   if (c.ramM !== M) { c.ramM = M; c.body.setMassProps(M, zeroVec) }
   if (ram) c.vehT = 0
   let mx = wx * spd, mz = wz * spd
-  // a vehicle within two ticks ahead is met at the cap: deeper in its hull in one tick, Bullet throws it
-  const wn = Math.hypot(wx, wz)
-  if (ram && spd > S.cap && wn > 0.1 && castRay(c.x, c.y, c.z, wx / wn, 0, wz / wn, c.r + 2 * spd * TICK, G_OBJ) < 1 &&
-      objs.some(o => o.V && A.getPointer(o.body) === A.getPointer(rayCb.get_m_collisionObject()))) { mx *= S.cap / spd; mz *= S.cap / spd }
+  // a vehicle in this tick's sweep is closed on at most cap m/s faster than it moves away: deeper in its hull in one tick, Bullet flips it
+  const sm = Math.hypot(mx, mz)
+  if (ram && S.cap && sm > 0.1) {
+    const H = sweepHits(c, c.x, c.y, c.z, c.x + mx * TICK, c.y, c.z + mz * TICK, G_OBJ), B = H.get_m_hitCollisionObjects(), F = H.get_m_hitFractions()
+    let lim = Infinity
+    for (let i = 0; i < B.size(); i++) {
+      const o = objs.find(o => o.V && A.getPointer(o.body) === A.getPointer(B.at(i)))
+      if (o) { const v = o.body.getLinearVelocity(); lim = Math.min(lim, F.at(i) * sm + Math.max(0, (v.x() * mx + v.z() * mz) / sm) + S.cap) }
+    }
+    if (sm > lim) { mx *= lim / sm; mz *= lim / sm }
+  }
   if (cling) [mx, , mz] = surfV(c.wnx, 0, c.wnz, wx, wz, rowOf(c).climb)
   else if (c.air && !c.tie && Math.hypot(wx, wz) < 0.1 && rowOf(c)?.swing) mx = c.vx, mz = c.vz
   else if (c.flung) {
@@ -4432,6 +4439,17 @@ function boom(o, list, credit) {
 function strikeObjects(list, dt, touch, credit) {
   for (const o of objs) if (o.thrownBy !== undefined && ((o.thrownT += dt) > 0.3 && !o.body.isActive() || o.thrownT > 8)) o.thrownBy = undefined
   for (const [o, c, , hit] of touch) if (hit && o.thrownBy !== undefined && list.includes(c) && !o.struck.has(c.id) && c.dead <= 0) { o.struck.add(c.id); objectStrikes(o, c, credit) }
+}
+// Bullet sweeps c's capsule from (x, y, z) to (tx, ty, tz): every body of mask it meets, and how far along
+let sweepCb = null, sweepFrom = null, sweepTo = null
+function sweepHits(c, x, y, z, tx, ty, tz, mask) {
+  if (!sweepCb) { sweepCb = new A.AllHitsConvexResultCallback(rayFrom, rayTo); sweepCb.set_m_collisionFilterGroup(RAY_CAST); sweepFrom = new A.btTransform(); sweepTo = new A.btTransform() }
+  const q = c.body.getWorldTransform().getRotation()
+  sweepFrom.setIdentity(); sweepFrom.setRotation(q); rayFrom.setValue(x, y, z); sweepFrom.setOrigin(rayFrom)
+  sweepTo.setIdentity(); sweepTo.setRotation(q); rayTo.setValue(tx, ty, tz); sweepTo.setOrigin(rayTo)
+  sweepCb.set_m_collisionFilterMask(mask); sweepCb.get_m_hitCollisionObjects().clear(); sweepCb.get_m_hitFractions().clear(); sweepCb.set_m_closestHitFraction(1)
+  world.convexSweepTest(c.body.getCollisionShape(), sweepFrom, sweepTo, sweepCb, 0)
+  return sweepCb
 }
 // after the step, each way round: [ours, other (undefined: static), manifold, touching]
 function touching(list) {
