@@ -12721,6 +12721,31 @@ function setMode(m) {
   return true
 }
 
+// a guest's message k, as the host takes it from connection id: validate (optional, no side effects) returns the packet or null;
+// apply acts on it, and what it returns is onHostData's
+const HOST_MSGS = {
+  nick: { apply: (id, d) => {
+    const p = roster.get(id)
+    if (p) { p.name = cleanName(d.name) || p.name; pushRoster() }
+  } },
+  vote: { apply: (id, d) => callVote(id, d.lv) },
+  ballot: { validate: d => typeof d.y === 'boolean' ? d : null, apply: (id, d) => ballot(id, d.y) },
+  bye: { apply: (id, d) => {
+    const c = conns.get(id)
+    if (c) { try { c.close() } catch (e) {} }
+  } },
+  ping: { apply: (id, d) => {
+    const c = conns.get(id)
+    if (c && c.open) { try { c.send(JSON.stringify({ k: 'pong', t: d.t, s: d.s | 0 })) } catch (e) {} }
+  } },
+  rtt: { apply: (id, d) => { const c = conns.get(id); if (c) c.rtt = clamp(+d.ms || 0, 0, 2000) } },
+  radio: { apply: (id, d) => { const o = objs.find(o => o.V && o.riders[0] === id)
+    if (o && Number.isInteger(d.s) && d.s >= -1 && d.s < RADIO.length) o.radio = d.s } },
+  cap: { apply: (id, d) => {
+    const p = roster.get(id)
+    if (p) { p.cap = capText(d.t); pushRoster() }
+  } },
+}
 function onHostData(id, d) {
   if (!d) return
   if (d.k === 'hello') {
@@ -12758,37 +12783,14 @@ function onHostData(id, d) {
     broadcast({ k: 'c', id, m: text, a: !!d.a, s: d.s }, id)
     return
   }
-  if (d.k === 'nick') {
-    const p = roster.get(id)
-    if (p) { p.name = cleanName(d.name) || p.name; pushRoster() }
-    return
-  }
-  if (d.k === 'vote') return callVote(id, d.lv)
-  if (d.k === 'ballot') return void (typeof d.y === 'boolean' && ballot(id, d.y))
+  const M = typeof d.k === 'string' && Object.hasOwn(HOST_MSGS, d.k) ? HOST_MSGS[d.k] : null
+  if (M) { const v = M.validate ? M.validate(d) : d; return v ? M.apply(id, v) : undefined }
   if (d.k === 'char') {
     const cid = clamp(d.cid | 0, 0, CHARS.length - 1)      // switchChar refuses hidden rows
     const c = players.get(id)
     if (!c || !switchChar(c, cid)) return c && noSwap(c, cid)
     const p = roster.get(id)
     if (p && p.cid !== cid) { p.cid = cid; pushRoster() }
-    return
-  }
-  if (d.k === 'bye') {
-    const c = conns.get(id)
-    if (c) { try { c.close() } catch (e) {} }
-    return
-  }
-  if (d.k === 'ping') {
-    const c = conns.get(id)
-    if (c && c.open) { try { c.send(JSON.stringify({ k: 'pong', t: d.t, s: d.s | 0 })) } catch (e) {} }
-    return
-  }
-  if (d.k === 'rtt') { const c = conns.get(id); if (c) c.rtt = clamp(+d.ms || 0, 0, 2000); return }
-  if (d.k === 'radio') { const o = objs.find(o => o.V && o.riders[0] === id)
-    if (o && Number.isInteger(d.s) && d.s >= -1 && d.s < RADIO.length) o.radio = d.s; return }
-  if (d.k === 'cap') {
-    const p = roster.get(id)
-    if (p) { p.cap = capText(d.t); pushRoster() }
     return
   }
   if (d.k !== 'i') return
