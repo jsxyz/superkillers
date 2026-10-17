@@ -12854,12 +12854,7 @@ const HOST_MSGS = {
     const p = roster.get(id)
     if (p) { p.cap = capText(d.t); pushRoster() }
   } },
-}
-function onHostData(id, d) {
-  if (!d) return
-  const M = typeof d.k === 'string' && Object.hasOwn(HOST_MSGS, d.k) ? HOST_MSGS[d.k] : null
-  if (M) { const v = M.validate ? M.validate(d) : d; return v ? M.apply(id, v) : undefined }
-  if (d.k !== 'i') return
+  i: { apply: (id, d) => {
   // reliable:false = unordered: place by seq; drop any held or simulated (packets repeat inputs)
   const q = inQ.get(id)
   if (!q || !Array.isArray(d.a)) return
@@ -12880,6 +12875,12 @@ function onHostData(id, d) {
     q.splice(i, 0, inp)
   }
   inputSeq.set(id, Math.max(inputSeq.get(id) || 0, newest))
+  } },
+}
+function onHostData(id, d) {
+  if (!d) return
+  const M = typeof d.k === 'string' && Object.hasOwn(HOST_MSGS, d.k) ? HOST_MSGS[d.k] : null
+  if (M) { const v = M.validate ? M.validate(d) : d; return v ? M.apply(id, v) : undefined }
 }
 
 function startJoin(code) {
@@ -12984,12 +12985,7 @@ const GUEST_MSGS = {
     showChat(d.id | 0, String(d.m || '').slice(0, 160), !!d.a)
     return
   } },
-}
-function onGuestData(d) {
-  if (!d) return
-  const M = typeof d.k === 'string' && Object.hasOwn(GUEST_MSGS, d.k) ? GUEST_MSGS[d.k] : null
-  if (M) { const v = M.validate ? M.validate(d) : d; if (v) M.apply(v); return }
-  if (d.k !== 's') return
+  s: { apply: d => {
   snapsIn++
   // caps at parse; drops COUNTED so a cap eating real data is loud
   const rowMax = ENTITY_MAX
@@ -13051,6 +13047,12 @@ function onGuestData(d) {
   }
   const mine = (d.P || []).find(p => p[PLAYER_STATE.col.id] === myId)
   if (mine) { admitted ||= myId > 0; reconcile(mine) }
+  } },
+}
+function onGuestData(d) {
+  if (!d) return
+  const M = typeof d.k === 'string' && Object.hasOwn(GUEST_MSGS, d.k) ? GUEST_MSGS[d.k] : null
+  if (M) { const v = M.validate ? M.validate(d) : d; if (v) M.apply(v); return }
 }
 
 // lag in ticks; bounded: the host is not trusted
