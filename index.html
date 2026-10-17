@@ -2217,7 +2217,8 @@ const picked = pick => BOTS.flatMap((B, i) =>
 // [id, cid] for a bot row and its alt
 const botPairs = list => list.flatMap(i => [[BOT_ID0 + i, BOTS[i].cid], ...BOTS[i].altRow ? [[BOT_ID0 + i, BOTS[i].altRow.cid]] : []])
 let waveAt = -1, waveGap = 0
-const WAVE_GAP_S = 4
+// a break holds while the next wave's rows (or any other queued look) still prepare, WAVE_HOLD_S longer at most
+const WAVE_GAP_S = 4, WAVE_HOLD_S = 10
 
 const RARE_ONE_IN = 20
 // rare: out of free-for-all; visits: in anyway, on its own roll
@@ -5207,7 +5208,8 @@ function extremeY(root, up) {
   return s * out
 }
 // runs of 48 vertices in index order: bind box, bones, weight-sum range
-function skinRunsOf(g) {
+function skinRunsOf(g) { return drain(runSteps(g)) }
+function* runSteps(g) {
   const p = g.attributes.position, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, out = []
   for (let lo = 0; lo < p.count; lo += 48) {
     const r = { lo, hi: Math.min(lo + 48, p.count), box: [[Infinity, Infinity, Infinity], [-Infinity, -Infinity, -Infinity]], bones: new Set(), s0: Infinity, s1: -Infinity }
@@ -5218,6 +5220,7 @@ function skinRunsOf(g) {
       for (let j = 0; j < 3; j++) { r.box[0][j] = Math.min(r.box[0][j], p.getComponent(i, j)); r.box[1][j] = Math.max(r.box[1][j], p.getComponent(i, j)) }
     }
     out.push(r)
+    if (out.length % 16 === 0) yield
   }
   return out
 }
@@ -7151,26 +7154,29 @@ function rigFor(M, bones) {
 // union of bone-transformed bounds: a bind-pose sphere clips limbs
 const skinBoxes = new WeakMap()
 let skinMatrix
-function cullSkin(mesh) {
-  if (!mesh.isSkinnedMesh || mesh.poseBounds && mesh.poseBounds.geometry === mesh.geometry) return
-  if (!skinMatrix) skinMatrix = new THREE.Matrix4()
-  const g = mesh.geometry, p = g.attributes.position, si = g.attributes.skinIndex, sw = g.attributes.skinWeight
-  let boxes = skinBoxes.get(g)
-  if (!boxes) {
-    boxes = mesh.skeleton.bones.map(() => new THREE.Box3())
-    const v = new THREE.Vector3()
-    for (let i = 0; i < p.count; i++) for (let j = 0; j < 4; j++) {
+// g's bone boxes as mesh binds it, a step per 1024 vertices
+function* boxSteps(g, mesh) {
+  const p = g.attributes.position, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, boxes = mesh.skeleton.bones.map(() => new THREE.Box3()), v = new THREE.Vector3()
+  for (let i = 0; i < p.count; i++) {
+    for (let j = 0; j < 4; j++) {
       if (sw.array[i * 4 + j] <= 0) continue
       const bone = si.array[i * 4 + j]
       v.fromBufferAttribute(p, i).applyMatrix4(mesh.bindMatrix).applyMatrix4(mesh.skeleton.boneInverses[bone])
       boxes[bone].expandByPoint(v)
     }
-    for (const b of boxes) if (!b.isEmpty()) {
-      b.center = b.getCenter(new THREE.Vector3())
-      b.half = b.getSize(new THREE.Vector3()).multiplyScalar(0.5)
-    }
-    skinBoxes.set(g, boxes)
+    if (i % 1024 === 1023) yield
   }
+  for (const b of boxes) if (!b.isEmpty()) {
+    b.center = b.getCenter(new THREE.Vector3())
+    b.half = b.getSize(new THREE.Vector3()).multiplyScalar(0.5)
+  }
+  skinBoxes.set(g, boxes)
+  return boxes
+}
+function cullSkin(mesh) {
+  if (!mesh.isSkinnedMesh || mesh.poseBounds && mesh.poseBounds.geometry === mesh.geometry) return
+  if (!skinMatrix) skinMatrix = new THREE.Matrix4()
+  const g = mesh.geometry, boxes = skinBoxes.get(g) || drain(boxSteps(g, mesh))
   mesh.poseBounds = { geometry: g, boxes, box: new THREE.Box3(), sphere: new THREE.Sphere() }
   mesh.computeBoundingSphere = function() {
     const b = this.poseBounds
@@ -7848,6 +7854,19 @@ function ghost(obj, prot, fade) {
 // their programs, so a first sight builds and compiles nothing. A frame: bodySteps and far detail steps for PREP_MS, or one kept copy alone.
 const prepQueue = [], prepKept = new Map(), prepShown = [], PREP_MS = 6
 let prepAt = null
+// a body's per-geometry caches as steps (its far geometries' with far): extremeY's runs, skinPick, cullSkin's boxes
+function* warmSteps(root, far) {
+  const meshes = []
+  root.traverse(n => { if (n.isMesh) meshes.push(n) })
+  for (const [k, m] of meshes.entries()) if (m.isSkinnedMesh) {
+    const g = far ? far[k] : m.geometry
+    if (!g?.attributes.skinIndex) continue
+    if (!skinRuns.has(g)) skinRuns.set(g, yield* runSteps(g))
+    if (!skinPicks.has(g)) yield* pickSteps(g, m.skeleton.bones.length)
+    if (!skinBoxes.has(g)) yield* boxSteps(g, m)
+    yield
+  }
+}
 // a body a step per call: its bodySteps, then its walk poses while more(); true once ready (a built model's in BUILT_CACHE)
 function bodyStep(B, M, id, cid, key, more) {
   if (M.kind === 'built' && BUILT_CACHE.has(key)) return true
@@ -7857,6 +7876,7 @@ function bodyStep(B, M, id, cid, key, more) {
     return false
   }
   if (!M.proto) return true
+  if (!(B.warm ||= warmSteps(B.inst)).next().done) return false
   if (!B.todo) {
     const prof = profOf(id, cid), mixer = new THREE.AnimationMixer(B.inst)
     B.todo = [prof[1], prof.sprint].filter(p => p && M.anims.some(c => c.name === p.clip) && !walkLows.has(lowKey(key, p)))
@@ -7878,6 +7898,7 @@ function prepareStep() {
     if (M.kind !== 'built' && !M.proto) return
     if (!bodyStep(prepAt ||= {}, M, id, cid, key, more)) { fresh = false; continue }
     if (camera && id >= 0 && !detailCache.has(key)) { (prepAt.far ||= farSteps(id, cid, profOf(id, cid), rowFor(id, cid))).next(); fresh = false; continue }
+    if (!(prepAt.far2 ||= warmSteps(prepAt.inst, detailCache.get(key)?.list || [])).next().done) { fresh = false; continue }
     if (!fresh) return
     prepQueue.shift()
     const had = avatars.get(id), body = prepAt?.inst
@@ -8437,20 +8458,20 @@ const HOLD_TILT = { dive: -Math.PI, hover: 0, ascend: 0, descend: 0, fly: FLY_TI
 // lowest point: per bone, the furthest drawn vertices along 14 directions, picked at spawn
 const SKIN_DIRS = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1], ...[1, -1].flatMap(x => [1, -1].flatMap(y => [1, -1].map(z => [x, y, z])))]
 const skinPicks = new WeakMap()
-function skinPick(g, bones) {
-  let s = skinPicks.get(g)
-  if (s) return s
+function skinPick(g, bones) { return skinPicks.get(g) || drain(pickSteps(g, bones)) }
+function* pickSteps(g, bones) {
   const P = g.attributes.position.array, I = g.attributes.skinIndex.array, W = g.attributes.skinWeight.array, drawn = new Uint8Array(P.length / 3)
   for (const i of tris(g)) drawn[i] = 1
   const top = new Float64Array(bones * 14).fill(-Infinity), at = new Int32Array(bones * 14)
   for (let i = 0; i < drawn.length; i++) {
+    if (i % 1024 === 1023) yield
     if (!drawn[i]) continue
     let c = 0
     for (let n = 1; n < 4; n++) if (W[i * 4 + n] > W[i * 4 + c]) c = n
     const b = I[i * 4 + c] * 14, x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2]
     for (let n = 0; n < 14; n++) { const d = SKIN_DIRS[n], e = d[0] * x + d[1] * y + d[2] * z; if (e > top[b + n]) { top[b + n] = e; at[b + n] = i } }
   }
-  s = Int32Array.from(new Set(at.filter((_, k) => top[k] > -Infinity)))
+  const s = Int32Array.from(new Set(at.filter((_, k) => top[k] > -Infinity)))
   skinPicks.set(g, s)
   return s
 }
@@ -12771,6 +12792,7 @@ function stepWaves(dt) {
   if (gameMode !== 'waves') return
   if ([...players.values()].some(c => c.bot && !c.bot.squad)) return
   if (waveGap > 0) { if (waveGap === WAVE_GAP_S) prepareRows(botPairs(picked(WAVES[(waveAt + 1) % WAVES.length].pick))); waveGap -= dt; return }
+  if (waveGap > -WAVE_HOLD_S && prepQueue.some(q => !Array.isArray(q) || botPairs(picked(WAVES[(waveAt + 1) % WAVES.length].pick)).some(p => skinKey(...p) === skinKey(...q)))) { waveGap -= dt; return }
   startWave((waveAt + 1) % WAVES.length)
 }
 
@@ -14312,7 +14334,7 @@ let pickedLevel = 0
 // what a Host draws first: the pick and its team, the first wave or the free-for-all's bots
 function prepMenu() {
   const team = CHARS[myCid].team, ffa = gameMode === 'ffa' || !sideOffered(CHARS[myCid].side)
-  prepareRows([...(team ? members(team) : [myCid]).map(k => [0, k]), ...botPairs(ffa ? [...heroWant(), ...SQUAD] : picked(WAVES[0].pick))])
+  prepareRows([...(team ? members(team) : [myCid]).map(k => [0, k]), ...botPairs(ffa ? [...heroWant(), ...SQUAD] : waveOrder())])
 }
 // a thumbnail compiles its level: drawn when idle after Ready, at most half a second later on a page that never idles
 const thumbsDue = [], paintThumbs = () => { for (const f of thumbsDue.splice(0)) try { f() } catch (e) { console.error(e) } }
