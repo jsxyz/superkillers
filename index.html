@@ -9899,7 +9899,7 @@ function pickShoot(id, cid, cv, x0, x1, head, yaw, t) {
     const fh = head ? 0.58 * H : 1.12 * H, cy = head ? 0.25 * H : 0, d = fh / 2 / Math.tan(S.cam.fov * Math.PI / 360)
     S.cam.aspect = w / h; S.cam.updateProjectionMatrix()
     S.cam.position.set(d * 0.3, cy + fh * 0.05, -d); S.cam.lookAt(0, cy, 0)
-    S.scene.background = new THREE.Color(SIDES[C.side].color).multiplyScalar(0.18)
+    S.scene.background = new THREE.Color(sideColor(C)).multiplyScalar(0.18)
     R.setRenderTarget(null); R.autoClear = true; R.setScissorTest(true)
     R.setViewport(0, 0, w / pr, h / pr); R.setScissor(0, 0, w / pr, h / pr)
     R.render(S.scene, S.cam)
@@ -11144,7 +11144,8 @@ function refusal(i) {
 }
 const roomName = () => gameMode === 'waves' ? 'Waves' : 'Free-for-all'
 // the room's sides in one grid: a card selects, Play (or Enter, or a second click) confirms
-const pickAll = () => Object.keys(SIDES).flatMap(pickEntries), pickEntry = c => pickAll().find(k => k === c || teamOf(c) && teamOf(k) === teamOf(c))
+const pickSides = () => [...Object.keys(SIDES), ''], sideColor = C => (SIDES[C.side] || C).color
+const pickAll = () => pickSides().flatMap(pickEntries), pickEntry = c => pickAll().find(k => k === c || teamOf(c) && teamOf(k) === teamOf(c))
 const pickName = i => teamOf(i) ? TEAMS[teamOf(i)].name : CHARS[i].card || CHARS[i].name
 const playing = i => { const c = !joinPick() && selfChar(); return !!c && pickEntry(c.cid) === i }
 function paintPicker() {
@@ -11156,10 +11157,12 @@ function paintPicker() {
     : live && live.shiftCool > 0 ? 'Changing again in a moment.' : 'You keep the damage you have taken; this is not a respawn.'
   el('#pick-keys').textContent = 'Arrow keys choose · Enter picks · Esc: ' + el('#pick-back').textContent
   wrap.innerHTML = ''
-  for (const k in SIDES) {
+  for (const k of pickSides()) {
+    const E = pickEntries(k)
+    if (!E.length) continue
     const h = wrap.appendChild(document.createElement('div'))
-    h.className = 'hd'; h.textContent = SIDES[k].name; h.style.borderLeftColor = css(SIDES[k].color)
-    for (const i of pickEntries(k)) {
+    h.className = 'hd'; h.textContent = SIDES[k]?.name ?? 'Others'; h.style.borderLeftColor = css(SIDES[k]?.color ?? 0x7d8590)
+    for (const i of E) {
       const why = refusal(i), n = teamOf(i) ? members(teamOf(i)).length : 1, d = wrap.appendChild(document.createElement('div'))
       d.className = 'card pc' + (i === pickAt ? ' sel' : '') + (why ? ' taken' : '')
       d.innerHTML = '<div class="nm">' + pickName(i) + '</div>' +
@@ -11183,7 +11186,7 @@ function pickSel(i) {
   el('#pick-name').textContent = pickName(i)
   el('#pick-role').textContent = T ? T.role + ' · ' + members(teamOf(i)).map(k => CHARS[k].name).join(', ') : C.role || ''
   el('#pick-stats').innerHTML = PICK_STATS.map(([k, f]) => '<div><span>' + k + '</span><i><b style="width:' +
-    Math.round(100 * C[f] / Math.max(...PICKABLE.map(j => CHARS[j][f]))) + '%;background:' + css(SIDES[C.side].color) + '"></b></i><span>' + +C[f].toFixed(1) + '</span></div>').join('')
+    Math.round(100 * C[f] / Math.max(...PICKABLE.map(j => CHARS[j][f]))) + '%;background:' + css(sideColor(C)) + '"></b></i><span>' + +C[f].toFixed(1) + '</span></div>').join('')
   const atks = [].concat(C.atk ?? []), many = gunless(C) && atks.length > 1, right = primaryName({ cid: i })
   el('#pick-atk').innerHTML = '<div><em>' + (IS_TOUCH ? 'FIRE' : 'Click') + '</em>' + (many ? atks.join(' · ') + ' <kbd>' + (IS_TOUCH ? 'WPN' : 'R') + '</kbd> switch' : GUNS[handsOf(C)].name) + '</div>' +
     (right ? '<div><em>' + (IS_TOUCH ? 'ATK' : 'Right-click') + '</em>' + right + '</div>' : '')
@@ -11433,7 +11436,7 @@ async function copyCode() {
 }
 
 function initCodeModal() {
-  el('#code-qr').innerHTML = el('#join-scan').innerHTML
+  el('#code-qr').innerHTML = el('#join-scan').innerHTML.split('</svg>')[0] + '</svg>'
   el('#code-copy').onclick = copyCode
   el('#code-view').onclick = revealCode
   el('#code-qr').onclick = showCodeQR
@@ -13984,7 +13987,7 @@ class Arena extends ENABLE3D.Scene3D {
 
 const pickCard = (wrap, d) => { for (const c of wrap.children) c.classList.remove('sel'); d.classList.add('sel') }
 // a team shows as its first member
-const pickEntries = side => PICKABLE.filter(i => CHARS[i].side === side && (!CHARS[i].team || CHARS.findIndex(C => C.team === CHARS[i].team) === i))
+const pickEntries = side => PICKABLE.filter(i => (SIDES[CHARS[i].side] ? CHARS[i].side : '') === side && (!CHARS[i].team || CHARS.findIndex(C => C.team === CHARS[i].team) === i))
 const teamOf = i => CHARS[i].team, members = t => CHARS.flatMap((C, i) => C.team === t ? [i] : [])
 let pickedLevel = 0
 // what a Host draws first: the pick and its team, the first wave or the free-for-all's bots
