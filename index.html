@@ -12830,6 +12830,26 @@ function hostLevel(lv, ls, lh) {
   }
 }
 
+// a host message k, as a guest takes it: validate (optional, no side effects) returns the packet or null; apply acts on it
+const GUEST_MSGS = {
+  pong: {
+    validate: d => (d.s | 0) === rttSeq ? d : null,
+    apply: d => {
+      rttLog.push(now() - d.t)
+      if (rttLog.length > RTT_KEEP) rttLog.shift()
+      const _wasRttMax = rttMax
+      rtt = Math.min(...rttLog)
+      rttMax = Math.max(...rttLog)
+      if (!isHost && connected && (rttMax - _wasRttMax > 20 || _wasRttMax - rttMax > 20 || _wasRttMax < 0)) sendHost({ k: 'rtt', ms: rttMax | 0 })
+    },
+  },
+  lag: { apply: d => { onLag(d.n) } },
+  say: { apply: d => { say(String(d.w), d.i | 0) } },
+  sys: { apply: d => { sysMsg(String(d.m || '').slice(0, 200)) } },
+  kicked: { apply: d => { kickedBy = String(d.by || 'the host').slice(0, 16) } },
+  full: { apply: d => { endSession('Room full', (gameMode === 'waves' ? 'Waves takes ' : 'The room takes ') + (d.n | 0) + ' players.', false) } },
+  hostgone: { apply: () => { endSession('Host left', 'The host closed the game.', true) } },
+}
 function onGuestData(d) {
   if (!d) return
   if (d.k === 'welcome') {
@@ -12840,23 +12860,9 @@ function onGuestData(d) {
     return
   }
   if (d.k === 'roster') { applyRoster(d.list || []); if (pickOpen) paintPicker(); return }
-  if (d.k === 'pong') {
-    if ((d.s | 0) !== rttSeq) return
-    rttLog.push(now() - d.t)
-    if (rttLog.length > RTT_KEEP) rttLog.shift()
-    const _wasRttMax = rttMax
-    rtt = Math.min(...rttLog)
-    rttMax = Math.max(...rttLog)
-    if (!isHost && connected && (rttMax - _wasRttMax > 20 || _wasRttMax - rttMax > 20 || _wasRttMax < 0)) sendHost({ k: 'rtt', ms: rttMax | 0 })
-    return
-  }
-  if (d.k === 'lag') { onLag(d.n); return }
-  if (d.k === 'say') { say(String(d.w), d.i | 0); return }
-  if (d.k === 'sys') { sysMsg(String(d.m || '').slice(0, 200)); return }
+  const M = typeof d.k === 'string' && Object.hasOwn(GUEST_MSGS, d.k) ? GUEST_MSGS[d.k] : null
+  if (M) { const v = M.validate ? M.validate(d) : d; if (v) M.apply(v); return }
   if (d.k === 'poll') { takePoll(d); return }
-  if (d.k === 'kicked') { kickedBy = String(d.by || 'the host').slice(0, 16); return }
-  if (d.k === 'full') { endSession('Room full', (gameMode === 'waves' ? 'Waves takes ' : 'The room takes ') + (d.n | 0) + ' players.', false); return }
-  if (d.k === 'hostgone') { endSession('Host left', 'The host closed the game.', true); return }
   if (d.k === 'c') {
     const key = 'p' + d.id
     if ((lastChatSeq.get(key) || -1) >= d.s) return
@@ -13023,6 +13029,7 @@ function reconcile(a) {
     : Infinity
   if (reconcileErr <= REWIND_EPS && objErr <= REWIND_EPS && (predAt.web || 0) === web && Math.abs(predAt.fuel - a[F.fuel]) <= 0.006 && predAt.jl === !!a[F.jLock]) { replaySteps = 0; return }
 
+  if (predAt?.sp !== undefined) { predicted.flying = predAt.fl; predicted.springT = predAt.sp; predicted.flyTurn = predAt.ft }      // not in the snapshot
   restore()
   restoreChar(predicted, a[F.x], a[F.y], a[F.z], a[F.vx], a[F.vy], a[F.vz], a[F.fuel])
   tie(predicted, web)
@@ -13031,7 +13038,7 @@ function reconcile(a) {
   for (let i = 0; i < n; i++) {
     const e = pending[i]
     tickChars([predicted], () => e.inp, TICK)
-    e.x = predicted.x; e.y = predicted.y; e.z = predicted.z; e.web = predicted.web || 0; e.ob = objs.map(o => [o.id, ...objState(o)]); e.sh = objs.filter(o => o.V).map(o => [o.id, o.steer || 0, o.hand || 0])
+    e.x = predicted.x; e.y = predicted.y; e.z = predicted.z; e.web = predicted.web || 0; e.fl = !!predicted.flying; e.sp = predicted.springT || 0; e.ft = !!predicted.flyTurn; e.ob = objs.map(o => [o.id, ...objState(o)]); e.sh = objs.filter(o => o.V).map(o => [o.id, o.steer || 0, o.hand || 0])
   }
   blend()
   replaySteps = n; predJump = true
@@ -13533,7 +13540,7 @@ function stepSim(t) {
       sampleTick(myId, predicted, predJump, input.fire || input.alt); predJump = false
       msPhys = msPhys * 0.9 + (now() - _p1) * 0.1
       const seq = ++outSeq
-      pending.push({ seq, inp, x: predicted.x, y: predicted.y, z: predicted.z, fuel: predicted.fuel, jl: !!predicted.jLock, web: predicted.web || 0, ob: objs.map(o => [o.id, ...objState(o)]) })
+      pending.push({ seq, inp, x: predicted.x, y: predicted.y, z: predicted.z, fuel: predicted.fuel, jl: !!predicted.jLock, fl: !!predicted.flying, sp: predicted.springT || 0, ft: !!predicted.flyTurn, web: predicted.web || 0, ob: objs.map(o => [o.id, ...objState(o)]) })
       pending.at(-1).sh = objs.filter(o => o.V).map(o => [o.id, o.steer || 0, o.hand || 0])
       // a dropped unacked input breaks the replay chain: flag it
       while (pending.length > MAX_PENDING) { pending.shift(); predLost = true }
