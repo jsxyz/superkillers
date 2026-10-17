@@ -9945,7 +9945,33 @@ const marksHit = f => f[7] === 1 || f[7] === 3 || f[7] === 7 && f[5]
 
 // ---------------------------------------------------------------- input
 const keys = {}
-const input = { f: 0, r: 0, j: false, fire: false, yaw: 0, pitch: 0 }
+// Legacy input adapter: absent fields stay absent; consume edges only after a simulated tick.
+const INPUT_SCHEMA = {
+  bit: { j: 1, fire: 2, sh: 4, alt: 8, sw: 16, sprint: 64, descend: 128, use: 32 },
+  empty: () => ({ f: 0, r: 0, j: false, fire: false, yaw: 0, pitch: 0 }),
+  predict(input, aim, A) {
+    return { f: input.f, r: input.r, j: input.j, fire: input.fire, alt: input.alt, use: input.use, sprint: input.sprint, descend: input.descend,
+             yaw: (aim ? r4 : r2)(A.yaw), pitch: (aim ? r4 : r2)(A.pitch), ...input.descend && { d: r2(A.d || 0) } }
+  },
+  encode(inp, input, haveT, renderT, A) {
+    const B = INPUT_SCHEMA.bit
+    return [inp.f, inp.r,
+            (inp.j ? B.j : 0) | (inp.fire ? B.fire : 0) |
+            (input.sh ? B.sh : 0) | (input.alt ? B.alt : 0) | (input.sw ? B.sw : 0) | (inp.sprint ? B.sprint : 0) | (input.descend ? B.descend : 0) | (input.use ? B.use : 0),
+            inp.yaw, inp.pitch, haveT ? r2(renderT) : 0, ...(inp.fire || input.alt || inp.descend ? [r2(A.d || 0)] : [])]
+  },
+  decode(t, seq) {
+    const B = INPUT_SCHEMA.bit
+    const bits = t[2] | 0
+    // guest-authored: a non-finite reaches Math.sin and NaNs the body
+    const nf = x => Number.isFinite(x = +x) ? x : 0
+    return { s: seq, f: nf(t[0]), r: nf(t[1]), yaw: nf(t[3]), pitch: nf(t[4]), rt: nf(t[5]), d: nf(t[6]),
+             j: !!(bits & B.j), fire: !!(bits & B.fire),
+             sh: !!(bits & B.sh), alt: !!(bits & B.alt), sw: !!(bits & B.sw), sprint: !!(bits & B.sprint), descend: !!(bits & B.descend), use: !!(bits & B.use) }
+  },
+  consume(input) { input.sw = input.sh = input.use = false }
+}
+const input = INPUT_SCHEMA.empty()
 let locked = false, chatOpen = false, tabOpen = false, modalOpen = false
 let firstPerson = true
 let pauseOpen = false
@@ -12674,12 +12700,7 @@ function onHostData(id, d) {
     if (seq <= (inAck.get(id) || 0)) continue
     if (q.some(x => x.s === seq)) continue
     if (q.length >= INQ_CAP) break
-    const bits = t[2] | 0
-    // guest-authored: a non-finite reaches Math.sin and NaNs the body
-    const nf = x => Number.isFinite(x = +x) ? x : 0
-    const inp = { s: seq, f: nf(t[0]), r: nf(t[1]), yaw: nf(t[3]), pitch: nf(t[4]), rt: nf(t[5]), d: nf(t[6]),
-                  j: !!(bits & 1), fire: !!(bits & 2),
-                  sh: !!(bits & 4), alt: !!(bits & 8), sw: !!(bits & 16), sprint: !!(bits & 64), descend: !!(bits & 128), use: !!(bits & 32) }
+    const inp = INPUT_SCHEMA.decode(t, seq)
     let i = q.length
     while (i > 0 && q[i - 1].s > seq) i--
     q.splice(i, 0, inp)
@@ -13114,7 +13135,7 @@ function sampleTick(id, c, fresh, fire) {
 // server panel: rates per second, bytes per session
 let ticksRun = 0, tickRate = 0, snapsOut = 0, snapOutRate = 0, bytesUpAll = 0, bytesDownAll = 0
 
-const IDLE_INPUT = { f: 0, r: 0, j: false, fire: false, yaw: 0, pitch: 0 }
+const IDLE_INPUT = INPUT_SCHEMA.empty()
 
 // ack = last input TAKEN (empty queue repeats the last, no ack); excess over the buffer drained but acked
 function takeInput(id) {
@@ -13408,15 +13429,14 @@ function stepSim(t) {
     acc -= TICK; steps++; tickAt = t - acc * 1000
     if (lagGive > 0) lagGive--
     if (LV.grow && (isHost || connected)) growTick()
-    if (isHost && players.size) { hostTick(TICK); lookStep(players.get(0), input); ticksRun++; input.sw = input.sh = input.use = false }
+    if (isHost && players.size) { hostTick(TICK); lookStep(players.get(0), input); ticksRun++; INPUT_SCHEMA.consume(input) }
     else if (connected && predicted && lagOwed > 0 && lagGive <= 0) {
       lagOwed--; lagGive = LAG_GIVE_TICKS
     }
     else if (connected && predicted) {
       predicted.pitch = input.pitch
       const aim = input.fire || input.alt || input.descend, A = aimed(input)
-      const inp = { f: input.f, r: input.r, j: input.j, fire: input.fire, alt: input.alt, use: input.use, sprint: input.sprint, descend: input.descend,
-                    yaw: (aim ? r4 : r2)(A.yaw), pitch: (aim ? r4 : r2)(A.pitch), ...input.descend && { d: r2(A.d || 0) } }
+      const inp = INPUT_SCHEMA.predict(input, aim, A)
       const _p1 = now()
       predictObjects(predicted)
       tickChars([predicted], () => inp, TICK)
@@ -13428,13 +13448,10 @@ function stepSim(t) {
       // a dropped unacked input breaks the replay chain: flag it
       while (pending.length > MAX_PENDING) { pending.shift(); predLost = true }
       // [f, r, bits, yaw, pitch, renderT (host clock), d]; d and 1e-4 angles only on a shot
-      sendRing.push([inp.f, inp.r,
-                     (inp.j ? 1 : 0) | (inp.fire ? 2 : 0) |
-                     (input.sh ? 4 : 0) | (input.alt ? 8 : 0) | (input.sw ? 16 : 0) | (inp.sprint ? 64 : 0) | (input.descend ? 128 : 0) | (input.use ? 32 : 0),
-                     inp.yaw, inp.pitch, haveT ? r2(renderT) : 0, ...(inp.fire || input.alt || inp.descend ? [r2(A.d || 0)] : [])])
+      sendRing.push(INPUT_SCHEMA.encode(inp, input, haveT, renderT, A))
       while (sendRing.length > INPUT_DUP) sendRing.shift()
       lastSeqOut = seq
-      input.sw = input.sh = input.use = false
+      INPUT_SCHEMA.consume(input)
     }
     if (isHost && players.size) { for (const [id, c] of players) sampleTick(id, c, false, !id && (input.fire || input.alt)); for (const f of tracers) f.firedAt ??= tickAt }
   }
