@@ -7887,13 +7887,48 @@ function bodyStep(B, M, id, cid, key, more) {
 }
 function prepareRows(pairs) {
   if (renderHeadless || serving || !renderer) return
-  for (const p of pairs) { const k = skinKey(...p); if (!prepKept.has(k) && !prepQueue.some(q => skinKey(...q) === k)) prepQueue.push(p) }
+  for (const p of pairs) {
+    const k = skinKey(...p), at = prepQueue.findIndex(q => !Array.isArray(q))
+    if (!prepKept.has(k) && !prepQueue.some(q => Array.isArray(q) && skinKey(...q) === k)) prepQueue.splice(at < 0 ? prepQueue.length : at, 0, p)
+  }
+  prepareLooks(pairs)
+}
+// looks: what play builds on first sight besides bodies, queued behind the rows and built only off play (menu, select, a break)
+const offPlay = () => phase !== 'playing' || pickOpen || isHost && gameMode === 'waves' && ![...players.values()].some(c => c.bot && !c.bot.squad)
+const prepLook = (key, steps) => prepQueue.some(q => q.key === key) || prepQueue.push({ key, steps })
+// every pickup a pad can roll and the rows' held guns
+function prepareLooks(pairs) {
+  const held = pairs.flatMap(([id, cid]) => [id >= BOT_ID0 ? gunNamed([rowFor(id, cid).atk].flat()[0]) : handsOf(CHARS[cid]), ...[].concat(rowFor(id, cid).atk ?? []).map(gunNamed)])
+  for (const [kind, id] of [...DROPS.map(g => ['gun', g]), ...held.filter(g => GUNS[g] && GUNS[g].held !== false).map(g => ['gun', g]),
+    ...dropping(POWERS).map(v => ['power', v - 1]), ...dropping(HEALS).map(v => ['heal', v - 1]),
+    ...PADS.filter(p => p[3]).map(([, , , n]) => healNamed(n) > 0 ? ['heal', healNamed(n) - 1] : ['gun', gunNamed(n)])])
+    if (id >= 0 && !PROP_CACHE.has('prop:' + kind + ':' + id)) prepLook('prop:' + kind + ':' + id, function* () { const m = propModel(kind, id); yield; renderer.compileAsync(m, camera, scene).catch(() => {}) })
+}
+// a damageable row's damaged copies, near and far, and their culling boxes, on a body built as play builds one
+function prepareDamage(id, cid) {
+  prepLook('damage:' + skinKey(id, cid), function* () {
+    const had = avatars.get(id), meshes = []
+    let parts
+    avatars.delete(id)
+    try {
+      avatarGroup.remove(avatarFor(id, cid))
+      const a = avatars.get(id), far = a.model && farDetail(id, cid, a.prof, a.spec).list
+      a.mesh.traverse(n => { if (n.isMesh && !n.userData.damageOverlay) meshes.push(n) })
+      parts = damagePartsOf(a, id).flatMap(d => [d.mesh.geometry, far?.[meshes.indexOf(d.mesh)]].filter(Boolean).map(g => [g, d]))
+    } finally { if (had) avatars.set(id, had); else avatars.delete(id) }
+    for (const [g, d] of parts) for (let level = 1; level <= 3; level++) {
+      yield
+      const v = damageGeometry(g, d.kind, level)
+      if (d.mesh.isSkinnedMesh && !skinBoxes.has(v)) yield* boxSteps(v, d.mesh)
+    }
+  })
 }
 function prepareStep() {
   const t0 = now(), more = () => now() - t0 < PREP_MS
   for (let i = prepShown.length - 1; i >= 0; i--) if (--prepShown[i][1] < 0) avatarGroup.remove(prepShown.splice(i, 1)[0][0])
   let fresh = true
   while (prepQueue.length && more()) {
+    if (!Array.isArray(prepQueue[0])) { if (!offPlay()) return; const E = prepQueue[0]; if ((E.gen ||= E.steps()).next().done) prepQueue.shift(); fresh = false; continue }
     const [id, cid] = prepQueue[0], M = modelFor(id, cid), key = skinKey(id, cid)
     if (M.kind !== 'built' && !M.proto) return
     if (!bodyStep(prepAt ||= {}, M, id, cid, key, more)) { fresh = false; continue }
@@ -7907,6 +7942,7 @@ function prepareStep() {
       const mesh = avatarFor(id, cid, 0, body)
       avatarGroup.remove(mesh)
       prepKept.set(key, mesh)
+      if (damagePartsOf(avatars.get(id), id).length) prepareDamage(id, cid)
       // the spawn-protection ghost too; then one frame under the floor, never culled, for its shadow's depth programs
       renderer.compileAsync(mesh, camera, scene).then(() => { ghost(mesh, 1); return renderer.compileAsync(mesh, camera, scene) })
         .then(() => { mesh.position.set(0, -30, 0); mesh.traverse(n => { n.frustumCulled = false }); avatarGroup.add(mesh); prepShown.push([mesh, 1]) }).catch(() => {})
@@ -8283,6 +8319,20 @@ function drawLooks() {
   }
 }
 
+// the meshes drawHealth swaps for damaged copies
+function damagePartsOf(a, id) {
+  const artie = a.animate === animateArtie, sam = costumeOf(skinKey(id, a.cid)).blood, parts = []
+  if (!artie && !sam) return parts
+  const ear = artie && a.built.tagged.ear[1]
+  a.mesh.traverse(n => {
+    if (!n.isMesh || !n.geometry.attributes.color || !n.geometry.userData.parts) return
+    let broken = false
+    for (let parent = n; parent; parent = parent.parent) if (parent === ear) broken = true
+    if (sam || broken || n.geometry.userData.parts.some(p => p.tags.split('|').includes('head')))
+      parts.push({ mesh: n, kind: sam ? 'blood' : broken ? 'ear' : 'dent' })
+  })
+  return parts
+}
 function drawHealth(id, hp) {
   const a = avatars.get(id)
   if (!a) return
@@ -8291,17 +8341,7 @@ function drawHealth(id, hp) {
   const level = fraction > 0.8 ? 0 : fraction > 0.5 ? 1 : fraction > 0.25 ? 2 : 3
   const artie = a.animate === animateArtie, screen = a.animate === animateVitoScreen, sam = costumeOf(skinKey(id, a.cid)).blood
   if (artie || sam) {
-    if (!a.damageParts) {
-      a.damageParts = []
-      const ear = artie && a.built.tagged.ear[1]
-      a.mesh.traverse(n => {
-        if (!n.isMesh || !n.geometry.attributes.color || !n.geometry.userData.parts) return
-        let broken = false
-        for (let parent = n; parent; parent = parent.parent) if (parent === ear) broken = true
-        if (sam || broken || n.geometry.userData.parts.some(p => p.tags.split('|').includes('head')))
-          a.damageParts.push({ mesh: n, kind: sam ? 'blood' : broken ? 'ear' : 'dent' })
-      })
-    }
+    a.damageParts ||= damagePartsOf(a, id)
     for (const d of a.damageParts) {
       const g = dress(a, damageGeometry(d.mesh.geometry, d.kind, level))
       if (d.mesh.geometry !== g) { d.mesh.geometry = g; cullSkin(d.mesh) }
