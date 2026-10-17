@@ -11197,9 +11197,9 @@ const backdrop = (id, fn) => el('#' + id).addEventListener('click', e => { if (e
 
 let pickOpen = false, pickAt = -1, pickAtT = 0
 function openCharPick() {
-  pickOpen = true
   pickAt = -1; pickAtT = now()
   paintPicker()
+  pickOpen = true
   pickPlan()
   show('charpick', 1)
 }
@@ -11221,12 +11221,15 @@ function refusal(i) {
 const roomName = () => gameMode === 'waves' ? 'Waves' : 'Free-for-all'
 // the room's sides in one grid: a card selects, Play (or Enter, or a second click) confirms
 const pickSides = () => [...Object.keys(SIDES), ''], sideColor = C => (SIDES[C.side] || C).color
-const pickAll = () => pickSides().flatMap(pickEntries), pickEntry = c => pickAll().find(k => k === c || teamOf(c) && teamOf(k) === teamOf(c))
+// a hidden form (a shift) stands for the row it shifts from
+const pickAll = () => pickSides().flatMap(pickEntries), pickBase = c => CHARS[c]?.hidden ? CHARS.findIndex(C => !C.hidden && C.shift === c) : c
+const pickEntry = c => (c = pickBase(c), pickAll().find(k => k === c || teamOf(c) && teamOf(k) === teamOf(c)))
 const pickName = i => teamOf(i) ? TEAMS[teamOf(i)].name : CHARS[i].card || CHARS[i].name
 const playing = i => { const c = !joinPick() && selfChar(); return !!c && pickEntry(c.cid) === i }
 function paintPicker() {
   const wrap = el('#pick-cards'), live = selfChar(), joining = joinPick(), now = live ? live.cid : myCid
   if (pickAt < 0) pickAt = joining && refusal(now) ? pickAll().find(i => !refusal(i)) ?? pickEntry(now) : pickEntry(now)
+  pickAt ??= pickAll()[0]
   el('#pick-title').textContent = joining ? 'Choose your character' : 'Character'
   el('#pick-back').textContent = joining ? 'Leave' : 'Back'
   el('#pick-note').textContent = joining ? roomName() + ' · ' + LEVELS[levelId].name + (balanced() ? ' · sides balanced' : '')
