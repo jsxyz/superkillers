@@ -12386,13 +12386,21 @@ function openHostPeer(attempt) {
     connected = true
     if (serving) beginServing(); else beginPlay()
   })
-  peer.on('disconnected', () => { if (phase === 'playing') relinkLater() })
+  peer.on('disconnected', () => { if (phase !== 'menu') relinkLater() })
   peer.on('connection', c => {
     // JSON only: 'binary' (PeerJS default) BinaryPack trusts attacker lengths -> hang/OOM
     if (c.serialization !== 'json') { try { c.close() } catch (e) {} ; return }
-    if (conns.size >= MAX_PLAYERS - (serving ? 0 : 1)) { try { c.close() } catch (e) {} ; return }
-    const id = takeId()
-    if (!id) { try { c.close() } catch (e) {} ; return }
+    const id = conns.size < MAX_PLAYERS - (serving ? 0 : 1) && takeId(), t0 = now()
+    // a refusal is said once the channel opens; a joiner that never connects is said too
+    if (!id) return void c.on('open', () => { c.send({ k: 'full', n: MAX_PLAYERS }); setTimeout(() => { try { c.close() } catch (e) {} }, 150) })
+    sysMsg('§7Someone is joining…')
+    const watch = setInterval(() => {
+      if (c.open || !peer || peer.destroyed) return clearInterval(watch)
+      if (now() - t0 < 15000) return
+      clearInterval(watch)
+      const p = c.peerConnection
+      sysMsg('§cA joiner never connected (' + (p ? 'ICE ' + p.iceConnectionState + ', link ' + p.connectionState : 'no link') + ')')
+    }, 1000)
     c.on('open', () => {
       if (gameMode === 'waves' && conns.size >= WAVES_PLAYERS - (serving ? 0 : 1)) {
         c.send({ k: 'full', n: WAVES_PLAYERS }); setTimeout(() => { try { c.close() } catch (e) {} }, 150); return }
@@ -12495,7 +12503,7 @@ function relinkLater() {
   const p = peer
   relinkTimer = setTimeout(() => {
     relinkTimer = 0
-    if (p !== peer || phase !== 'playing' || p.destroyed || !p.disconnected) return
+    if (p !== peer || phase === 'menu' || p.destroyed || !p.disconnected) return
     try { p.reconnect() } catch (e) { relinkLater() }
   }, Math.min(30000, 1000 * Math.pow(2, relinkTries++)))
 }
@@ -12713,7 +12721,8 @@ function startJoin(code) {
   scarsLater = false; if (!scarMesh) prepareScars()
   roomCodeStr = code.trim().toUpperCase()
   predicted = newChar(myCid, 6, 0); admitted = false; helloAt = 0; picking = true
-  setStatus('Connecting…')
+  const t0 = now(), stage = t => phase === 'connecting' && setStatus('Connecting… ' + t)
+  stage('to the signaling server')
   peer = new Peer()
   peer.on('error', e => {
     if (phase === 'playing') endSession('Disconnected', 'Connection error: ' + e.type, true)
@@ -12725,6 +12734,16 @@ function startJoin(code) {
   peer.on('open', () => {
     const c = peer.connect(roomCodeStr, { reliable: false, serialization: 'json' })
     conns.set(0, c)
+    stage('asking the host')
+    // each second the link's state; after 15 s without a channel, where it stopped
+    const watch = setInterval(() => {
+      if (phase !== 'connecting' || c.open) return clearInterval(watch)
+      const p = c.peerConnection, at = p ? 'ICE ' + p.iceConnectionState + ', link ' + p.connectionState : 'no answer from the host'
+      if (now() - t0 < 15000) return stage('(' + at + ')')
+      clearInterval(watch)
+      setStatus('Could not reach the host after 15 s (' + at + '). The room may be closed, or the network blocks a direct link.', 'err')
+    }, 1000)
+    c.on('error', e => setStatus('Could not connect: ' + (e && (e.type || e.message) || e), 'err'))
     c.on('open', () => {
       connected = true
       watchLink(c, null)
@@ -12785,7 +12804,7 @@ function onGuestData(d) {
   if (d.k === 'sys') { sysMsg(String(d.m || '').slice(0, 200)); return }
   if (d.k === 'poll') { takePoll(d); return }
   if (d.k === 'kicked') { kickedBy = String(d.by || 'the host').slice(0, 16); return }
-  if (d.k === 'full') { endSession('Room full', 'Waves takes ' + (d.n | 0) + ' players.', false); return }
+  if (d.k === 'full') { endSession('Room full', (gameMode === 'waves' ? 'Waves takes ' : 'The room takes ') + (d.n | 0) + ' players.', false); return }
   if (d.k === 'hostgone') { endSession('Host left', 'The host closed the game.', true); return }
   if (d.k === 'c') {
     const key = 'p' + d.id
@@ -14062,6 +14081,9 @@ class Arena extends ENABLE3D.Scene3D {
       initServerPanel()
       wireMenu()
       setStatus('')
+      const broke = m => { if (phase === 'connecting' || picking) { setStatus('Something broke: ' + m, 'err'); sysMsg('§cSomething broke: ' + m) } }
+      addEventListener('error', e => broke(e.message))
+      addEventListener('unhandledrejection', e => broke(String(e.reason && e.reason.message || e.reason)))
       thumbsOn = true; idleThumbs(); joinLink()
     } catch (e) {
       console.error(e)
