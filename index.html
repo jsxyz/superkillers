@@ -12734,31 +12734,7 @@ function setMode(m) {
 // a guest's message k, as the host takes it from connection id: validate (optional, no side effects) returns the packet or null;
 // apply acts on it, and what it returns is onHostData's
 const HOST_MSGS = {
-  nick: { apply: (id, d) => {
-    const p = roster.get(id)
-    if (p) { p.name = cleanName(d.name) || p.name; pushRoster() }
-  } },
-  vote: { apply: (id, d) => callVote(id, d.lv) },
-  ballot: { validate: d => typeof d.y === 'boolean' ? d : null, apply: (id, d) => ballot(id, d.y) },
-  bye: { apply: (id, d) => {
-    const c = conns.get(id)
-    if (c) { try { c.close() } catch (e) {} }
-  } },
-  ping: { apply: (id, d) => {
-    const c = conns.get(id)
-    if (c && c.open) { try { c.send(JSON.stringify({ k: 'pong', t: d.t, s: d.s | 0 })) } catch (e) {} }
-  } },
-  rtt: { apply: (id, d) => { const c = conns.get(id); if (c) c.rtt = clamp(+d.ms || 0, 0, 2000) } },
-  radio: { apply: (id, d) => { const o = objs.find(o => o.V && o.riders[0] === id)
-    if (o && Number.isInteger(d.s) && d.s >= -1 && d.s < RADIO.length) o.radio = d.s } },
-  cap: { apply: (id, d) => {
-    const p = roster.get(id)
-    if (p) { p.cap = capText(d.t); pushRoster() }
-  } },
-}
-function onHostData(id, d) {
-  if (!d) return
-  if (d.k === 'hello') {
+  hello: { apply: (id, d) => {
     if (players.has(id)) { const c = conns.get(id); if (!(now() - c.welcomedAt < HELLO_MS)) c.welcomedAt = now(), c.send(welcome(id)); return }
     let cid = clamp(d.cid | 0, 0, CHARS.length - 1)
     if (CHARS[cid].hidden) cid = START
@@ -12780,8 +12756,8 @@ function onHostData(id, d) {
     pushRoster()
     if (poll) countVote()
     return
-  }
-  if (d.k === 'c') {
+  } },
+  c: { apply: (id, d) => {
     if ((lastChatSeq.get(id) || -1) >= d.s) return
     lastChatSeq.set(id, d.s)
     // we vouch for what we relay: bounded here, a guest ignores its own limit
@@ -12792,17 +12768,41 @@ function onHostData(id, d) {
     showChat(id, text, !!d.a)
     broadcast({ k: 'c', id, m: text, a: !!d.a, s: d.s }, id)
     return
-  }
-  const M = typeof d.k === 'string' && Object.hasOwn(HOST_MSGS, d.k) ? HOST_MSGS[d.k] : null
-  if (M) { const v = M.validate ? M.validate(d) : d; return v ? M.apply(id, v) : undefined }
-  if (d.k === 'char') {
+  } },
+  nick: { apply: (id, d) => {
+    const p = roster.get(id)
+    if (p) { p.name = cleanName(d.name) || p.name; pushRoster() }
+  } },
+  vote: { apply: (id, d) => callVote(id, d.lv) },
+  ballot: { validate: d => typeof d.y === 'boolean' ? d : null, apply: (id, d) => ballot(id, d.y) },
+  char: { apply: (id, d) => {
     const cid = clamp(d.cid | 0, 0, CHARS.length - 1)      // switchChar refuses hidden rows
     const c = players.get(id)
     if (!c || !switchChar(c, cid)) return c && noSwap(c, cid)
     const p = roster.get(id)
     if (p && p.cid !== cid) { p.cid = cid; pushRoster() }
     return
-  }
+  } },
+  bye: { apply: (id, d) => {
+    const c = conns.get(id)
+    if (c) { try { c.close() } catch (e) {} }
+  } },
+  ping: { apply: (id, d) => {
+    const c = conns.get(id)
+    if (c && c.open) { try { c.send(JSON.stringify({ k: 'pong', t: d.t, s: d.s | 0 })) } catch (e) {} }
+  } },
+  rtt: { apply: (id, d) => { const c = conns.get(id); if (c) c.rtt = clamp(+d.ms || 0, 0, 2000) } },
+  radio: { apply: (id, d) => { const o = objs.find(o => o.V && o.riders[0] === id)
+    if (o && Number.isInteger(d.s) && d.s >= -1 && d.s < RADIO.length) o.radio = d.s } },
+  cap: { apply: (id, d) => {
+    const p = roster.get(id)
+    if (p) { p.cap = capText(d.t); pushRoster() }
+  } },
+}
+function onHostData(id, d) {
+  if (!d) return
+  const M = typeof d.k === 'string' && Object.hasOwn(HOST_MSGS, d.k) ? HOST_MSGS[d.k] : null
+  if (M) { const v = M.validate ? M.validate(d) : d; return v ? M.apply(id, v) : undefined }
   if (d.k !== 'i') return
   // reliable:false = unordered: place by seq; drop any held or simulated (packets repeat inputs)
   const q = inQ.get(id)
@@ -12891,6 +12891,16 @@ function hostLevel(lv, ls, lh) {
 
 // a host message k, as a guest takes it: validate (optional, no side effects) returns the packet or null; apply acts on it
 const GUEST_MSGS = {
+  welcome: { apply: d => {
+    myId = d.id | 0
+    roomCodeStr = d.code || roomCodeStr
+    hostLevel(d.lv, d.ls, d.lh)   // before the first snapshot lands
+    if (d.lv === levelId) takeCraters(d.cr, d.cv)      // other level: resent after the switch
+    return
+  } },
+  roster: { apply: d => {
+    applyRoster(d.list || []); if (pickOpen) paintPicker(); return
+  } },
   pong: {
     validate: d => (d.s | 0) === rttSeq ? d : null,
     apply: d => {
@@ -12905,30 +12915,24 @@ const GUEST_MSGS = {
   lag: { apply: d => { onLag(d.n) } },
   say: { apply: d => { say(String(d.w), d.i | 0) } },
   sys: { apply: d => { sysMsg(String(d.m || '').slice(0, 200)) } },
+  poll: { apply: d => {
+    takePoll(d); return
+  } },
   kicked: { apply: d => { kickedBy = String(d.by || 'the host').slice(0, 16) } },
   full: { apply: d => { endSession('Room full', (gameMode === 'waves' ? 'Waves takes ' : 'The room takes ') + (d.n | 0) + ' players.', false) } },
   hostgone: { apply: () => { endSession('Host left', 'The host closed the game.', true) } },
-}
-function onGuestData(d) {
-  if (!d) return
-  if (d.k === 'welcome') {
-    myId = d.id | 0
-    roomCodeStr = d.code || roomCodeStr
-    hostLevel(d.lv, d.ls, d.lh)   // before the first snapshot lands
-    if (d.lv === levelId) takeCraters(d.cr, d.cv)      // other level: resent after the switch
-    return
-  }
-  if (d.k === 'roster') { applyRoster(d.list || []); if (pickOpen) paintPicker(); return }
-  const M = typeof d.k === 'string' && Object.hasOwn(GUEST_MSGS, d.k) ? GUEST_MSGS[d.k] : null
-  if (M) { const v = M.validate ? M.validate(d) : d; if (v) M.apply(v); return }
-  if (d.k === 'poll') { takePoll(d); return }
-  if (d.k === 'c') {
+  c: { apply: d => {
     const key = 'p' + d.id
     if ((lastChatSeq.get(key) || -1) >= d.s) return
     lastChatSeq.set(key, d.s)
     showChat(d.id | 0, String(d.m || '').slice(0, 160), !!d.a)
     return
-  }
+  } },
+}
+function onGuestData(d) {
+  if (!d) return
+  const M = typeof d.k === 'string' && Object.hasOwn(GUEST_MSGS, d.k) ? GUEST_MSGS[d.k] : null
+  if (M) { const v = M.validate ? M.validate(d) : d; if (v) M.apply(v); return }
   if (d.k !== 's') return
   snapsIn++
   // caps at parse; drops COUNTED so a cap eating real data is loud
