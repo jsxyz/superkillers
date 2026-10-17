@@ -2383,6 +2383,7 @@ function teleportBody(body, x, y, z, q, v, w) {
 function setCharPos(c, x, y, z) {
   untie(c)
   c.x = x; c.y = y; c.z = z
+  c.warp = (c.warp || 0) + 1
   c.zip = null
   c.wallRun = false; c.ceil = false; c.flyTurn = false
   if (!c.body) return
@@ -3719,18 +3720,19 @@ function chaseStep(o, inp) {
 }
 function vehicleCamera(o, me, inp, cam, firstPerson) {
   if (chase.yaw !== chase.yaw || tickAt - chase.t >= 500) chaseStep(o, inp)
+  const at = objDrawn.get(o), X = at ? at.x : o.x, Y = at ? at.y : o.y, Z = at ? at.z : o.z, Q = at ? at.q : o.q, drawnOff = at ? [0, 0, 0] : o.off || [0, 0, 0]
   const V = o.V, yaw = chase.yaw + chase.look, sx = -Math.sin(yaw), sz = -Math.cos(yaw), cp = Math.cos(inp.pitch)
   const wantFov = Math.min(FOV_MAX, settings.fov + 5 * (firstPerson ? 0 : clamp(chase.v / o.V.speed, 0, 1)))
   if (cam.fov !== wantFov) { cam.fov = wantFov; if (cam.updateProjectionMatrix) cam.updateProjectionMatrix() }
   if (firstPerson) {        // eye where the top's front edge sits 27° down
-    const P = hullOf(o.K).pts, top = Math.max(...P.map(p => p[1])), off = o.off || [0, 0, 0]
-    const e = rotq(o.q, [0, top + 0.12, Math.min(...P.filter(p => p[1] > top - 0.15).map(p => p[2])) + 0.24]).map((v, i) => v + [o.x, o.y, o.z][i] + off[i])
+    const P = hullOf(o.K).pts, top = Math.max(...P.map(p => p[1])), off = drawnOff
+    const e = rotq(Q, [0, top + 0.12, Math.min(...P.filter(p => p[1] > top - 0.15).map(p => p[2])) + 0.24]).map((v, i) => v + [X, Y, Z][i] + off[i])
     cam.position.set(...e)
     cam.lookAt(e[0] + sx * cp, e[1] + Math.sin(inp.pitch), e[2] + sz * cp)
     return { dist: 0, hideSelf: true, fade: 0 }
   }
-  const off = o.off || [0, 0, 0], L = V.l || 2 * o.R, H = V.h || o.R, x0 = o.x + off[0], z0 = o.z + off[2]
-  const ground = o.y + off[1] + o.low, py = ground + H
+  const off = drawnOff, L = V.l || 2 * o.R, H = V.h || o.R, x0 = X + off[0], z0 = Z + off[2]
+  const ground = Y + off[1] + o.low, py = ground + H
   const pull = 1 + drive(V, 'chase') * clamp(chase.v / V.speed, 0, 1), up = (1.5 + 0.15 * L) * pull
   const back = 1.3 * L * pull + chase.lag
   const len = Math.hypot(back, up), el = clamp(Math.atan2(up, back) - inp.pitch, 0.05, 1.3)
@@ -4326,7 +4328,7 @@ const seatAt = (o, p) => rotq(o.q, p.map((v, i) => v - o.at0[i])).map((v, i) => 
 const seatOf = c => { const s = c.seat; return s && s[0].V && s[0].riders[s[1]] === c.id ? s : null }
 const onSeat = (s, c) => seatFit(s, c.id !== undefined ? rowFor(c.id, c.cid) : c)      // c: character or row
 const WHEELS_NEAR = 40                    // m: past it, wheel travel < a pixel
-const wheelState = new Map(), wq = [0, 0, 0, 1], wv = [0, 0, 0], wsteer = [0, 0, 0, 1], wspin = [0, 0, 0, 1]
+const wheelState = new Map(), wq = [0, 0, 0, 1], wv = [0, 0, 0], wsteer = [0, 0, 0, 1], wspin = [0, 0, 0, 1], wdq = [0, 0, 0, 1], wsq = [0, 0, 0, 1]
 // spin capped at SPIN_STEP a frame (faster, the 12-sided tyre strobes); rolling toward -Z spins it backward
 const SPIN_STEP = 0.2, roll = (s, d) => { s.spin -= clamp(d, -SPIN_STEP, SPIN_STEP) }
 // [{ pos, quat }] reused, `.steer` on it; null: the model's own stand (parked, still or past WHEELS_NEAR)
@@ -4349,12 +4351,15 @@ function wheelsOf(d, t, eye) {
     if (dt) roll(s, (v.x() * wv[0] + v.z() * wv[2]) * dt / W.r)
     s.t = t; s.fresh = true
     wspin[0] = Math.sin(s.spin / 2); wspin[3] = Math.cos(s.spin / 2)
+    const D = d, S = d.of || own
+    if (D !== S) { wsq[0] = -S.q[0]; wsq[1] = -S.q[1]; wsq[2] = -S.q[2]; wsq[3] = S.q[3]; qmulTo(wdq, D.q, wsq) }
     for (let k = 0; k < out.length; k++) {
       const I = own.car.getWheelInfo(k), R = I.get_m_raycastInfo(), h = R.get_m_hardPointWS(), d = R.get_m_wheelDirectionWS()
       const len = settle(s, k, W, R.get_m_isInContact(), Math.max(R.get_m_suspensionLength(), W.rest - W.travel), dt), st = I.get_m_steering(), w = out[k], off = own.off
       w.pos[0] = h.x() + d.x() * len + off[0]; w.pos[1] = h.y() + d.y() * len + off[1]; w.pos[2] = h.z() + d.z() * len + off[2]
+      if (D !== S) { rotqTo(w.pos, wdq, w.pos[0] - S.x - off[0], w.pos[1] - S.y - off[1], w.pos[2] - S.z - off[2]); w.pos[0] += D.x; w.pos[1] += D.y; w.pos[2] += D.z }
       wsteer[1] = Math.sin(st / 2); wsteer[3] = Math.cos(st / 2)
-      qmulTo(w.quat, qmulTo(wq, own.q, wsteer), wspin)
+      qmulTo(w.quat, qmulTo(wq, D.q, wsteer), wspin)
     }
     out.steer = own.car.getWheelInfo(0).get_m_steering()
     return out
@@ -8209,7 +8214,7 @@ function drawHealth(id, hp) {
 }
 // sprint lightning: strands at [height, side] × stature; bolts off the limbs, re-struck every RUN_FLICK ms
 const RUN_STRANDS = [[-0.42, 0.1], [-0.2, -0.13], [0.02, 0.14], [0.22, -0.1], [0.4, 0.07]], RUN_FLICK = 60, ORANGE = [1, 0.55, 0.05]
-function drawRunTrail(a, moving, t, id = 0) {
+function drawRunTrail(a, moving, t, id = 0, ticked) {
   let trail = a.runTrail
   const early = a.runAt
   a.runAt = null
@@ -8245,7 +8250,8 @@ function drawRunTrail(a, moving, t, id = 0) {
     }
   }
   if (early) for (const e of early) admit(...e)
-  admit(p.x, p.y, p.z, t, moving)
+  if (!ticked) admit(p.x, p.y, p.z, t, moving)
+  else while (trail.count && t - points[trail.head].w > 280) { trail.head = (trail.head + 1) % 18; trail.count-- }
   if (culling) {
     trail.box.makeEmpty().expandByPoint(p)
     for (let i = 0; i < trail.count; i++) trail.box.expandByPoint(points[(trail.head + i) % 18])
@@ -8271,8 +8277,13 @@ function drawRunTrail(a, moving, t, id = 0) {
       if (k === 3) quad++
     }
   }
-  for (let i = 1; i < trail.count; i++) {
-    const first = points[(trail.head + i - 1) % 18], next = points[(trail.head + i) % 18]
+  // drawn: the points up to t, then the body itself
+  let vis = trail.count
+  if (ticked) while (vis && points[(trail.head + vis - 1) % 18].w > t) vis--
+  const end = vis && points[(trail.head + vis - 1) % 18], tip = (trail.at ||= new THREE.Vector4()).set(p.x, p.y, p.z, t)
+  const ends = ticked && end && (p.x - end.x) ** 2 + (p.y - end.y) ** 2 + (p.z - end.z) ** 2 > 1e-8 ? 1 : 0, pt = i => i < vis ? points[(trail.head + i) % 18] : tip
+  for (let i = 1; i < vis + ends; i++) {
+    const first = pt(i - 1), next = pt(i)
     const dx = next.x - first.x, dz = next.z - first.z, L = (Math.hypot(dx, dz) || 1) / H, age = u => Math.max(0, 1 - (t - first.w - (next.w - first.w) * u) / 280)
     const at = (v, s, u, jag, w = RUN_STRANDS[s][1] + jag) => v.set(first.x + dx * u + dz / L * w, first.y + (next.y - first.y) * u + (RUN_STRANDS[s][0] + jag / 2) * H, first.z + dz * u - dx / L * w)
     for (let s = 0; s < 5; s++) {
@@ -8491,7 +8502,7 @@ function posePunch(a, t, restore = false, hold) {
   p.applied = true
 }
 
-function setAnim(id, want, dt, t, hold, still, ticks) {
+function setAnim(id, want, dt, t, hold, still, ticks, shift) {
   if (hold === 'ceiling') want = 'ceiling'
   const a = avatars.get(id)
   if (!a) return
@@ -8503,18 +8514,18 @@ function setAnim(id, want, dt, t, hold, still, ticks) {
   if (id >= 0) drawAvatarShadow(a)
   // smoothed drawn speed, a tick at a time where the ticks are known (the last is the drawn mesh; trail points go by tick
   // time); a step past 240 m/s, faster than any dash or dive, over at least a tick (the sim moves whole ticks) is a teleport
-  const m = a.mesh.position, n = ticks ? ticks.length : 1
+  const m = a.mesh.position, n = ticks ? ticks.length : 1, sh = shift || [0, 0, 0]
   for (let i = 0; i < n; i++) {
-    const s = i < n - 1 && ticks[i], h = ticks ? TICK : dt, x = s ? s.px ?? s.x : m.x, y = s ? s.py ?? s.y : m.y, z = s ? s.pz ?? s.z : m.z
+    const s = i < n - 1 && ticks[i], h = ticks ? TICK : dt, x = s ? s.px ?? s.x : m.x + sh[0], y = s ? s.py ?? s.y : m.y + sh[1], z = s ? s.pz ?? s.z : m.z + sh[2]
     const d = !a.at ? 0 : ticks?.[i].fresh ? Infinity : Math.hypot(x - a.at.x, z - a.at.z)
     if (d < 240 * Math.max(h, TICK)) a.v += (d / Math.max(h, 1e-3) - a.v) * timeShare(h, TICK / 0.15)
     a.stepD = (a.stepD || 0) + (d < 240 * Math.max(h, TICK) ? d : 0); a.stepH = (a.stepH || 0) + h      // drawn speed over two ticks or more
     if (a.stepH >= 2 * TICK) { a.stepV = a.stepD / a.stepH; a.stepD = a.stepH = 0 }
     ;(a.at ||= new THREE.Vector3()).set(x, y, z)
-    if (s && a.spec.trail) (a.runAt ||= []).push([x, y, z, tickAt - (n - 1 - i) * TICK * 1000, s.anim === 1 && a.v > 1.5 * (a.spec.run ?? a.spec.speed * RUN)])
+    if (ticks && a.spec.trail) (a.runAt ||= []).push([x, y, z, tickAt - (n - 1 - i) * TICK * 1000, (s ? s.anim : want) === 1 && a.v > 1.5 * (a.spec.run ?? a.spec.speed * RUN)])
   }
-  if (!n) a.at?.copy(m)
-  if (a.spec.trail) drawRunTrail(a, want === 1 && a.v > 1.5 * (a.spec.run ?? a.spec.speed * RUN), ticks ? tickAt : t, id)
+  if (!n) a.at?.set(m.x + sh[0], m.y + sh[1], m.z + sh[2])
+  if (a.spec.trail) drawRunTrail(a, want === 1 && a.v > 1.5 * (a.spec.run ?? a.spec.speed * RUN), ticks ? drawnT() : t, id, !!ticks)
   if (a.spec.sparks !== undefined) throwSparks(a, want === 1, dt, t)
   if (still) return
   if (a.animate) { if (a.hold !== hold) { a.hold = hold; wear(a) } a.anim = want; a.animate(a, want, dt, t); return }
@@ -12159,7 +12170,7 @@ function objectsAt(t) {
   return out
 }
 
-const objectsDrawn = (others = []) => isHost ? objs : objectsAt(renderT).map(o => {
+const objectsDrawn = (others = []) => (objDrawn.clear(), isHost ? objs.map(drawnObj) : objectsAt(renderT).map(o => {
   const by = objHeld.get(o.id), c = by !== undefined && others.find(p => p.id === by), C = c && CHARS[c.cid], e = objEase.get(o.id)
   if (C && o.K.carry) {
     const p = handOf({ ...c, r: C.r, h: C.h }, { K: o.K, R: objR(o.K) })
@@ -12171,8 +12182,11 @@ const objectsDrawn = (others = []) => isHost ? objs : objectsAt(renderT).map(o =
   const k = 1 - (renderT - e.t) / 150
   if (k <= 0) objEase.delete(o.id)
   return k <= 0 ? o : { ...o, x: o.x + e.off[0] * k, y: o.y + e.off[1] * k, z: o.z + e.off[2] * k }
-}).concat(objs.map(o =>
-  ({ id: o.id, held: o.heldBy !== undefined, k: o.k, K: o.K, x: o.x + o.off[0], y: o.y + o.off[1], z: o.z + o.off[2], q: o.q, seed: o.seed })))
+}).concat(objs.map(o => {
+  const d = drawnObj(o), e = { id: o.id, held: o.heldBy !== undefined, k: o.k, K: o.K, x: d.x + o.off[0], y: d.y + o.off[1], z: d.z + o.off[2], q: d.q, seed: o.seed, of: o }
+  objDrawn.set(o, e)
+  return e
+})))
 
 // taken/let go: drawn pose eases onto the real one, < 0.3 m a frame
 let holdEase = new Map()
@@ -13030,6 +13044,66 @@ function remoteAt(t) {
 let acc = 0, last = now(), snapAcc = 0, tickAt = 0      // ms: when the last tick fell due
 // this frame's ticks of each player simulated here, for the drawn side to step through; fresh: moved by a reconcile, not a tick
 const tickSamples = new Map()
+// each tick's start pose of what is simulated here; drawn between it and the tick's end at drawAlpha
+const prevPose = new WeakMap(), accRing = [], objDrawn = new Map()
+let drawD = 0, drawAt = 0, drawAlpha = 1
+function keepPose(e, q) {
+  let p = prevPose.get(e)
+  if (!p) prevPose.set(e, p = [0, 0, 0, 0, 0, 0, 1, 0])
+  p[0] = e.x; p[1] = e.y; p[2] = e.z; p[7] = e.warp || 0
+  if (q) { p[3] = q[0]; p[4] = q[1]; p[5] = q[2]; p[6] = q[3] }
+}
+function keepPoses() {
+  if (isHost) for (const c of players.values()) keepPose(c)
+  else if (predicted) keepPose(predicted)
+  for (const o of objs) keepPose(o, o.q)
+}
+// D: the largest leftover (to a tick) of the last 250 ms of frames; it falls at 0.05 ms a ms, so drawn time never skips ahead
+function drawDelay(t) {
+  accRing.push(t, Math.min(acc, TICK) * 1000)
+  while (accRing[0] < t - 250) accRing.splice(0, 2)
+  let want = 0
+  for (let i = 1; i < accRing.length; i += 2) want = Math.max(want, accRing[i])
+  const step = 0.05 * Math.max(0, t - drawAt)
+  drawD = Math.max(want, drawD - step); drawAt = t
+  drawAlpha = acc >= TICK ? 1 : clamp(1 + (acc * 1000 - drawD) / (TICK * 1000), 0, 1)
+}
+const drawnT = () => tickAt - (1 - drawAlpha) * TICK * 1000
+// where e is drawn: between its last two ticks (null: at its tick, or it jumped or was put somewhere)
+function drawnPose(e) {
+  const p = drawAlpha < 1 && prevPose.get(e)
+  if (!p || p[7] !== (e.warp || 0) || p[0] === e.x && p[1] === e.y && p[2] === e.z || (e.x - p[0]) ** 2 + (e.y - p[1]) ** 2 + (e.z - p[2]) ** 2 > 25) return null
+  const k = 1 - drawAlpha
+  return [e.x + (p[0] - e.x) * k, e.y + (p[1] - e.y) * k, e.z + (p[2] - e.z) * k]
+}
+// a drawn copy of an object `of` its simulated self
+function drawnObj(o) {
+  const P = drawnPose(o)
+  if (!P) return o
+  const d = { ...o, x: P[0], y: P[1], z: P[2], q: nlerp(prevPose.get(o).slice(3, 7), o.q, drawAlpha), of: o }
+  objDrawn.set(o, d)
+  return d
+}
+// a tick's aim: the angles (and reticle distance) that take this tick's sim camera ray, or eye, to what the crosshair
+// is on as drawn at the last frame's drawn pose; as input on a frame's first tick when the view was drawn at it
+function aimed(inp) {
+  const v = inp.view, me = isHost ? players.get(0) : predicted
+  if (!(inp.fire || inp.alt || inp.descend) || !v || !v.moved && !tickSamples.get(myId)?.length || !me || (v.at[0] - me.x) ** 2 + (v.at[1] - me.y) ** 2 + (v.at[2] - me.z) ** 2 > 25) return inp
+  if (inp.aimAt === tickAt) return inp.aimed
+  const viaCam = v.cam, from = { ...me, x: v.at[0], y: v.at[1], z: v.at[2] }
+  const [fx, fy, fz] = aimDir(inp.yaw, inp.pitch), f = viaCam ? camRay(from, inp.yaw, inp.pitch) : { x: from.x, y: eyeOf(from), z: from.z, dx: fx, dy: fy, dz: fz }
+  const P = [f.x + f.dx * v.d, f.y + f.dy * v.d, f.z + f.dz * v.d]
+  let yaw = inp.yaw, pitch = inp.pitch, r = null
+  for (let i = 0, e = 1; i < 12 && e > 1e-7; i++) {
+    const [ex, ey, ez] = aimDir(yaw, pitch)
+    r = viaCam ? camRay(me, yaw, pitch) : { x: me.x, y: eyeOf(me), z: me.z, dx: ex, dy: ey, dz: ez }
+    const dx = P[0] - r.x, dy = P[1] - r.y, dz = P[2] - r.z, n = Math.hypot(dx, dy, dz) || 1
+    const turn = wrapPi(Math.atan2(-dx, -dz) - Math.atan2(-r.dx, -r.dz)), tilt = Math.asin(dy / n) - Math.asin(r.dy)
+    yaw += turn; pitch += tilt; e = Math.abs(turn) + Math.abs(tilt)
+  }
+  inp.aimAt = tickAt
+  return inp.aimed = { ...inp, yaw, pitch, d: viaCam ? (P[0] - r.x) * r.dx + (P[1] - r.y) * r.dy + (P[2] - r.z) * r.dz : 0 }
+}
 let predJump = false
 function sampleTick(id, c, fresh, fire) {
   let list = tickSamples.get(id)
@@ -13069,14 +13143,14 @@ function hostTick(dt) {
     endMatch('Time.')
   }
   const me = players.get(0)
-  if (me) me.pitch = input.pitch
+  if (me) me.pitch = aimed(input).pitch
   const all = [...players.values()]
   spawnAvoid = all
 
   // one take per player per tick: reading the queue again would consume a second input
   const cur = new Map()
   for (const [id, c] of players)
-    cur.set(id, id === 0 ? input
+    cur.set(id, id === 0 ? aimed(input)
                 : c.bot ? (inputs.set(id, botThink(c, all, dt)), inputs.get(id))
                 : takeInput(id))
 
@@ -13330,6 +13404,7 @@ function stepSim(t) {
   let steps = 0
   tickSamples.clear()
   while (acc >= TICK && steps < MAX_CATCHUP) {
+    keepPoses()
     acc -= TICK; steps++; tickAt = t - acc * 1000
     if (lagGive > 0) lagGive--
     if (LV.grow && (isHost || connected)) growTick()
@@ -13339,9 +13414,9 @@ function stepSim(t) {
     }
     else if (connected && predicted) {
       predicted.pitch = input.pitch
-      const aim = input.fire || input.alt || input.descend
+      const aim = input.fire || input.alt || input.descend, A = aimed(input)
       const inp = { f: input.f, r: input.r, j: input.j, fire: input.fire, alt: input.alt, use: input.use, sprint: input.sprint, descend: input.descend,
-                    yaw: (aim ? r4 : r2)(input.yaw), pitch: (aim ? r4 : r2)(input.pitch), ...input.descend && { d: r2(input.d || 0) } }
+                    yaw: (aim ? r4 : r2)(A.yaw), pitch: (aim ? r4 : r2)(A.pitch), ...input.descend && { d: r2(A.d || 0) } }
       const _p1 = now()
       predictObjects(predicted)
       tickChars([predicted], () => inp, TICK)
@@ -13356,13 +13431,14 @@ function stepSim(t) {
       sendRing.push([inp.f, inp.r,
                      (inp.j ? 1 : 0) | (inp.fire ? 2 : 0) |
                      (input.sh ? 4 : 0) | (input.alt ? 8 : 0) | (input.sw ? 16 : 0) | (inp.sprint ? 64 : 0) | (input.descend ? 128 : 0) | (input.use ? 32 : 0),
-                     inp.yaw, inp.pitch, haveT ? r2(renderT) : 0, ...(inp.fire || input.alt || inp.descend ? [r2(input.d || 0)] : [])])
+                     inp.yaw, inp.pitch, haveT ? r2(renderT) : 0, ...(inp.fire || input.alt || inp.descend ? [r2(A.d || 0)] : [])])
       while (sendRing.length > INPUT_DUP) sendRing.shift()
       lastSeqOut = seq
       input.sw = input.sh = input.use = false
     }
     if (isHost && players.size) { for (const [id, c] of players) sampleTick(id, c, false, !id && (input.fire || input.alt)); for (const f of tracers) f.firedAt ??= tickAt }
   }
+  drawDelay(t); input.view = null
   // one packet a frame: INPUT_DUP >= MAX_CATCHUP (asserted at the constants), so the ring covers every tick
   if (steps && !isHost && connected && predicted) sendHost({ k: 'i', s: lastSeqOut, a: sendRing })
 
@@ -13601,7 +13677,7 @@ function draw(dt, t) {
     me = players.get(0)
     if (!me) { if (!picking) frameFailed('draw', new Error('the host has no player 0')); return }
     others = [...players].filter(([id]) => id !== 0)
-      .map(([id, c]) => ({ id, x: c.x, y: c.y, z: c.z, yaw: c.yaw, wy: c.wy, vx: c.vx, vz: c.vz, dead: c.dead,
+      .map(([id, c]) => ({ id, ...(P => P ? { x: P[0], y: P[1], z: P[2], sim: c } : { x: c.x, y: c.y, z: c.z })(drawnPose(c)), yaw: c.yaw, wy: c.wy, vx: c.vx, vz: c.vz, dead: c.dead,
                            cid: c.cid, prot: c.prot, anim: animOf(c), cap: c.cap | 0, web: c.web,
                            gun: c.gun, pitch: c.pitch, hp: c.hp, kills: c.kills | 0, mark: c.mark, markT: c.markT, vy: c.vy, jl: c.jLock }))
     pkl = pickups.filter(p => p.respawn <= 0).map(p => [p.x, p.y, p.z, p.gun, p.pow, p.heal])
@@ -13628,12 +13704,13 @@ function draw(dt, t) {
   else { const s = seatOf(me); sits.delete(myId); if (s) sits.set(myId, [s[0].id, s[1]]) }
   const meMesh = avatarFor(myId, me.cid, me.cap | 0)
   meMesh.visible = !(me.dead > 0) && !joinPick()
-  meMesh.position.set(me.x, me.y, me.z)
+  const meP = drawnPose(me), meD = meP ? { ...me, x: meP[0], y: meP[1], z: meP[2] } : me
+  meMesh.position.set(meD.x, meD.y, meD.z)
   const myHold = holdOf(myId, me) || me.ceil && 'ceiling'
   const myTicks = tickSamples.get(myId) || []
   meMesh.rotation.y = faceYaw(myId, me, animOf(me), myHold || firstPerson || carries.has(myId), t, dt, input.fire || input.alt, myTicks)
-  if (!drawSeat(meMesh, me, sits.get(myId), obl) && !drawCeiling(meMesh, me, myHold === 'ceiling', dt, myTicks)) drawTurned(meMesh, me, animOf(me) === 4 && rowOf(me)?.wallRun, dt, myTicks)
-  setAnim(myId, crouchOf(myId, me.cid, animOf(me), me.springT > 0, myHold), dt, t, myHold, false, myTicks)
+  if (!drawSeat(meMesh, me, sits.get(myId), obl) && !drawCeiling(meMesh, meD, myHold === 'ceiling', dt, myTicks)) drawTurned(meMesh, meD, animOf(me) === 4 && rowOf(me)?.wallRun, dt, myTicks)
+  setAnim(myId, crouchOf(myId, me.cid, animOf(me), me.springT > 0, myHold), dt, t, myHold, false, myTicks, [me.x - meD.x, me.y - meD.y, me.z - meD.z])
   drawHealth(myId, me.hp)
 
   cullFrom(camera)
@@ -13652,7 +13729,7 @@ function draw(dt, t) {
     if (o.anim === 4 && C.wallRun && o.wy === undefined) o.wy = wallYawAt(o.x, o.y, o.z, C.h + C.r + 0.4)
     if (!drawSeat(m, o, sits.get(o.id), obl) && !drawCeiling(m, o, hold === 'ceiling', dt, ticks)) drawTurned(m, o, o.anim === 4 && C.wallRun, dt, ticks)
     const still = !posed(m.position)
-    setAnim(o.id, crouchOf(o.id, o.cid, o.anim || 0, o.jl, hold), dt, t, hold, still, ticks)
+    setAnim(o.id, crouchOf(o.id, o.cid, o.anim || 0, o.jl, hold), dt, t, hold, still, ticks, o.sim && [o.sim.x - o.x, o.sim.y - o.y, o.sim.z - o.z])
     drawHealth(o.id, o.hp)
     drawEffect(o.id, o.markT > 0 ? o.mark : 0)
     drawAura(o.id, o.anim || 0, dt)
@@ -13665,20 +13742,23 @@ function draw(dt, t) {
   sfxFrame(me, others, t, obl)
   radioTick()
 
-  const cam = updateCamera(me, input, camera, firstPerson)
-  drawRadar(me, others, t)
+  const cam = updateCamera(meD, input, camera, firstPerson)
+  drawRadar(meD, others, t)
   const held = cam.ray && obl.find(o => !o.K.carry && (o.heldBy ?? objHeld.get(o.id)) === myId)
   heldF += ((held ? heldFade(cam.ray, me, held) : 1) - heldF) * timeShare(dt, TICK / 0.15)
   for (const m of objPool) if (m.visible) ghost(m, 0, (held && m.userData.oid === held.id ? heldF : 1) * (OBJECTS[m.userData.k].glow === undefined ? 1 : GLOW_OP))
   shake(camera, t)
   followSun()
   // reticle distance
-  input.d = 0
-  if (cam.ray && !(me.dead > 0)) {
-    const bodies = isHost ? [...players.values()]
+  input.d = 0; input.view = null
+  const view = cam.ray || firstPerson && !seatOf(me) && (([dx, dy, dz]) => ({ x: meD.x, y: eyeOf(meD), z: meD.z, dx, dy, dz, near: 0 }))(aimDir(input.yaw, input.pitch))
+  if (view && !(me.dead > 0)) {
+    const bodies = isHost ? [...players.values()].map(c => (P => P ? { ...c, x: P[0], y: P[1], z: P[2] } : c)(c === me ? null : drawnPose(c)))
       : others.map(o => { const C = rowFor(o.id, o.cid)
                           return { x: o.x, y: o.y, z: o.z, r: C.r, h: C.h, dead: o.dead, prot: o.prot } })
-    input.d = reticleAt(me, cam.ray, bodies, obl, CAM.far)
+    const d = reticleAt(me, view, bodies, obl, CAM.far)
+    if (cam.ray) input.d = d
+    input.view = { at: [meD.x, meD.y, meD.z], d, cam: !!cam.ray, moved: meD !== me }
   }
   meMesh.visible = meMesh.visible && !cam.hideSelf
   ghost(meMesh, me.prot || 0, cam.fade)
