@@ -12111,7 +12111,7 @@ const FX_WAIT_MAX = 32
 let fxWait = []
 let predLost = false
 let snapPk = [], snapFx = [], snapTw = null
-let pkAt = 0                     // host clock
+let pkAt = 0, twAt = 0            // host clock
 const tracks = new Map()
 const TRACK_KEEP = 8, TRACK_GONE_MS = 1000
 // others drawn interpD behind (snapshot interval + p95 jitter); now() - offBase = host clock
@@ -12879,10 +12879,13 @@ function onGuestData(d) {
   }
   // pk absent = unchanged, not none; unordered, so versioned by packet time
   if (Array.isArray(d.pk) && d.t > pkAt) { snapPk = d.pk; pkAt = d.t }
-  // whole triples within the host's max, else dropped entire
-  snapTw = Array.isArray(d.tw) && d.tw.length && d.tw.length % 3 === 0 &&
-    d.tw.length <= TOR_MAX * 3 && d.tw.every(v => Number.isFinite(v))
-    ? d.tw.map((v, i) => i % 3 === 2 ? clamp(v, 0, 40) : clamp(v, -ARENA, ARENA)) : null
+  // whole triples within the host's max, else dropped entire; absent = none, so versioned by packet time too
+  if (d.t > twAt) {
+    twAt = d.t
+    snapTw = Array.isArray(d.tw) && d.tw.length && d.tw.length % 3 === 0 &&
+      d.tw.length <= TOR_MAX * 3 && d.tw.every(v => Number.isFinite(v))
+      ? d.tw.map((v, i) => i % 3 === 2 ? clamp(v, 0, 40) : clamp(v, -ARENA, ARENA)) : null
+  }
   if (Number.isFinite(d.t) && Array.isArray(d.P)) for (const p of d.P) trackRow(p, d.t)
   if (Number.isFinite(d.t)) noteSnap(d.t)
   if (buf.length && d.t <= buf[buf.length - 1].t) return   // unordered channel
@@ -13045,7 +13048,7 @@ function clearSession() {
   players.clear(); roster.clear()
   try { if (peer) peer.destroy() } catch (e) {}
   peer = null
-  buf.length = 0; snapPk = []; snapTw = null; pkAt = 0; tracers = []; liveTracers = []; fxWait = []
+  buf.length = 0; snapPk = []; snapTw = null; pkAt = twAt = 0; tracers = []; liveTracers = []; fxWait = []
   pkSent.clear(); pkRefreshAt = 0
   tierSent.clear(); hotUntil.clear(); snapSeq = 0; tracks.clear()
   sendRing.length = 0
