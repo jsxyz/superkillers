@@ -9969,7 +9969,106 @@ const INPUT_SCHEMA = {
              j: !!(bits & B.j), fire: !!(bits & B.fire),
              sh: !!(bits & B.sh), alt: !!(bits & B.alt), sw: !!(bits & B.sw), sprint: !!(bits & B.sprint), descend: !!(bits & B.descend), use: !!(bits & B.use) }
   },
-  consume(input) { input.sw = input.sh = input.use = false }
+  consume(input) { input.sw = input.sh = input.use = false },
+  key: { forward: 'KeyW', back: 'KeyS', right: 'KeyD', left: 'KeyA', jump: 'Space',
+         descend: 'KeyQ', swap: 'KeyR', shift: 'KeyF', use: 'KeyE', sprint: 'ShiftLeft' },
+  keyDown(e) {
+    if (e.code === 'Tab') { e.preventDefault(); tabOpen = true; return }
+    if (e.code === 'KeyT' || (e.key === '/' && !e.ctrlKey && !e.metaKey)) {
+      e.preventDefault(); openChat(e.key === '/' ? '/' : ''); return
+    }
+    keys[e.code] = true
+    if (e.code === INPUT_SCHEMA.key.jump) e.preventDefault()
+    if (e.code === 'KeyV') setView(!firstPerson)
+    if (e.code === 'KeyM') sfxToggle()
+    if ((e.code === 'KeyY' || e.code === 'KeyN') && !e.repeat) voteBallot(e.code === 'KeyY')
+    if (e.code === 'KeyB' && !e.repeat) radioCycle()
+    if (e.code === 'KeyC' && !e.repeat) teamSwitch()
+    if (/^Digit[1-9]$/.test(e.code) && !e.repeat && !(isHost && resultsLeft > 0)) teamSwitch(+e.code.slice(5) - 1)
+    if (isHost && resultsLeft > 0 && /^Digit[1-9]$/.test(e.code) && +e.code.slice(5) <= LEVELS.length) pickNext(+e.code.slice(5) - 1)
+  },
+  keyUp(e) {
+    if (e.code === 'Tab') { tabOpen = false; return }
+    keys[e.code] = false
+  },
+  pointerDown(e) {
+    if (e.button === 0) input.fire = true
+    if (e.button === 2) input.alt = true
+  },
+  pointerUp(e) {
+    if (e.button === 0) input.fire = false
+    if (e.button === 2) input.alt = false
+  },
+  wheel() {
+    wheelSwap = true
+  },
+  mouseLook(e) {
+    const k = 0.0022 * settings.sens
+    // remote desktops can send one huge movementX (320 px = 40°)
+    input.yaw -= clamp(e.movementX, -MOUSE_MAX, MOUSE_MAX) * k
+    input.pitch = clamp(input.pitch - clamp(e.movementY, -MOUSE_MAX, MOUSE_MAX) * k,
+                        -PITCH_MAX, PITCH_MAX)
+  },
+  stick(dx, dy, R) {
+    input.r = clamp(dx / R, -1, 1)
+    input.f = clamp(-dy / R, -1, 1)
+  },
+  touchLook(dx, dy) {
+    const k = 0.005 * settings.sens
+    input.yaw -= dx * k
+    input.pitch = clamp(input.pitch - dy * k, -PITCH_MAX, PITCH_MAX)
+  },
+  stopStick() { input.f = 0; input.r = 0 },
+  touchHolds(hold) {
+    hold('btn-fire', () => { input.fire = true }, () => { input.fire = false }, true)
+    hold('btn-jump', () => { keys[INPUT_SCHEMA.key.jump] = true }, () => { keys[INPUT_SCHEMA.key.jump] = false })
+    hold('btn-descend', () => { descendHeld = true }, () => { descendHeld = false })
+    hold('btn-alt', () => { input.alt = true }, () => { input.alt = false })
+  },
+  touchTaps(tap) {
+    tap('btn-swap', () => { tapSwap = true })
+    tap('btn-shift', () => { tapShift = true })
+    tap('btn-use', () => { tapUse = true })
+    tap('btn-sprint', sprintToggle)
+    tap('btn-radio', radioCycle)
+    tap('btn-team', () => teamSwitch())
+    tap('btn-chat', () => openChat(''))
+    tap('btn-tab', () => { tabOpen = !tabOpen })
+    tap('btn-code', () => { if (roomCodeStr) openCodeModal() })
+    tap('btn-view', () => setView(!firstPerson))
+    tap('btn-full', toggleFullscreen)
+    tap('btn-menu', openPause)
+  },
+  lookTouch: t => !!(t && t.closest && t.closest('#btn-fire')),
+  sample() {
+    if (chatOpen || menuUp()) {
+      input.f = 0; input.r = 0; input.j = false; input.fire = false; input.alt = false; return
+    }
+    if (keys[INPUT_SCHEMA.key.sprint] && !sprintHeld) sprintToggle()
+    sprintHeld = !!keys[INPUT_SCHEMA.key.sprint]
+    input.sprint = sprintOn
+    // touch: the stick sets f/r
+    if (IS_TOUCH) {
+      input.j = !!keys[INPUT_SCHEMA.key.jump]
+      input.descend = descendHeld
+      input.sw ||= tapSwap; tapSwap = false
+      input.sh ||= tapShift; tapShift = false
+      input.use ||= tapUse; tapUse = false
+      return
+    }
+    input.f = (keys[INPUT_SCHEMA.key.forward] ? 1 : 0) - (keys[INPUT_SCHEMA.key.back] ? 1 : 0)
+    input.r = (keys[INPUT_SCHEMA.key.right] ? 1 : 0) - (keys[INPUT_SCHEMA.key.left] ? 1 : 0)
+    input.j = !!keys[INPUT_SCHEMA.key.jump]
+    input.descend = !!keys[INPUT_SCHEMA.key.descend]
+    // one-shot presses stay set until a sim tick takes them: a frame runs 0 to MAX_CATCHUP ticks
+    input.sw ||= (!!keys[INPUT_SCHEMA.key.swap] && !swapHeld) || wheelSwap
+    swapHeld = !!keys[INPUT_SCHEMA.key.swap]
+    wheelSwap = false
+    input.sh ||= !!keys[INPUT_SCHEMA.key.shift] && !shiftHeld
+    shiftHeld = !!keys[INPUT_SCHEMA.key.shift]
+    input.use ||= !!keys[INPUT_SCHEMA.key.use] && !useHeld
+    useHeld = !!keys[INPUT_SCHEMA.key.use]
+  }
 }
 const input = INPUT_SCHEMA.empty()
 let locked = false, chatOpen = false, tabOpen = false, modalOpen = false
@@ -10006,39 +10105,24 @@ function initInput() {
     if (pauseOpen) { if (e.key === 'Escape') closePause(); return }
     if (chatOpen) return
     if (phase !== 'playing' || serving) return
-    if (e.code === 'Tab') { e.preventDefault(); tabOpen = true; return }
-    if (e.code === 'KeyT' || (e.key === '/' && !e.ctrlKey && !e.metaKey)) {
-      e.preventDefault(); openChat(e.key === '/' ? '/' : ''); return
-    }
-    keys[e.code] = true
-    if (e.code === 'Space') e.preventDefault()
-    if (e.code === 'KeyV') setView(!firstPerson)
-    if (e.code === 'KeyM') sfxToggle()
-    if ((e.code === 'KeyY' || e.code === 'KeyN') && !e.repeat) voteBallot(e.code === 'KeyY')
-    if (e.code === 'KeyB' && !e.repeat) radioCycle()
-    if (e.code === 'KeyC' && !e.repeat) teamSwitch()
-    if (/^Digit[1-9]$/.test(e.code) && !e.repeat && !(isHost && resultsLeft > 0)) teamSwitch(+e.code.slice(5) - 1)
-    if (isHost && resultsLeft > 0 && /^Digit[1-9]$/.test(e.code) && +e.code.slice(5) <= LEVELS.length) pickNext(+e.code.slice(5) - 1)
+    INPUT_SCHEMA.keyDown(e)
   })
   addEventListener('keyup', e => {
-    if (e.code === 'Tab') { tabOpen = false; return }
-    keys[e.code] = false
+    INPUT_SCHEMA.keyUp(e)
   })
   renderer.domElement.addEventListener('mousedown', e => {
     if (IS_TOUCH || menuUp()) return
     if (chatOpen) { closeChat(); return }
     if (!locked) { lockPointer(); return }
-    if (e.button === 0) input.fire = true
-    if (e.button === 2) input.alt = true
+    INPUT_SCHEMA.pointerDown(e)
   })
   addEventListener('mouseup', e => {
-    if (e.button === 0) input.fire = false
-    if (e.button === 2) input.alt = false
+    INPUT_SCHEMA.pointerUp(e)
   })
   renderer.domElement.addEventListener('contextmenu', e => e.preventDefault())
   renderer.domElement.addEventListener('wheel', e => {
     if (!locked) return
-    wheelSwap = true
+    INPUT_SCHEMA.wheel()
     e.preventDefault()
   }, { passive: false })
   document.addEventListener('pointerlockchange', () => {
@@ -10055,43 +10139,12 @@ function initInput() {
   })
   addEventListener('mousemove', e => {
     if (!locked || chatOpen || menuUp()) return
-    const k = 0.0022 * settings.sens
-    // remote desktops can send one huge movementX (320 px = 40°)
-    input.yaw -= clamp(e.movementX, -MOUSE_MAX, MOUSE_MAX) * k
-    input.pitch = clamp(input.pitch - clamp(e.movementY, -MOUSE_MAX, MOUSE_MAX) * k,
-                        -PITCH_MAX, PITCH_MAX)
+    INPUT_SCHEMA.mouseLook(e)
   })
 }
 
-function sampleInput() {
-  if (chatOpen || menuUp()) {
-    input.f = 0; input.r = 0; input.j = false; input.fire = false; input.alt = false; return
-  }
-  if (keys.ShiftLeft && !sprintHeld) sprintToggle()
-  sprintHeld = !!keys.ShiftLeft
-  input.sprint = sprintOn
-  // touch: the stick sets f/r
-  if (IS_TOUCH) {
-    input.j = !!keys.Space
-    input.descend = descendHeld
-    input.sw ||= tapSwap; tapSwap = false
-    input.sh ||= tapShift; tapShift = false
-    input.use ||= tapUse; tapUse = false
-    return
-  }
-  input.f = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0)
-  input.r = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0)
-  input.j = !!keys.Space
-  input.descend = !!keys.KeyQ
-  // one-shot presses stay set until a sim tick takes them: a frame runs 0 to MAX_CATCHUP ticks
-  input.sw ||= (!!keys.KeyR && !swapHeld) || wheelSwap
-  swapHeld = !!keys.KeyR
-  wheelSwap = false
-  input.sh ||= !!keys.KeyF && !shiftHeld
-  shiftHeld = !!keys.KeyF
-  input.use ||= !!keys.KeyE && !useHeld
-  useHeld = !!keys.KeyE
-}
+function sampleInput() { INPUT_SCHEMA.sample() }
+
 let shiftHeld = false, swapHeld = false, wheelSwap = false
 let useHeld = false, tapUse = false
 let sprintOn = false, sprintHeld = false
@@ -10131,7 +10184,7 @@ function initTouch() {
   const isUI = t => !!(t && t.closest && t.closest(
     '#trow, .tbtn, #chat, #ui, .ovl, #vote'))
   // fire sits in the look area; other buttons stay out (dragging off JUMP never turns)
-  const isFire = t => !!(t && t.closest && t.closest('#btn-fire'))
+  const isFire = INPUT_SCHEMA.lookTouch
 
   addEventListener('touchstart', e => {
     if (menuUp()) return
@@ -10166,15 +10219,12 @@ function initTouch() {
         const d = Math.hypot(dx, dy)
         if (d > R) { dx = dx / d * R; dy = dy / d * R }
         knob.style.transform = 'translate(' + dx + 'px,' + dy + 'px)'
-        input.r = clamp(dx / R, -1, 1)
-        input.f = clamp(-dy / R, -1, 1)
+        INPUT_SCHEMA.stick(dx, dy, R)
         used = true
       } else if (t.identifier === lookId) {
         const dx = t.clientX - lookX, dy = t.clientY - lookY
         lookX = t.clientX; lookY = t.clientY
-        const k = 0.005 * settings.sens
-        input.yaw -= dx * k
-        input.pitch = clamp(input.pitch - dy * k, -PITCH_MAX, PITCH_MAX)
+        INPUT_SCHEMA.touchLook(dx, dy)
         used = true
       }
     }
@@ -10184,7 +10234,7 @@ function initTouch() {
   const endTouch = e => {
     for (const t of e.changedTouches) {
       if (t.identifier === moveId) {
-        moveId = null; input.f = 0; input.r = 0
+        moveId = null; INPUT_SCHEMA.stopStick()
         stick.style.display = 'none'
       } else if (t.identifier === lookId) lookId = null
     }
@@ -10200,25 +10250,11 @@ function initTouch() {
     b.addEventListener('touchend', go(off), { passive: false })
     b.addEventListener('touchcancel', go(off), { passive: false })
   }
-  hold('btn-fire', () => { input.fire = true }, () => { input.fire = false }, true)
-  hold('btn-jump', () => { keys.Space = true }, () => { keys.Space = false })
-  hold('btn-descend', () => { descendHeld = true }, () => { descendHeld = false })
-  hold('btn-alt', () => { input.alt = true }, () => { input.alt = false })
+  INPUT_SCHEMA.touchHolds(hold)
 
   const tap = (id, fn) => el('#' + id).addEventListener('touchstart',
     e => { e.preventDefault(); e.stopPropagation(); fn() }, { passive: false })
-  tap('btn-swap', () => { tapSwap = true })
-  tap('btn-shift', () => { tapShift = true })
-  tap('btn-use', () => { tapUse = true })
-  tap('btn-sprint', sprintToggle)
-  tap('btn-radio', radioCycle)
-  tap('btn-team', () => teamSwitch())
-  tap('btn-chat', () => openChat(''))
-  tap('btn-tab', () => { tabOpen = !tabOpen })
-  tap('btn-code', () => { if (roomCodeStr) openCodeModal() })
-  tap('btn-view', () => setView(!firstPerson))
-  tap('btn-full', toggleFullscreen)
-  tap('btn-menu', openPause)
+  INPUT_SCHEMA.touchTaps(tap)
 
   if (!FS_OK) el('#ios-hint').style.display = ''
 }
