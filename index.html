@@ -6993,20 +6993,18 @@ function animateVitoScreen(a, want, dt, t) {
   for (const n of d.tagged.screen || []) n.material.emissiveIntensity = 0.45 + Math.sin(t / 31) * 0.025
 }
 
-function dressAvatar(inst, M, skin, shape, key) {
-  inst.traverse(n => {
+function dressAvatar(inst, M, skin, shape, key) { for (const f of dressSteps(inst, skin, shape, key)) f() }
+// dressAvatar a step at a time: materials and geometry, then the parts, then the loft
+function dressSteps(inst, skin, shape, key) {
+  const L = skin && costumeOf(key).loft
+  return [() => inst.traverse(n => {
     if (!n.isMesh) return
     n.material = n.material.clone()
     if (skin) {
       n.geometry = buildGeometry(n.geometry, skin, shape, key, n.skeleton)
       paintable(n.material)
     }
-  })
-  if (skin) {
-    const L = costumeOf(key).loft
-    if (!L || L.trim) dressParts(inst, skin, key)
-    if (L) loftBody(inst, skin, key)
-  }
+  }), skin && (!L || L.trim) && (() => dressParts(inst, skin, key)), L && (() => loftBody(inst, skin, key))].filter(Boolean)
 }
 
 // SkinnedMesh.clone() shares its skeleton: rebind to own cloned bones
@@ -7809,9 +7807,23 @@ function ghost(obj, prot, fade) {
 }
 
 // Rows built while idle: their caches filled and one copy kept, its materials compiled and holding
-// their programs, so a first sight builds and compiles nothing. A step: one body, poses for PREP_MS, or one kept copy.
+// their programs, so a first sight builds and compiles nothing. A step: a bodyStep, its far detail, or one kept copy.
 const prepQueue = [], prepKept = new Map(), prepShown = [], PREP_MS = 6
 let prepAt = null
+// a body built a step per call: each dressSteps step, then batched with its walk poses queued, then posed while more(); true once ready
+function bodyStep(B, M, id, cid, key, more) {
+  B.dress ||= dressSteps(B.inst = cloneSkinned(M.proto), skinOf(id, cid), shapeOf(id, cid), key)
+  if (B.dress.length) { B.dress.shift()(); return false }
+  if (!B.todo) {
+    const prof = profOf(id, cid), mixer = new THREE.AnimationMixer(B.inst)
+    batchBody(B.inst, key)
+    B.todo = [prof[1], prof.sprint].filter(p => p && M.anims.some(c => c.name === p.clip) && !walkLows.has(lowKey(key, p)))
+      .map(p => ({ m: mixer.clipAction(strided(M.anims.find(c => c.name === p.clip), p.stride)), mixer, inst: B.inst, k: lowKey(key, p), i: 0, low: Infinity }))
+    return false
+  }
+  while (B.todo.length && measureLows(B.todo[0], more)) B.todo.shift()
+  return !B.todo.length
+}
 function prepareRows(pairs) {
   if (renderHeadless || serving || !renderer) return
   for (const p of pairs) { const k = skinKey(...p); if (!prepKept.has(k) && !prepQueue.some(q => skinKey(...q) === k)) prepQueue.push(p) }
@@ -7822,18 +7834,7 @@ function prepareStep() {
   while (prepQueue.length && more()) {
     const [id, cid] = prepQueue[0], M = modelFor(id, cid), key = skinKey(id, cid)
     if (M.kind !== 'built' && !M.proto) return
-    if (M.proto && !prepAt) { prepAt = { inst: bodyFor(M, id, cid, key, rowFor(id, cid), true) }; return }
-    if (prepAt && !prepAt.todo) {
-      const prof = profOf(id, cid), todo = [prof[1], prof.sprint].filter(p => p && M.anims.some(c => c.name === p.clip) && !walkLows.has(lowKey(key, p)))
-      const inst = prepAt.inst, mixer = new THREE.AnimationMixer(inst)
-      batchBody(inst, key)
-      prepAt.todo = todo.map(p => ({ m: mixer.clipAction(strided(M.anims.find(c => c.name === p.clip), p.stride)), mixer, inst, k: lowKey(key, p), i: 0, low: Infinity }))
-      return
-    }
-    if (prepAt) {
-      while (prepAt.todo.length && measureLows(prepAt.todo[0], more)) prepAt.todo.shift()
-      if (prepAt.todo.length) return
-    }
+    if (M.proto && !bodyStep(prepAt ||= {}, M, id, cid, key, more)) return
     if (camera && id >= 0 && !detailCache.has(key)) { farDetail(id, cid, profOf(id, cid), rowFor(id, cid)); return }
     prepQueue.shift()
     const had = avatars.get(id), body = prepAt?.inst
@@ -7875,7 +7876,7 @@ function updateCap(a, cap, id) {
   a.capText = text
 }
 
-function bodyFor(M, id, cid, key, C, dressed) {
+function bodyFor(M, id, cid, key, C) {
   let root
   if (M.kind === 'built') {
     root = M.build(2 * (C.h + C.r), skinOf(id, cid))
@@ -7885,7 +7886,7 @@ function bodyFor(M, id, cid, key, C, dressed) {
   root = cloneSkinned(M.proto)
   // Measure after dressing: bind-pose rotations can turn added girth into height.
   dressAvatar(root, M, skinOf(id, cid), shapeOf(id, cid), key)
-  if (!dressed) batchBody(root, key)
+  batchBody(root, key)
   return root
 }
 function batchBody(root, key) {
@@ -9937,12 +9938,20 @@ const pickReady = cid => { const M = modelFor(PICK_SHOT, cid); return M.kind ===
 function pickSoon() {
   if (pickIdle || !pickDue.length) return
   pickIdle = true
-  const go = () => { pickIdle = false; if (pickOpen && pickDue.length) try { pickSlice() } finally { pickSoon() } }
-  pickReady(pickDue[0][1]) ? (window.requestIdleCallback || setTimeout)(go) : setTimeout(go, 500)
+  const go = () => { pickIdle = false; if (pickOpen && pickDue.length) try { pickSlice() } finally { pickSoon() } }, rest = PICK_REST - (now() - pickAtT)
+  // never while the selection moves
+  !pickReady(pickDue[0][1]) ? setTimeout(go, 500) : rest > 0 ? setTimeout(() => { pickIdle = false; pickSoon() }, rest) : (window.requestIdleCallback || setTimeout)(go)
+}
+// a step towards id's look as cid: a built model's build, or a bodyStep with PREP_MS of poses; true once it can be shot
+const pickBodies = new Map()
+function pickStep(id, cid) {
+  const M = modelFor(id, cid), key = skinKey(id, cid), t0 = now(), B = pickBodies.get(id)?.cid === cid ? pickBodies.get(id) : pickBodies.set(id, { cid }).get(id)
+  if (M.kind === 'built') return BUILT_CACHE.has(key) || !BUILT_CACHE.set(key, bodyFor(M, id, cid, key, rowFor(id, cid)))
+  return bodyStep(B, M, id, cid, key, () => now() - t0 < PREP_MS)
 }
 function pickSlice() {
   const [i, m, x0, x1] = pickDue[0], P = pickArts.get(i)
-  if (!pickReady(m)) return
+  if (!pickReady(m) || !pickStep(PICK_SHOT, m)) return
   pickDue.shift()
   pickShoot(PICK_SHOT, m, P.c, x0, x1, true, 0.35, 0)
   if (!--P.left) pickCvs.get(i)?.getContext('2d').drawImage(P.c, 0, 0)
@@ -9954,7 +9963,8 @@ function pickShoot(id, cid, cv, x0, x1, head, yaw, t) {
     sun.position.set(2, 4, 5)
     S.scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x30343c, 1.6), sun)
   }
-  const mesh = avatarFor(id, cid), C = CHARS[cid], H = 2 * (C.h + C.r), w = x1 - x0, h = cv.height
+  const mesh = avatarFor(id, cid, undefined, pickBodies.get(id)?.inst), C = CHARS[cid], H = 2 * (C.h + C.r), w = x1 - x0, h = cv.height
+  pickBodies.delete(id)
   const R = renderer, pr = R.getPixelRatio(), rt = R.getRenderTarget(), auto = R.autoClear, test = R.getScissorTest()
   R.getViewport(S.vp); R.getScissor(S.sc)
   S.scene.add(mesh)
@@ -9979,7 +9989,7 @@ function pickFrame(t) {
   const cv = el('#pick-view'), pr = renderer.getPixelRatio(), w = Math.round(cv.clientWidth * pr), h = Math.round(cv.clientHeight * pr)
   if (!w || !h || pickAt < 0) return
   if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; pickHeld = -1 }
-  if (avatars.get(PICK_VIEW)?.cid !== pickAt && (now() - pickAtT < PICK_REST || !pickReady(pickAt))) {
+  if (avatars.get(PICK_VIEW)?.cid !== pickAt && (now() - pickAtT < PICK_REST || !pickReady(pickAt) || !pickStep(PICK_VIEW, pickAt))) {
     if (pickHeld !== pickAt) { pickHeld = pickAt; pickHold(cv, pickAt) }
     return
   }
@@ -9988,7 +9998,7 @@ function pickFrame(t) {
 }
 function pickDrop() {
   for (const id of [PICK_VIEW, PICK_SHOT]) { avatars.get(id)?.mesh.removeFromParent(); dropAvatar(id) }
-  pickDue.length = 0
+  pickDue.length = 0; pickBodies.clear()
   for (const [i, P] of pickArts) if (P.left) pickArts.delete(i)
 }
 
