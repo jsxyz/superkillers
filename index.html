@@ -1129,7 +1129,7 @@ const MODELS = {
     gripReach: 0.85,
     sit: { hide: ['scooter'], fold: [{ tags: ['knee', 'shoe'], at: [0.14, 0.31, -0.13], deg: 35 }] },
     room: [1.215, 1.505], sitLift: 0.191, sitIn: 0.02,      // room: seated [width, height] m
-    build: buildVito,
+    build: buildVito, steps: vitoSteps,
     animate: animateVito,
     slots: ['jacket', 'shirt', 'denim', 'skin', 'beard', 'cap', 'brim',
             'glass', 'frame', 'tyre', 'basket'],
@@ -5245,6 +5245,8 @@ function jointBoxes(g) {
 // geometry shared per costume; materials per avatar so ghost() fades only one
 let builtGeo = new Map()
 const shareGeo = (key, g, cache = builtGeo) => (g.userData.shared = true, cache.set(key, g), g)
+// a builder's steps run to the end (a step ends at each yield)
+const drain = s => { let r; while (!(r = s.next()).done); return r.value }
 const farGeo = new Map()
 let meshDetail = 0
 function buildGeometry(src, skin, shape, key, skeleton) {
@@ -5464,7 +5466,8 @@ function tris(g, flip, offset = 0, out = []) {
 }
 
 const paintable = m => (m.color.setHex(0xffffff), m.vertexColors = true, m)
-function batchMeshes(root, key, { joints = [], live = [], rig = null, shadowEmissive = true } = {}) {
+function batchMeshes(...a) { return drain(batchSteps(...a)) }
+function* batchSteps(root, key, { joints = [], live = [], rig = null, shadowEmissive = true } = {}) {
   root.updateWorldMatrix(true, true)
   const rigParent = rig && rig.parent
   const groups = new Map(), dynamic = new Map(), retired = new Set()
@@ -5523,12 +5526,14 @@ function batchMeshes(root, key, { joints = [], live = [], rig = null, shadowEmis
             indices.push(n.isSkinnedMesh ? g.attributes.skinIndex.array[i * 4 + k] : k ? 0 : bone)
             weights.push(n.isSkinnedMesh ? g.attributes.skinWeight.array[i * 4 + k] : k ? 0 : 1)
           }
+          if (i % 2048 === 2047) yield
         }
         const tags = [], start = faces.length
         for (let parent = n; parent && parent !== root; parent = parent.parent)
           if (parent.userData.part) tags.push(parent.userData.part)
         tris(g, matrix.determinant() < 0, offset, faces)
         parts.push({ tags: tags.join('|'), start, count: faces.length - start })
+        yield
       }
       geometry = new THREE.BufferGeometry()
       for (const [name, data, size] of [['position', position, 3], ['normal', normal, 3], ['color', color, 3], ['uv', uv, 2]])
@@ -5555,6 +5560,7 @@ function batchMeshes(root, key, { joints = [], live = [], rig = null, shadowEmis
       retired.add(n.material)
       n.removeFromParent()
     }
+    yield
   }
   disposeUnused(root, retired)
   const nodes = []
@@ -6170,7 +6176,8 @@ function spiderPaint(ctx, tools, skin, hex, {parts, centre, size}) {
   ctx.restore()
 }
 
-function loftBody(inst, skin, key) {
+function loftBody(...a) { return drain(loftSteps(...a)) }
+function* loftSteps(inst, skin, key) {
   let rig
   inst.traverse(n => { if (n.isSkinnedMesh && !rig) rig = n })
   const spec = costumeOf(key).loft, L = spec.make ? spec.make(rig, key) : spec
@@ -6211,6 +6218,7 @@ function loftBody(inst, skin, key) {
       })
       ranges.push({ tags: !costumeOf(key).loft.join ? tag : name === 'arm' ? 'sleeve' : name === 'leg' ? 'trousers' : tag, start, count: index.length - start })
       if (tag && name !== 'torso' && costumeOf(key).loft.join) ranges.push({ tags: tag, start: index.length - n * 6 * 6, count: n * 6 * 6 })
+      yield
     }
     if (costumeOf(key).loft.join) {
       const body = patches.find(p => p.name === 'torso'), at = (p, r, i) => p.first + r * (p.n + 1) + i
@@ -6272,6 +6280,7 @@ function loftBody(inst, skin, key) {
       offsets.set(index.length, keep.length)
       for (const r of ranges) { const start = offsets.get(r.start), end = offsets.get(r.start + r.count); r.start = start; r.count = end - start }
       index.splice(0, index.length, ...keep)
+      yield
     }
     g = new THREE.BufferGeometry()
     g.setAttribute('position', new THREE.Float32BufferAttribute(position, 3))
@@ -6281,6 +6290,7 @@ function loftBody(inst, skin, key) {
     g.userData.parts = ranges
     if (L.join) g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(position.length).fill(1), 3))
     g.computeVertexNormals()
+    yield
     const N = g.attributes.normal, m = new THREE.Vector3(), o = new THREE.Vector3()
     if (L.join) {
       const groups = new Map(), p = g.attributes.position
@@ -6293,12 +6303,15 @@ function loftBody(inst, skin, key) {
         m.set(0, 0, 0); for (const i of ids) m.add(o.fromBufferAttribute(N, i)); m.normalize()
         for (const i of ids) N.setXYZ(i, ...m)
       }
+      yield
       bodyMap(key, skin, L, [...groups.values()].flatMap(ids => ids.slice(1).map(i =>
         [i, ...uv.slice(i*2,i*2+2), ...uv.slice(ids[0]*2,ids[0]*2+2)])).filter(e => e[1] !== e[3] || e[2] !== e[4]).sort((a,b)=>a[0]-b[0]))
     } else for (let k = 0; k < seams.length; k += 2) { m.fromBufferAttribute(N, seams[k]).add(o.fromBufferAttribute(N, seams[k + 1])).normalize(); N.setXYZ(seams[k], ...m); N.setXYZ(seams[k + 1], ...m) }
     shareGeo(cacheKey, g)
   }
+  yield
   const map = bodyMap(key, skin, L); loftMaps.set(g, map)
+  yield
   bindCloth(rig, g, new THREE.MeshStandardMaterial({ map, vertexColors: !!L.join, roughness: costumeOf(key).legs ? 0.65 : 0.8, side: THREE.DoubleSide }), 'body')
 }
 
@@ -6377,7 +6390,8 @@ function clothTorso(costume, mesh, boxes, upper, lower, key) {
   })
 }
 
-function dressParts(inst, skin, key) {
+function dressParts(...a) { return drain(partsSteps(...a)) }
+function* partsSteps(inst, skin, key) {
   const meshes = []
   inst.traverse(n => { if (n.isSkinnedMesh) meshes.push(n) })
   for (const mesh of meshes) {
@@ -6389,10 +6403,11 @@ function dressParts(inst, skin, key) {
         const name = bones[joint].name
         if (!/^(arm|leg)_upper/.test(name)) continue
         const lower = ix(name.replace('_upper', '_lower'))
-        if (lower >= 0 && boxes.has(lower)) clothLimb(mesh, boxes, joint, lower, torso, pelvis, skin, key)
+        if (lower >= 0 && boxes.has(lower)) { clothLimb(mesh, boxes, joint, lower, torso, pelvis, skin, key); yield }
       }
     }
     for (const [joint, source] of boxes) {
+      yield
       const bounds = source.clone()
       const bone = bones[joint]
       const part = bone.name === 'body_lower' ? 'pelvis' : partOf(bone.name)
@@ -6413,6 +6428,7 @@ function dressParts(inst, skin, key) {
       costume.rotation.y = Math.PI
       costume.updateMatrix()
       if (part === 'torso' && pelvis >= 0 && boxes.has(pelvis)) {
+        yield
         clothTorso(costume, mesh, boxes, joint, pelvis, key)
         continue
       }
@@ -6743,7 +6759,8 @@ function capFabric(material) {
   material.customProgramCacheKey = () => 'cap-cloth-1'
 }
 
-function buildVito(H, skin) {
+function buildVito(H, skin) { return drain(vitoSteps(H, skin)) }
+function* vitoSteps(H, skin) {
   const K = meshKit({ ...skin, ivory: 0xf1efda, ink: 0x24272f,
     hair: { color: new THREE.Color(skin.beard).multiplyScalar(1.35), vertexColors: true }, dark: skin.tyre, steel: skin.frame,
     fold: { color: new THREE.Color(skin.jacket).multiplyScalar(0.55) },
@@ -6760,6 +6777,7 @@ function buildVito(H, skin) {
   add({ mirror: true, g: ['cylinder', 0.024, 0.024, 0.06, 10], m: 'tyre', p: [0.15, 0.48, -0.28], r: [0, 0, Math.PI / 2] })
   box('tyre', [0.24, 0.042, 0.20], [0, 0.295, 0.11], 0.018, 'seat')
   scooter(deck)
+  yield
   const shorts = [[0.397, 0.073, 0.105, -0.025], [0.354, 0.09, 0.114, -0.05],
     [0.310, 0.082, 0.09, -0.091]].map(([y, x, z, back]) =>
     Array.from({ length: 24 }, (_, i) => [0.14 + x * Math.cos(i * Math.PI / 12), y, back + z * Math.sin(i * Math.PI / 12)]))
@@ -6799,6 +6817,7 @@ function buildVito(H, skin) {
     tube('skin', [[side * 0.255, 0.51, -0.085], [side * 0.235, 0.457, -0.19], [side * 0.16, 0.476, -0.29]], 0.044, 'forearm')
     orb('skin', 0.043, [side * 0.155, 0.477, -0.29], [1, 0.85, 1], 'hand')
   }
+  yield
   orb('skin', 0.117, [0, 0.803, -0.035], [1.08, 1.07, 0.96], 'face')
   add({ mirror: true, g: ['sphere', 0.027], m: 'skin', p: [0.12, 0.817, -0.035], s: [0.62, 1, 0.8], tag: 'ear' })
   const jaw = (angle, u, inset = 0) => {
@@ -6828,6 +6847,7 @@ function buildVito(H, skin) {
   const beard = rows(0), lining = rows(0.012)
   strands(add({ g: ['surface', [...beard, ...lining.slice().reverse(), beard[0]]], m: 'hair', tag: 'beard' }), N, r => r < 7 ? r / 6 : r > 12 ? 0 : (13 - r) / 6,
     (r, i) => !r || r > 12 ? THREE.MathUtils.smoothstep(Math.abs(i / (N - 1) * 2 - 1), 0.25, 0.5) : 0)
+  yield
   const scalp = (a, y, lift) => { const k = Math.sqrt(Math.max(0, 1 - ((y - 0.803) / 0.1252) ** 2)) * (1 + lift)
     return [Math.sin(a) * 0.1264 * k, y, -0.035 - Math.cos(a) * 0.1123 * k] }
   strands(add({ mirror: true, g: ['surface', Array.from({ length: 6 }, (_, j) => Array.from({ length: 49 }, (_, i) => {
@@ -6835,6 +6855,7 @@ function buildVito(H, skin) {
     return j ? scalp(a, 0.903 + (low - 0.903) * (j - 1) / 4, 0.03 + 0.12 * (1 - (j - 1) / 4) ** 2)
       : [Math.sin(a) * 0.121, 0.912, -0.03 - Math.cos(a) * 0.104]
   }))], m: 'hair', tag: 'sideburn' }), 49, r => r / 5)
+  yield
   orb('skin', 0.052, [0, 0.774, -0.133], [1.27, 0.80, 0.55], 'muzzle')
   for (const side of [-1, 1]) {
     add({ g: ['round', 0.097, 0.064, 0.012, 0.009], m: 'glass', p: [side * 0.052, 0.842, -0.155], tag: 'glasses' })
@@ -6849,6 +6870,7 @@ function buildVito(H, skin) {
   orb('skin', 0.022, [0, 0.808, -0.178], [0.85, 1.15, 1.1], 'nose')
   orb('ink', 0.030, [0, 0.754, -0.17], [0.90, 0.53, 0.30], 'mouth')
   box('ivory', [0.036, 0.008, 0.005], [0, 0.759, -0.180], 0.002, 'teeth')
+  yield
   const cap = add({ p: [0, 0.906, -0.03], tag: 'cap' })
   const profile = CAP_PANEL.profile
   const crown = K.add({ g: ['surface', profile.slice().reverse().map(([y, r]) => Array.from({ length: 49 }, (_, i) => {
@@ -6885,6 +6907,7 @@ function buildVito(H, skin) {
   const edge = [...bill.map(row => row[0]), ...bill[6].slice(1),
     ...bill.slice(0, 6).reverse().map(row => row[16]), ...bill[0].slice(1, 16).reverse()]
   K.add({ g: ['tube', edge, 0.004, 64, 6, true], m: 'brim', tag: 'billEdge' }, peak)
+  yield
   const front = K.root.children.length
   box('basket', [0.23, 0.14, 0.14], [0, 0.371, -0.386], 0.015, 'basket')
   box('tyre', [0.21, 0.012, 0.12], [0, 0.444, -0.386], 0.01)
@@ -6989,18 +7012,20 @@ function animateVitoScreen(a, want, dt, t) {
   for (const n of d.tagged.screen || []) n.material.emissiveIntensity = 0.45 + Math.sin(t / 31) * 0.025
 }
 
-function dressAvatar(inst, M, skin, shape, key) { for (const f of dressSteps(inst, skin, shape, key)) f() }
+function dressAvatar(inst, M, skin, shape, key) { drain(dressSteps(inst, skin, shape, key)) }
 // dressAvatar a step at a time: materials and geometry, then the parts, then the loft
-function dressSteps(inst, skin, shape, key) {
+function* dressSteps(inst, skin, shape, key) {
   const L = skin && costumeOf(key).loft
-  return [() => inst.traverse(n => {
+  inst.traverse(n => {
     if (!n.isMesh) return
     n.material = n.material.clone()
     if (skin) {
       n.geometry = buildGeometry(n.geometry, skin, shape, key, n.skeleton)
       paintable(n.material)
     }
-  }), skin && (!L || L.trim) && (() => dressParts(inst, skin, key)), L && (() => loftBody(inst, skin, key))].filter(Boolean)
+  })
+  if (skin && (!L || L.trim)) { yield; yield* partsSteps(inst, skin, key) }
+  if (L) { yield; yield* loftSteps(inst, skin, key) }
 }
 
 // SkinnedMesh.clone() shares its skeleton: rebind to own cloned bones
@@ -7803,19 +7828,22 @@ function ghost(obj, prot, fade) {
 }
 
 // Rows built while idle: their caches filled and one copy kept, its materials compiled and holding
-// their programs, so a first sight builds and compiles nothing. A step: a bodyStep, its far detail, or one kept copy.
+// their programs, so a first sight builds and compiles nothing. A frame: bodySteps and far detail steps for PREP_MS, or one kept copy alone.
 const prepQueue = [], prepKept = new Map(), prepShown = [], PREP_MS = 6
 let prepAt = null
-// a body built a step per call: each dressSteps step, then batched with its walk poses queued, then posed while more(); true once ready
+// a body a step per call: its bodySteps, then its walk poses while more(); true once ready (a built model's in BUILT_CACHE)
 function bodyStep(B, M, id, cid, key, more) {
-  B.dress ||= dressSteps(B.inst = cloneSkinned(M.proto), skinOf(id, cid), shapeOf(id, cid), key)
-  if (B.dress.length) { B.dress.shift()(); return false }
+  if (M.kind === 'built' && BUILT_CACHE.has(key)) return true
+  if (!B.inst) {
+    const r = (B.gen ||= bodySteps(M, id, cid, key, rowFor(id, cid))).next()
+    if (r.done && (B.inst = r.value) && !M.proto) BUILT_CACHE.set(key, B.inst)
+    return false
+  }
+  if (!M.proto) return true
   if (!B.todo) {
     const prof = profOf(id, cid), mixer = new THREE.AnimationMixer(B.inst)
-    batchBody(B.inst, key)
     B.todo = [prof[1], prof.sprint].filter(p => p && M.anims.some(c => c.name === p.clip) && !walkLows.has(lowKey(key, p)))
       .map(p => ({ m: mixer.clipAction(strided(M.anims.find(c => c.name === p.clip), p.stride)), mixer, inst: B.inst, k: lowKey(key, p), i: 0, low: Infinity }))
-    return false
   }
   while (B.todo.length && measureLows(B.todo[0], more)) B.todo.shift()
   return !B.todo.length
@@ -7827,11 +7855,13 @@ function prepareRows(pairs) {
 function prepareStep() {
   const t0 = now(), more = () => now() - t0 < PREP_MS
   for (let i = prepShown.length - 1; i >= 0; i--) if (--prepShown[i][1] < 0) avatarGroup.remove(prepShown.splice(i, 1)[0][0])
+  let fresh = true
   while (prepQueue.length && more()) {
     const [id, cid] = prepQueue[0], M = modelFor(id, cid), key = skinKey(id, cid)
     if (M.kind !== 'built' && !M.proto) return
-    if (M.proto && !bodyStep(prepAt ||= {}, M, id, cid, key, more)) return
-    if (camera && id >= 0 && !detailCache.has(key)) { farDetail(id, cid, profOf(id, cid), rowFor(id, cid)); return }
+    if (!bodyStep(prepAt ||= {}, M, id, cid, key, more)) { fresh = false; continue }
+    if (camera && id >= 0 && !detailCache.has(key)) { (prepAt.far ||= farSteps(id, cid, profOf(id, cid), rowFor(id, cid))).next(); fresh = false; continue }
+    if (!fresh) return
     prepQueue.shift()
     const had = avatars.get(id), body = prepAt?.inst
     avatars.delete(id); prepAt = null
@@ -7872,24 +7902,23 @@ function updateCap(a, cap, id) {
   a.capText = text
 }
 
-function bodyFor(M, id, cid, key, C) {
-  let root
+// a body as steps (bodyFor runs them through): a built model's build and batching, or the rig cloned, dressed and batched
+function* bodySteps(M, id, cid, key, C) {
+  let root, rig
   if (M.kind === 'built') {
-    root = M.build(2 * (C.h + C.r), skinOf(id, cid))
-    batchMeshes(builtParts(root).tilt.children[0], key, { ...M, shadowEmissive: false })
+    root = M.steps ? yield* M.steps(2 * (C.h + C.r), skinOf(id, cid)) : M.build(2 * (C.h + C.r), skinOf(id, cid))
+    yield
+    yield* batchSteps(builtParts(root).tilt.children[0], key, { ...M, shadowEmissive: false })
     return root
   }
   root = cloneSkinned(M.proto)
   // Measure after dressing: bind-pose rotations can turn added girth into height.
-  dressAvatar(root, M, skinOf(id, cid), shapeOf(id, cid), key)
-  batchBody(root, key)
+  yield* dressSteps(root, skinOf(id, cid), shapeOf(id, cid), key)
+  root.traverse(n => { if (n.isSkinnedMesh && !rig) rig = n })
+  if (rig) { yield; yield* batchSteps(root, key, { rig, shadowEmissive: false }) }
   return root
 }
-function batchBody(root, key) {
-  let rig
-  root.traverse(n => { if (n.isSkinnedMesh && !rig) rig = n })
-  if (rig) batchMeshes(root, key, { rig, shadowEmissive: false })
-}
+function bodyFor(M, id, cid, key, C) { return drain(bodySteps(M, id, cid, key, C)) }
 
 function avatarFor(id, cid, cap, body) {
   const M = modelFor(id, cid)
@@ -7961,16 +7990,16 @@ function avatarFor(id, cid, cap, body) {
 
 // Retain cloth opening rings at every LOD or seams split.
 const detailCache = new Map()
-function farDetail(id, cid, prof, C) {
+function farDetail(...a) { return drain(farSteps(...a)) }
+// its bodySteps, each run at far detail, then the fit
+function* farSteps(id, cid, prof, C) {
   const M = modelFor(id, cid), key = skinKey(id, cid)
   let geometries = detailCache.get(key)
   if (!geometries) {
-    const saved = builtGeo
-    let root
-    try {
-      builtGeo = farGeo; meshDetail = 1
-      root = bodyFor(M, id, cid, key, C)
-    } finally { builtGeo = saved; meshDetail = 0 }
+    const steps = bodySteps(M, id, cid, key, C), far = () => { const saved = builtGeo; try { builtGeo = farGeo; meshDetail = 1; return steps.next() } finally { builtGeo = saved; meshDetail = 0 } }
+    let r
+    while (!(r = far()).done) yield
+    const root = r.value
     let fit
     if (M.kind !== 'built') {
       const mixer = new THREE.AnimationMixer(root), clip = M.anims.find(c => c.name === prof[0].clip)
@@ -9936,16 +9965,18 @@ const pickReady = cid => { const M = modelFor(PICK_SHOT, cid); return M.kind ===
 function pickSoon() {
   if (pickIdle || !pickDue.length) return
   pickIdle = true
-  const go = () => { pickIdle = false; if (pickOpen && pickDue.length) try { pickSlice() } finally { pickSoon() } }, rest = PICK_REST - (now() - pickAtT)
+  const go = () => { pickIdle = false; const t0 = now(); try { while (pickOpen && pickDue.length && pickReady(pickDue[0][1]) && now() - t0 < PREP_MS) pickSlice() } finally { pickSoon() } }, rest = PICK_REST - (now() - pickAtT)
   // never while the selection moves
   !pickReady(pickDue[0][1]) ? setTimeout(go, 500) : rest > 0 ? setTimeout(() => { pickIdle = false; pickSoon() }, rest) : (window.requestIdleCallback || setTimeout)(go)
 }
-// a step towards id's look as cid: a built model's build, or a bodyStep with PREP_MS of poses; true once it can be shot
+// a step towards id's avatar as cid: a bodyStep, then the avatar, out of the scene; true once built
 const pickBodies = new Map()
 function pickStep(id, cid) {
-  const M = modelFor(id, cid), key = skinKey(id, cid), t0 = now(), B = pickBodies.get(id)?.cid === cid ? pickBodies.get(id) : pickBodies.set(id, { cid }).get(id)
-  if (M.kind === 'built') return BUILT_CACHE.has(key) || !BUILT_CACHE.set(key, bodyFor(M, id, cid, key, rowFor(id, cid)))
-  return bodyStep(B, M, id, cid, key, () => now() - t0 < PREP_MS)
+  if (avatars.get(id)?.cid === cid) return true
+  const t0 = now(), B = pickBodies.get(id)?.cid === cid ? pickBodies.get(id) : pickBodies.set(id, { cid }).get(id)
+  if (!B.done) B.done = bodyStep(B, modelFor(id, cid), id, cid, skinKey(id, cid), () => now() - t0 < PREP_MS)
+  else { avatarFor(id, cid, undefined, B.inst).removeFromParent(); pickBodies.delete(id) }
+  return false
 }
 function pickSlice() {
   const [i, m, x0, x1] = pickDue[0], P = pickArts.get(i), t0 = now()
@@ -9969,8 +10000,7 @@ function pickShoot(id, cid, cv, x0, x1, head, yaw, t) {
     sun.position.set(2, 4, 5)
     S.scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x30343c, 1.6), sun)
   }
-  const mesh = avatarFor(id, cid, undefined, pickBodies.get(id)?.inst), C = CHARS[cid], H = 2 * (C.h + C.r), w = x1 - x0, h = cv.height
-  pickBodies.delete(id)
+  const mesh = avatarFor(id, cid), C = CHARS[cid], H = 2 * (C.h + C.r), w = x1 - x0, h = cv.height
   const R = renderer, pr = R.getPixelRatio(), rt = R.getRenderTarget(), auto = R.autoClear, test = R.getScissorTest()
   R.getViewport(S.vp); R.getScissor(S.sc)
   S.scene.add(mesh)
