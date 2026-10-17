@@ -5161,25 +5161,65 @@ function animOf(c) {
 
 // SkinnedMesh.computeBoundingBox() includes bones; geometry bounds don't
 function measureBounds(root) {
-  root.updateMatrixWorld(true)
-  let min = Infinity, max = -Infinity
-  root.traverse(n => {
-    if (!n.isMesh) return
-    if (n.geometry && n.geometry.index && !n.geometry.index.count) return
-    let bb = null
-    if (n.isSkinnedMesh && n.computeBoundingBox) {
-      n.computeBoundingBox()
-      bb = n.boundingBox; n.boundingBox = null      // this pose only: raycasts must not reuse it
-    } else if (n.geometry) {
-      if (!n.geometry.boundingBox) n.geometry.computeBoundingBox()
-      bb = n.geometry.boundingBox
-    }
-    if (!bb) return
-    const w = bb.clone().applyMatrix4(n.matrixWorld)
-    min = Math.min(min, w.min.y)
-    max = Math.max(max, w.max.y)
-  })
+  const min = extremeY(root), max = extremeY(root, true)
   return isFinite(min) && max > min ? { h: max - min, minY: min } : null
+}
+// lowest (up: highest) y of the meshes' world boxes; a skinned mesh skins only the vertex runs whose bound can still move that box corner
+const skinRuns = new WeakMap()
+let eyV = null, eyC = null, eyM = null
+function extremeY(root, up) {
+  root.updateMatrixWorld(true)
+  const v = eyV ||= new THREE.Vector3(), c = eyC ||= new THREE.Vector3(), M = eyM ||= new THREE.Matrix4(), s = up ? -1 : 1
+  let out = Infinity
+  const take = y => { out = Math.min(out, s * y) }
+  root.traverse(n => {
+    const g = n.geometry
+    if (!n.isMesh || g && g.index && !g.index.count) return
+    if (!n.isSkinnedMesh || g.morphAttributes.position) {
+      let bb = null
+      if (n.isSkinnedMesh) { n.computeBoundingBox(); bb = n.boundingBox; n.boundingBox = null }      // this pose only: raycasts must not reuse it
+      else if (g) { if (!g.boundingBox) g.computeBoundingBox(); bb = g.boundingBox }
+      if (bb) { const w = bb.clone().applyMatrix4(n.matrixWorld); take(up ? w.max.y : w.min.y) }
+      return
+    }
+    const runs = skinRuns.get(g) || skinRuns.set(g, skinRunsOf(g)).get(g)
+    if (!runs.length) return
+    const e = n.matrixWorld.elements, ax = [e[1] * s, e[5] * s, e[9] * s], need = [0, 1, 2].filter(j => ax[j]), bm = new Map()
+    const side = (j, x) => ax[j] > 0 ? x : -x, best = [0, 1, 2].map(j => ax[j] ? Infinity : 0)
+    const bounds = runs.map(r => {
+      const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]
+      for (const k of r.bones) {
+        M.multiplyMatrices(n.bindMatrixInverse, bm.get(k) || bm.set(k, new THREE.Matrix4().multiplyMatrices(n.skeleton.bones[k].matrixWorld, n.skeleton.boneInverses[k])).get(k)).multiply(n.bindMatrix)
+        for (let i = 0; i < 8; i++) {
+          c.set(r.box[i & 1][0], r.box[i >> 1 & 1][1], r.box[i >> 2][2]).applyMatrix4(M)
+          for (const j of need) { lo[j] = Math.min(lo[j], c.getComponent(j)); hi[j] = Math.max(hi[j], c.getComponent(j)) }
+        }
+      }
+      // bindMatrixInverse is folded in per bone, so its translation is off by (1 - weight sum)
+      return [0, 1, 2].map(j => { const T = n.bindMatrixInverse.elements[12 + j], l = r.bones.size && lo[j], h = r.bones.size && hi[j]
+        const a = Math.min(r.s0 * l, r.s1 * l) + Math.min((1 - r.s0) * T, (1 - r.s1) * T), b = Math.max(r.s0 * h, r.s1 * h) + Math.max((1 - r.s0) * T, (1 - r.s1) * T), p = 1e-4 * (1 + Math.abs(a) + Math.abs(b))
+        return ax[j] ? side(j, ax[j] > 0 ? a - p : b + p) : 0 })
+    })
+    for (const i of runs.map((r, i) => i).sort((a, b) => bounds[a][1] - bounds[b][1]))
+      if (need.some(j => bounds[i][j] < best[j])) for (let k = runs[i].lo; k < runs[i].hi; k++) { n.getVertexPosition(k, v); for (const j of need) best[j] = Math.min(best[j], side(j, v.getComponent(j))) }
+    take(c.set(side(0, best[0]), side(1, best[1]), side(2, best[2])).applyMatrix4(n.matrixWorld).y)
+  })
+  return s * out
+}
+// runs of 48 vertices in index order: bind box, bones, weight-sum range
+function skinRunsOf(g) {
+  const p = g.attributes.position, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, out = []
+  for (let lo = 0; lo < p.count; lo += 48) {
+    const r = { lo, hi: Math.min(lo + 48, p.count), box: [[Infinity, Infinity, Infinity], [-Infinity, -Infinity, -Infinity]], bones: new Set(), s0: Infinity, s1: -Infinity }
+    for (let i = lo; i < r.hi; i++) {
+      let t = 0
+      for (let k = 0; k < 4; k++) if (sw.getComponent(i, k)) { r.bones.add(si.getComponent(i, k)); t += sw.getComponent(i, k) }
+      r.s0 = Math.min(r.s0, t); r.s1 = Math.max(r.s1, t)
+      for (let j = 0; j < 3; j++) { r.box[0][j] = Math.min(r.box[0][j], p.getComponent(i, j)); r.box[1][j] = Math.max(r.box[1][j], p.getComponent(i, j)) }
+    }
+    out.push(r)
+  }
+  return out
 }
 
 // GLTFLoader strips dots: arm_upper.L or arm_upperL
@@ -5265,7 +5305,7 @@ const builtBounds = new Map(), walkLows = new Map(), lowKey = (key, p) => key + 
 // a clip's lowest point over 30 poses, resumed from L.i while more() holds
 function measureLows(L, more = () => true) {
   L.m.play()
-  for (; L.i < 30 && more(); L.i++) { L.m.time = L.i / 30 * L.m.getClip().duration; L.mixer.update(0); L.low = Math.min(L.low, measureBounds(L.inst).minY) }
+  for (; L.i < 30 && more(); L.i++) { L.m.time = L.i / 30 * L.m.getClip().duration; L.mixer.update(0); L.low = Math.min(L.low, extremeY(L.inst)) }
   if (L.i < 30) return false
   L.m.stop(); walkLows.set(L.k, L.low)
   return true
@@ -7782,25 +7822,24 @@ function prepareStep() {
   while (prepQueue.length && more()) {
     const [id, cid] = prepQueue[0], M = modelFor(id, cid), key = skinKey(id, cid)
     if (M.kind !== 'built' && !M.proto) return
-    if (M.proto && !prepAt) {
+    if (M.proto && !prepAt) { prepAt = { inst: bodyFor(M, id, cid, key, rowFor(id, cid), true) }; return }
+    if (prepAt && !prepAt.todo) {
       const prof = profOf(id, cid), todo = [prof[1], prof.sprint].filter(p => p && M.anims.some(c => c.name === p.clip) && !walkLows.has(lowKey(key, p)))
-      if (todo.length) {
-        const inst = bodyFor(M, id, cid, key, rowFor(id, cid)), mixer = new THREE.AnimationMixer(inst)
-        prepAt = { inst, todo: todo.map(p => ({ m: mixer.clipAction(strided(M.anims.find(c => c.name === p.clip), p.stride)), mixer, inst, k: lowKey(key, p), i: 0, low: Infinity })) }
-        return
-      }
+      const inst = prepAt.inst, mixer = new THREE.AnimationMixer(inst)
+      batchBody(inst, key)
+      prepAt.todo = todo.map(p => ({ m: mixer.clipAction(strided(M.anims.find(c => c.name === p.clip), p.stride)), mixer, inst, k: lowKey(key, p), i: 0, low: Infinity }))
+      return
     }
     if (prepAt) {
       while (prepAt.todo.length && measureLows(prepAt.todo[0], more)) prepAt.todo.shift()
       if (prepAt.todo.length) return
-      freeMaterials(prepAt.inst); prepAt = null
-      continue
     }
+    if (camera && id >= 0 && !detailCache.has(key)) { farDetail(id, cid, profOf(id, cid), rowFor(id, cid)); return }
     prepQueue.shift()
-    const had = avatars.get(id)
-    avatars.delete(id)
+    const had = avatars.get(id), body = prepAt?.inst
+    avatars.delete(id); prepAt = null
     try {
-      const mesh = avatarFor(id, cid, 0)
+      const mesh = avatarFor(id, cid, 0, body)
       avatarGroup.remove(mesh)
       prepKept.set(key, mesh)
       // the spawn-protection ghost too; then one frame under the floor, never culled, for its shadow's depth programs
@@ -7836,8 +7875,8 @@ function updateCap(a, cap, id) {
   a.capText = text
 }
 
-function bodyFor(M, id, cid, key, C) {
-  let root, rig
+function bodyFor(M, id, cid, key, C, dressed) {
+  let root
   if (M.kind === 'built') {
     root = M.build(2 * (C.h + C.r), skinOf(id, cid))
     batchMeshes(builtParts(root).tilt.children[0], key, { ...M, shadowEmissive: false })
@@ -7846,12 +7885,16 @@ function bodyFor(M, id, cid, key, C) {
   root = cloneSkinned(M.proto)
   // Measure after dressing: bind-pose rotations can turn added girth into height.
   dressAvatar(root, M, skinOf(id, cid), shapeOf(id, cid), key)
-  root.traverse(n => { if (n.isSkinnedMesh && !rig) rig = n })
-  if (rig) batchMeshes(root, key, { rig, shadowEmissive: false })
+  if (!dressed) batchBody(root, key)
   return root
 }
+function batchBody(root, key) {
+  let rig
+  root.traverse(n => { if (n.isSkinnedMesh && !rig) rig = n })
+  if (rig) batchMeshes(root, key, { rig, shadowEmissive: false })
+}
 
-function avatarFor(id, cid, cap) {
+function avatarFor(id, cid, cap, body) {
   const M = modelFor(id, cid)
   const prof = profOf(id, cid)
   const a = avatars.get(id)
@@ -7871,7 +7914,7 @@ function avatarFor(id, cid, cap) {
     mesh = proto.clone()
     ownMaterials(mesh)
   } else if (M.proto) {
-    const inst = bodyFor(M, id, cid, key, C)
+    const inst = body || bodyFor(M, id, cid, key, C)
     mixer = new THREE.AnimationMixer(inst)
     actions = {}
     for (const p of [...prof, prof.sprint, prof.crouch].filter(Boolean)) {
@@ -7921,38 +7964,42 @@ function avatarFor(id, cid, cap) {
 
 // Retain cloth opening rings at every LOD or seams split.
 const detailCache = new Map()
+function farDetail(id, cid, prof, C) {
+  const M = modelFor(id, cid), key = skinKey(id, cid)
+  let geometries = detailCache.get(key)
+  if (!geometries) {
+    const saved = builtGeo
+    let root
+    try {
+      builtGeo = farGeo; meshDetail = 1
+      root = bodyFor(M, id, cid, key, C)
+    } finally { builtGeo = saved; meshDetail = 0 }
+    let fit
+    if (M.kind !== 'built') {
+      const mixer = new THREE.AnimationMixer(root), clip = M.anims.find(c => c.name === prof[0].clip)
+      if (clip) { mixer.clipAction(clip).play(); mixer.update(0) }
+      turn(root, C.turns); turn(root, standOf(C))
+      const b = measureBounds(root)
+      fitToCapsule(root, 2 * (C.h + C.r), b.h, b.minY, M.yaw)
+      mixer.stopAllAction()
+      fit = root
+    } else fit = builtParts(root).tilt.children[0]
+    geometries = { list: [], position: fit.position.clone(), scale: fit.scale.clone() }
+    const materials = new Set()
+    root.traverse(n => {
+      if (n.isMesh) geometries.list.push(n.geometry)
+      if (n.material) materials.add(n.material)
+    })
+    for (const m of materials) m.dispose()
+    detailCache.set(key, geometries)
+  }
+  return geometries
+}
 function avatarDetail(id, far) {
   const a = avatars.get(id)
   if (!a || !a.model || !!a.far === !!far) return
   if (!a.detail) {
-    const M = modelFor(id, a.cid), key = skinKey(id, a.cid), C = a.spec
-    let geometries = detailCache.get(key)
-    if (!geometries) {
-      const saved = builtGeo
-      let root
-      try {
-        builtGeo = farGeo; meshDetail = 1
-        root = bodyFor(M, id, a.cid, key, C)
-      } finally { builtGeo = saved; meshDetail = 0 }
-      let fit
-      if (M.kind !== 'built') {
-        const mixer = new THREE.AnimationMixer(root), clip = M.anims.find(c => c.name === a.prof[0].clip)
-        if (clip) { mixer.clipAction(clip).play(); mixer.update(0) }
-        turn(root, C.turns); turn(root, standOf(C))
-        const b = measureBounds(root)
-        fitToCapsule(root, 2 * (C.h + C.r), b.h, b.minY, M.yaw)
-        mixer.stopAllAction()
-        fit = root
-      } else fit = builtParts(root).tilt.children[0]
-      geometries = { list: [], position: fit.position.clone(), scale: fit.scale.clone() }
-      const materials = new Set()
-      root.traverse(n => {
-        if (n.isMesh) geometries.list.push(n.geometry)
-        if (n.material) materials.add(n.material)
-      })
-      for (const m of materials) m.dispose()
-      detailCache.set(key, geometries)
-    }
+    const geometries = farDetail(id, a.cid, a.prof, a.spec)
     a.detail = []
     a.mesh.traverse(n => { if (n.isMesh && !n.userData.damageOverlay) a.detail.push({ mesh: n, near: cleanGeometry.get(n.geometry) || n.geometry, far: geometries.list[a.detail.length], shadow: n.castShadow }) })
     const fit = a.built ? a.built.tilt.children[0] : a.mesh.children[0]
