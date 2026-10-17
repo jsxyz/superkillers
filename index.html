@@ -10320,6 +10320,8 @@ function jitTip() {
 // the click to frame 30: marks (ms since the click), frame times, programs then
 let startLog = null
 const markStart = k => startLog?.marks.push([k, now() - startLog.t0])
+// the host's last joins, for the debug panel
+const joinLog = [], joinNote = t => { joinLog.push(Math.round(now() / 1000) + 's ' + t); if (joinLog.length > 4) joinLog.shift() }
 
 function drawDebug(me, fps) {
   if (!dbgOpen) return
@@ -10360,6 +10362,7 @@ function drawDebug(me, fps) {
         '  touch ' + String(IS_TOUCH).padEnd(5) + ' shadows ' + String(renderer.shadowMap.enabled).padEnd(5)) +
     row('cost', 'sim ' + v(f(msSim, 5, 2)) + 'ms  phys ' + v(f(msPhys, 5, 2)) +
         'ms  draw ' + v(f(msDraw, 5, 2)) + 'ms  steps ' + p(lastSteps, 2)) +
+    (joinLog.length ? row('joins', esc(joinLog.join('  '))) : '') +
     (startLog ? row('start', startLog.marks.map(([k, t]) => k + ' ' + v(Math.round(t))).join('  ') + '  frames 2-30 max ' +
         v(Math.round(Math.max(0, ...startLog.frames.slice(1)))) + ' ms  programs +' + v(i.programs.length - startLog.progs)) : '') +
     row('js', (jit.off ? '<span class="w">optimizer off</span>' : jit.off === null ? 'checking' : 'optimizer on') + '  x' + f(jit.cold / jit.best, 1, 1)) +
@@ -12429,13 +12432,13 @@ function openHostPeer(attempt) {
     const id = conns.size < MAX_PLAYERS - (serving ? 0 : 1) && takeId(), t0 = now()
     // a refusal is said once the channel opens; a joiner that never connects is said too
     if (!id) return void c.on('open', () => { c.send({ k: 'full', n: MAX_PLAYERS }); setTimeout(() => { try { c.close() } catch (e) {} }, 150) })
-    sysMsg('§7Someone is joining…')
+    joinNote('joining')
     const watch = setInterval(() => {
       if (c.open || !peer || peer.destroyed) return clearInterval(watch)
       if (now() - t0 < 15000) return
       clearInterval(watch)
       const p = c.peerConnection
-      sysMsg('§cA joiner never connected (' + (p ? 'ICE ' + p.iceConnectionState + ', link ' + p.connectionState : 'no link') + ')')
+      joinNote('never connected (' + (p ? 'ICE ' + p.iceConnectionState + ', link ' + p.connectionState : 'no link') + ')')
     }, 1000)
     c.on('open', () => {
       if (gameMode === 'waves' && conns.size >= WAVES_PLAYERS - (serving ? 0 : 1)) {
@@ -14117,7 +14120,7 @@ class Arena extends ENABLE3D.Scene3D {
       initServerPanel()
       wireMenu()
       setStatus('')
-      const broke = m => { if (phase === 'connecting' || picking) { setStatus('Something broke: ' + m, 'err'); sysMsg('§cSomething broke: ' + m) } }
+      const broke = m => { if (phase === 'connecting' || picking) setStatus('Something broke: ' + m, 'err') }
       addEventListener('error', e => broke(e.message))
       addEventListener('unhandledrejection', e => broke(String(e.reason && e.reason.message || e.reason)))
       thumbsOn = true; idleThumbs(); joinLink()
