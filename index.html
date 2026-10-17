@@ -955,6 +955,8 @@ const OBJECTS = [
   { name: 'Truck Wreck', shape: 'hull', model: 'Truck', mass: 22, bounce: 0.05, friction: 0.9, damp: [0.2, 0.5], hit: 0.2, color: 0x2b2b2b },
   { name: 'Bus', shape: 'hull', mass: 30, bounce: 0.1, friction: 0.8, damp: [0.05, 0.2], hit: 0.4, color: 0xf1c40f, drive: 'Bus' },
   { name: 'Bus Wreck', shape: 'hull', model: 'Bus', mass: 30, bounce: 0.05, friction: 0.9, damp: [0.2, 0.5], hit: 0.2, color: 0x2b2b2b },
+  { name: 'Sports car', shape: 'hull', mass: 12, bounce: 0.1, friction: 0.8, damp: [0.05, 0.2], hit: 0.4, color: 0x11bca4, drive: 'Sports car' },
+  { name: 'Sports wreck', shape: 'hull', model: 'Sports car', mass: 12, bounce: 0.05, friction: 0.9, damp: [0.2, 0.5], hit: 0.2, color: 0x2b2b2b },
 ]
 // rider centre over its cushion, × (h + r)
 const SIT_HIP = 0.29
@@ -969,6 +971,7 @@ const VEHICLE_SHAPES = Object.fromEntries([
   ['Van', 2.02, 5.69, 2.1, 0.38, 2, -1.985, 1.445, [-0.45, 0.88, -0.3]],
   ['Truck', 2.03, 5.89, 1.93, 0.4, 2, -1.955, 1.725, [-0.42, 0.9, -0.15]],
   ['Bus', 2.4, 7.6, 2.8, 0.44, 'dual', -7.6 * 0.32, 7.6 * 0.23, [0.6 - 2.4 * 0.49, 0.44 * 1.25 + 0.25, -7.6 * 0.06]],
+  ['Sports car', 1.87, 4.38, 1.36, 0.33, 2, -1.235, 1.235, [-0.34, 0.34, 0.4]],
 ].map(([name, w, l, h, r, axles, front, rear, seat]) => {
   const at = []
   for (const z of [front, rear]) for (const side of [-1, 1]) for (const d of axles !== 'dual' ? [0.45] : z !== front ? [0.18, 0.9] : [0.18])
@@ -998,7 +1001,8 @@ const VEHICLES = [
   { name: 'Truck', engine: 76, brake: [1.32, 0.44], hand: 1, steer: 0.646, turn: 20, speed: 50, wheels: {"slip":[1.4,1.35],"roll":0.5}, hp: 500, ram: 4.8, boom: { radius: 9, dmg: 150, knock: 18 }, com: 1.1, steerTime: 0.12,
     variants: [{}, { color: 0x24282e, speed: 1.05 }, { color: 0xdcdcd6, grip: 1.05 }, { color: 0xa8322b, speed: 0.95, grip: 1.05 }], wreck: 'Truck Wreck' },
   { name: 'Bus', engine: 24, brake: [1.65, 0.68], hand: 1.25, steer: 0.611, turn: 18, speed: 34, wheels: {"slip":[1.3,1.3],"roll":0.6}, hp: 600, ram: 5.6, boom: { radius: 9, dmg: 150, knock: 18 }, com: 1.1, bal: -0.07677201926708221, inertia: [173.30255126953125, 175.9712371826172, 30.871807098388672], steerTime: 0.12,
-    variants: [{}, { color: 0xb8322a, speed: 1.05 }, { color: 0x2f7d4f, grip: 1.05 }, { color: 0x3a6fb5, speed: 0.95, grip: 1.05 }], wreck: 'Bus Wreck', rows: [1.3, 3.7] },
+    variants: [{}, { color: 0xb8322a, speed: 1.05 }, { color: 0x2f7d4f, grip: 1.05 }, { color: 0x3a6fb5, speed: 0.95, grip: 1.05 }], wreck: 'Bus Wreck', rows: [1.3, 3.78] },
+  { name: 'Sports car', engine: 65, brake: [1.4, 0.85], hand: 0.6, steer: 0.65, turn: 36, speed: 72, hp: 280, ram: 3.2, boom: { dmg: 120, knock: 16, radius: 7 }, com: 0.46, bal: 0, wheels: { slip: [1.8, 1.9], stiff: 100, travel: 0.04, damp: [6, 5] }, wreck: 'Sports wreck', variants: [{}, { color: 0xd63c32, speed: 1.04, grip: 0.96 }, { color: 0xe2e4e7, speed: 0.96, grip: 1.04 }, { color: 0x284b89 }] },
 ].map(vehicleRow)
 // GLTFLoader has no SRI check; keep the asset commit pinned.
 // sha384-Oa+BcLukVPbtZ7kColOygKyQvDUR0mmaZq4Wrj5BNFylre7BPJZVju/2zVCTMAO4
@@ -1254,6 +1258,7 @@ function vehicleModel(k, name) {
   const uF = L.panes[0][0][0][0] * l / 2, uR = Math.min(...cab.map(p => p[0])), fl = Math.max(sill + 0.02, V.seats[0][1] - 0.26)
   side(fillet([[-l / 2, sill], [l / 2, sill], ...top.filter(p => p[0] >= uF), [uF, fl], [uR, fl], ...top.filter(p => p[0] <= uR)]), 'accent', 2 * xi - 0.02, 0, 'body')
   for (const s of [-1, 1]) side(fillet([[-l / 2, sill], ...archEdge(at.map(a => -a[2]), sill, r, ra), [l / 2, sill], ...top]), 'accent', w / 2 - xi, 0, 'body', s * (w / 2 + xi) / 2)
+  if (L.liners) for (const z of new Set(at.map(a => a[2]))) for (const s of [-1, 1]) side(archEdge([-z], sill, r, ra), L.liners, 0.006, 0, 'liner', s * (xi + 0.003))
   // glass faces in: from outside it shows only through the far windows
   const ws = fillet(cab), holes = L.glass.map(g => fillet(g.map(pt))), X = wc / 2 - 0.02
   for (const s of [-1, 1]) k.add({ g: ['outline', ws, 0.04, 0, holes], m: 'accent', p: [s * X, 0, 0], r: [0, Math.PI / 2, 0], tag: 'cabin' }, look)
@@ -1326,6 +1331,11 @@ function vehicleModel(k, name) {
   vehicleWheels(k, V.wheels)
 }
 const VEHICLE_LOOKS = {
+  'Sports car': { liners: 'shell', sill: 0.08, narrow: 0.86, lamps: [0.43, 0.64], belt: 0.72, pillars: [], doors: [0.23, -0.48],
+    body: [[1, 0.22, 0.05], [1, 0.43, 0.08], [0.84, 0.61, 0.12], [0.23, 0.72], [-0.8, 0.72], [-0.91, 0.77, 0.06], [-1, 0.68, 0.08], [-1, 0.22, 0.05]],
+    cab: [[0.23, 0.72], [-0.09, 0.97], [-0.25, 1, 0.15], [-0.46, 0.98], [-0.8, 0.72]],
+    glass: [[[0.17, 0.74], [-0.1, 0.93, 0.04], [-0.44, 0.94, 0.04], [-0.65, 0.75]]],
+    panes: [[[[0.23, 0.72], [-0.09, 0.97]], 0.92], [[[-0.8, 0.72], [-0.46, 0.98]], 0.9]] },
   Car: { sill: 0.2, narrow: 0.86, lamps: [0.46, 0.64], belt: 0.66, pillars: [-0.07], doors: [0.45, -0.07, -0.58],
     body: [[1, 0.26, 0.06], [1, 0.45, 0.1], [0.93, 0.54, 0.12], [0.49, 0.66], [-0.6, 0.66], [-0.68, 0.76, 0.06], [-0.95, 0.72, 0.15], [-1, 0.6, 0.08], [-1, 0.27, 0.06]],
     cab: [[0.49, 0.66], [0.2, 0.97, 0.15], [0.05, 1, 0.2], [-0.22, 1, 0.2], [-0.39, 0.98, 0.15], [-0.68, 0.76], [-0.62, 0.66]],
@@ -4295,6 +4305,8 @@ function wheelsOf(d, t, eye) {
 const slipOf = (W, front) => Array.isArray(W.slip) ? W.slip[front ? 0 : 1] : W.slip
 function makeCar(o, V, at0) {
   const W = V.wheels, t = carTuning || (carTuning = new A.btVehicleTuning()), r = new A.btDefaultVehicleRaycaster(world), v = new A.btRaycastVehicle(t, o.body, r)
+  const ccd = 0.3 * Math.min(V.w ?? 2 * (o.K.half?.[0] ?? W.r), V.h ?? 2 * (o.K.half?.[1] ?? W.r))
+  o.body.setCcdMotionThreshold(ccd); o.body.setCcdSweptSphereRadius(ccd)
   v.setCoordinateSystem(0, 1, 2)
   for (const [x, y, z, front] of W.at) {          // hung so each wheel settles where it is drawn
     posVec.setValue(x - at0[0], wheelHang(W, [x, y, z], at0[2]) - at0[1], z - at0[2]); velVec.setValue(0, -1, 0); relVec.setValue(-1, 0, 0)
@@ -7972,7 +7984,7 @@ function capeSeated(skin, S) {
   if (cape.length && belt.length) {
     const ys = belt.map(i => P.getY(i)), y0 = Math.min(...ys) - 2.53 * (Math.max(...ys) - Math.min(...ys))
     const p = P.clone(), z0 = belt.reduce((s, i) => s + P.getZ(i), 0) / belt.length
-    for (const i of cape) { const y = P.getY(i), z = P.getZ(i); if (y < y0) p.setXYZ(i, P.getX(i), y0, z + Math.sign(z - z0) * (y0 - y) * 0.4) }
+    for (const i of cape) { const y = P.getY(i), z = P.getZ(i); if (y < y0) p.setXYZ(i, P.getX(i), y0, z + Math.sign(z - z0) * (y0 - y) * 0.1) }
     g = variantOf(skin); g.setAttribute('position', p)
   }
   if (S && parts.length) {
