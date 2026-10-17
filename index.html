@@ -13140,19 +13140,7 @@ function reconcile(a) {
   if (!finiteFields(a, [F.x, F.y, F.z, F.vy, F.fuel, F.vx, F.vz])) return
   const acid = clamp(a[F.cid] | 0, 0, CHARS.length - 1)
   if (acid !== predicted.cid) applyChar(predicted, acid)
-  predicted.hp = a[F.hp]; predicted.gun = GUNS[a[F.gun]] ? a[F.gun] : handsOf(CHARS[predicted.cid])
-  predicted.ammo = a[F.ammo] === -1 ? Infinity : a[F.ammo]
-  predicted.dead = a[F.dead]; predicted.kills = a[F.kills] | 0
-  if (a[F.prot] !== undefined) predicted.prot = a[F.prot]
-  predicted.pow = a[F.pow] | 0
-  predicted.powT = a[F.powT] || 0
-  predicted.sp = a[F.sp] === -1 ? Infinity : (a[F.sp] | 0)
-  predicted.markT = a[F.markT] || 0
-  predicted.bag = a[F.bag] | 0
-  predicted.cap = a[F.cap] | 0
-  predicted.prof = a[F.prof] | 0
-  predicted.sprof = a[F.sprof] | 0
-  predicted.mark = effId(a[F.mark])
+  PLAYER_STATE.own(a, predicted)
   const web = webPoint(a[F.web]) ? a[F.web] : 0
 
   const ack = a[F.ack] | 0
@@ -13585,10 +13573,13 @@ const HOST_PHASES = {
 }
 
 
-// Ordered fields define wire columns; readers keep their context's coercions and defaults.
+// Ordered fields define wire columns; readers keep their context's coercions and defaults. A field's third element is
+// how the guest takes its own row's value onto its predicted character; own(a, c) runs them in column order.
 function stateSchema(fields) {
+  const owns = fields.flatMap(([, , own], i) => own ? [[i, own]] : [])
   return { col: Object.fromEntries(fields.map(([name], i) => [name, i])),
-           pack: (id, c) => fields.map(([, encode]) => encode(c, id)) }
+           pack: (id, c) => fields.map(([, encode]) => encode(c, id)),
+           own: (a, c) => { for (const [i, own] of owns) own(c, a[i]) } }
 }
 const PLAYER_STATE = stateSchema([
   ['id', (c, id) => id],
@@ -13596,29 +13587,29 @@ const PLAYER_STATE = stateSchema([
   ['y', c => r2(c.y)],
   ['z', c => r2(c.z)],
   ['yaw', c => r2(c.yaw)],
-  ['hp', c => Math.round(c.hp)],
-  ['gun', c => c.gun],
-  ['ammo', c => c.ammo === Infinity ? -1 : c.ammo],
-  ['dead', c => r2(c.dead)],
+  ['hp', c => Math.round(c.hp), (c, v) => { c.hp = v }],
+  ['gun', c => c.gun, (c, v) => { c.gun = GUNS[v] ? v : handsOf(CHARS[c.cid]) }],
+  ['ammo', c => c.ammo === Infinity ? -1 : c.ammo, (c, v) => { c.ammo = v === -1 ? Infinity : v }],
+  ['dead', c => r2(c.dead), (c, v) => { c.dead = v }],
   ['cid', c => c.cid],
   ['vy', c => r2(c.vy)],
-  ['kills', c => c.kills],
+  ['kills', c => c.kills, (c, v) => { c.kills = v | 0 }],
   ['fuel', c => r2(c.fuel)],
-  ['prot', c => r2(c.prot)],
+  ['prot', c => r2(c.prot), (c, v) => { if (v !== undefined) c.prot = v }],
   ['vx', c => r2(c.vx)],
   ['vz', c => r2(c.vz)],
   ['ack', (c, id) => inAck.get(id) || 0],
   ['jLock', c => c.jLock ? 1 : 0],
   ['anim', c => animOf(c)],
-  ['pow', c => c.pow | 0],
-  ['powT', c => r2(c.powT)],
-  ['sp', c => c.sp === Infinity ? -1 : c.sp | 0],
-  ['markT', c => r2(c.markT)],
-  ['bag', c => c.bag | 0],
-  ['cap', c => c.cap | 0],
-  ['prof', c => profBits(c, GUNS[c.gun].name)],
-  ['sprof', c => primaryOf(c) ? profBits(c, primaryOf(c).name) : 0],
-  ['mark', c => c.mark | 0],
+  ['pow', c => c.pow | 0, (c, v) => { c.pow = v | 0 }],
+  ['powT', c => r2(c.powT), (c, v) => { c.powT = v || 0 }],
+  ['sp', c => c.sp === Infinity ? -1 : c.sp | 0, (c, v) => { c.sp = v === -1 ? Infinity : (v | 0) }],
+  ['markT', c => r2(c.markT), (c, v) => { c.markT = v || 0 }],
+  ['bag', c => c.bag | 0, (c, v) => { c.bag = v | 0 }],
+  ['cap', c => c.cap | 0, (c, v) => { c.cap = v | 0 }],
+  ['prof', c => profBits(c, GUNS[c.gun].name), (c, v) => { c.prof = v | 0 }],
+  ['sprof', c => primaryOf(c) ? profBits(c, primaryOf(c).name) : 0, (c, v) => { c.sprof = v | 0 }],
+  ['mark', c => c.mark | 0, (c, v) => { c.mark = effId(v) }],
   ['web', c => c.web || 0]
 ])
 // ack = last input SIMULATED, not arrived, or the guest's rewind lands short and snaps back
