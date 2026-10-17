@@ -8890,7 +8890,7 @@ function drawObjects(list, wheelsAt = () => null) {
   for (const o of list) {
     const K = OBJECTS[o.k]
     if (K && K.shape === 'hull') {
-      const H = hullOf(K), m = H && poolMesh(objPool, objGroup, () => new THREE.Group())
+      const H = hullOf(K), m = H && poolMesh(objPool, objGroup, () => Object.assign(new THREE.Group(), { matrixAutoUpdate: false }))
       if (!m) continue
       if (m.parent !== objGroup) objGroup.add(m)
       const paint = K.drive ? variantColor(K, o.seed, o.id) : undefined
@@ -8905,9 +8905,12 @@ function drawObjects(list, wheelsAt = () => null) {
           look.traverse(c => { if (c.isMesh) c.castShadow = c.receiveShadow = true
             if (K.drive && c.userData.part === 'wheel') c.visible = false })
           m.add(look); look.position.set(-H.at[0], -H.at[1], -H.at[2])
+          look.traverse(c => { c.updateMatrix(); c.matrixAutoUpdate = false })
         }
       }
-      m.position.set(o.x, o.y, o.z); m.quaternion.set(...o.q); m.userData.oid = o.id
+      const p = m.position, q = m.quaternion
+      if (p.x !== o.x || p.y !== o.y || p.z !== o.z || q.x !== o.q[0] || q.y !== o.q[1] || q.z !== o.q[2] || q.w !== o.q[3]) { p.set(o.x, o.y, o.z); q.set(...o.q); m.updateMatrix() }
+      m.userData.oid = o.id
       const W = K.drive && VEHICLE_SHAPES[K.model || K.name]?.wheels
       if (W) {
         const posed = wheelsAt(o), rolling = !!posed && wheelN + W.at.length <= WHEEL_CAP
