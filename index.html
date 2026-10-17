@@ -1658,6 +1658,8 @@ const SPEECH = {
 }
 
 const TICK = 1 / 60
+// the share a smoother moves in dt s that moves k in a 60 Hz frame
+const timeShare = (dt, k) => 1 - (1 - Math.min(1, k)) ** (dt / TICK)
 const MAX_CATCHUP = 5    // physics steps per frame
 // INPUT_DUP >= MAX_CATCHUP, or a packet leaves ticks out
 const INTERP_MS = 100     // a guest's draw delay until the link is measured
@@ -4258,7 +4260,7 @@ function wheelsOf(d, t, eye) {
   const sat = seatedIn(d.id)
   if (!sat && !s.fresh && s.x === d.x && s.z === d.z && s.qy === d.q[1]) { s.t = t; return null }
   rotqTo(wv, d.q, 0, 0, -1)
-  const yaw = Math.atan2(-wv[0], -wv[2]), dt = (t - s.t) / 1000, k = Math.min(1, dt / 0.12)
+  const yaw = Math.atan2(-wv[0], -wv[2]), dt = (t - s.t) / 1000, k = timeShare(dt, TICK / 0.12)
   const go = dt > 0 ? ((d.x - s.x) * wv[0] + (d.z - s.z) * wv[2]) / dt : 0, turn = dt > 0 ? wrapPi(yaw - s.yaw) / dt : 0
   if (dt > 0 && !s.fresh) { s.go += (go - s.go) * k; s.turn += (turn - s.turn) * k; roll(s, go * dt / W.r) }
   if (Math.abs(s.go) > 0.5) s.steer = clamp(Math.atan(s.base * s.turn / s.go), -V.steer, V.steer)
@@ -6445,7 +6447,7 @@ function builtParts(hull) {
 function poseBuilt(a, poses, want, dt, t, rate) {
   const d = a.built, P = poses[want] || poses[0], H = a.height || 1
   if (!d) return []
-  d.lean += (P.lean - d.lean) * Math.min(1, dt * rate)
+  d.lean += (P.lean - d.lean) * timeShare(dt, rate * TICK)
   d.tilt.rotation.x = -d.lean
   d.root.position.y = -H / 2 + Math.sin(t / 1000 * P.rate) * P.bob * H
   return [d, P]
@@ -6463,7 +6465,7 @@ function animateArtie(a, want, dt, t) {
   const sit = a.hold === 'sit'          // seated: on the cushion, its plume out
   for (const j of d.tagged.jet) j.visible = !sit
   if (sit) d.root.position.y = -(a.height || 1) / 2
-  d.sway += (P.ear - d.sway) * Math.min(1, dt * 7)
+  d.sway += (P.ear - d.sway) * timeShare(dt, 7 * TICK)
   const ears = d.tagged.ear || []
   for (let i = 0; i < ears.length; i++)
     ears[i].rotation.x = d.sway + Math.sin(t / 1000 * P.rate + i) * 0.05
@@ -6802,7 +6804,7 @@ const VITOSCREEN_POSE = [
 function animateVitoScreen(a, want, dt, t) {
   const [d, P] = poseBuilt(a, VITOSCREEN_POSE, want, dt, t, 7)
   if (!d) return
-  d.sway += (P.bank - d.sway) * Math.min(1, dt * 7)
+  d.sway += (P.bank - d.sway) * timeShare(dt, 7 * TICK)
   d.tilt.rotation.z = d.sway + Math.sin(t / 700) * 0.018
   for (const n of d.tagged.screen || []) n.material.emissiveIntensity = 0.45 + Math.sin(t / 31) * 0.025
 }
@@ -7088,15 +7090,20 @@ function drawSeat(m, c, seat, list) {
   wallTurns.delete(m); wallRolls.delete(m); ceilingTurns.delete(m)
   return true
 }
-function drawTurned(m, c, on, dt) {
-  const k = eased(wallTurns.get(m) || 0, on, dt), th = k * Math.PI / 2
-  wallTurns.set(m, k)
-  const yaw = c.wy ?? c.yaw, s = Math.sin(yaw), q = Math.cos(yaw), h = c.h ?? rowFor(c.id, c.cid).h, [ax, ay, az] = on ? [s, 0, q] : [0, 1, 0]
-  m.position.set(c.x - ax * h + Math.sin(th) * s * h, c.y - ay * h + Math.cos(th) * h, c.z - az * h + Math.sin(th) * q * h)
-  const want = on ? Math.atan2((c.vz || 0) * s - (c.vx || 0) * q, c.vy || 0) : 0, was = wallRolls.get(m) || 0
-  const e = was + Math.atan2(Math.sin(want - was), Math.cos(want - was)) * Math.min(1, dt / WALL_EASE), r = Math.atan2(Math.sin(e), Math.cos(e)), sr = Math.sin(r / 2), cr = Math.cos(r / 2)
-  wallRolls.set(m, r)
-  const sy = Math.sin(yaw / 2), cy = Math.cos(yaw / 2), sx = Math.sin(th / 2), cx = Math.cos(th / 2), x = cy * sx, y = sy * cx, z = -sy * sx, w = cy * cx
+function drawTurned(m, c, on, dt, ticks) {
+  let k = wallTurns.get(m) || 0, r = wallRolls.get(m) || 0, th = 0, yaw = 0
+  const h = c.h ?? rowFor(c.id, c.cid).h, n = ticks ? ticks.length : 1
+  const step = (c, on, dt) => {
+    k = eased(k, on, dt); th = k * Math.PI / 2; yaw = c.wy ?? c.yaw
+    const s = Math.sin(yaw), q = Math.cos(yaw), [ax, ay, az] = on ? [s, 0, q] : [0, 1, 0]
+    const want = on ? Math.atan2((c.vz || 0) * s - (c.vx || 0) * q, c.vy || 0) : 0, e = r + Math.atan2(Math.sin(want - r), Math.cos(want - r)) * timeShare(dt, TICK / WALL_EASE)
+    r = Math.atan2(Math.sin(e), Math.cos(e))
+    return [c.x - ax * h + Math.sin(th) * s * h, c.y - ay * h + Math.cos(th) * h, c.z - az * h + Math.sin(th) * q * h]
+  }
+  for (let i = 0; i < n - 1; i++) { const s = ticks[i]; [s.px, s.py, s.pz] = step(s, s.turned, TICK) }
+  m.position.set(...step(c, on, ticks ? n && TICK : dt))
+  wallTurns.set(m, k); wallRolls.set(m, r)
+  const sr = Math.sin(r / 2), cr = Math.cos(r / 2), sy = Math.sin(yaw / 2), cy = Math.cos(yaw / 2), sx = Math.sin(th / 2), cx = Math.cos(th / 2), x = cy * sx, y = sy * cx, z = -sy * sx, w = cy * cx
   if (k) m.quaternion.set(x * cr - z * sr, w * sr + y * cr, z * cr + x * sr, w * cr - y * sr)
   else m.rotation.x = m.rotation.z = 0
 }
@@ -7106,11 +7113,14 @@ const flyFast = (c, yaw = c.yaw) => !!(c.flying || c.anim === 5) && !c.dove && c
 // turn about the head end (shared with the ceiling sim)
 const ceilingTurns = new WeakMap()
 let ceilingDown
-function drawCeiling(m, c, on, dt) {
-  let p = ceilingTurns.get(m)
-  if (!p && !on) return false
+function drawCeiling(m, c, on, dt, ticks) {
+  let p = ceilingTurns.get(m), early = false
+  const n = ticks ? ticks.length : 1
+  for (let i = 0; i < n - 1; i++) early ||= ticks[i].ceil
+  if (!p && !on && !early) return false
   if (!p) ceilingTurns.set(m, p = { k: 0 })
-  const k = p.k = eased(p.k, on, dt), th = k * Math.PI / 2
+  for (let i = 0; i < n - 1; i++) p.k = eased(p.k, ticks[i].ceil, TICK)
+  const k = p.k = eased(p.k, on, ticks ? n && TICK : dt), th = k * Math.PI / 2
   if (!k) ceilingTurns.delete(m)
   const C = rowFor(c.id, c.cid), h = c.h ?? C.h, x = -Math.sin(c.yaw), z = -Math.cos(c.yaw), d = ((on ? 1 : 0) - Math.sin(th)) * h
   p.top = c.y + (on ? 0 : h) + C.r + 0.02
@@ -7897,7 +7907,7 @@ function bodyShell(id, color, opacity, pad) {
   m.material.opacity = opacity
 }
 function throwSparks(a, on, dt, t) {
-  const C = a.spec, p = a.mesh.position, dx = p.x - a.sparkX, dz = p.z - a.sparkZ, e = Math.min(1, dt / 0.12)
+  const C = a.spec, p = a.mesh.position, dx = p.x - a.sparkX, dz = p.z - a.sparkZ, e = timeShare(dt, TICK / 0.12)
   if (dt > 0 && Math.hypot(dx, dz) < 2) { a.sparkVx += (dx / dt - a.sparkVx) * e; a.sparkVz += (dz / dt - a.sparkVz) * e }
   else a.sparkVx = a.sparkVz = a.sparkN = 0
   a.sparkX = p.x; a.sparkZ = p.z
@@ -8068,7 +8078,9 @@ function drawHealth(id, hp) {
 const RUN_STRANDS = [[-0.42, 0.1], [-0.2, -0.13], [0.02, 0.14], [0.22, -0.1], [0.4, 0.07]], RUN_FLICK = 60, ORANGE = [1, 0.55, 0.05]
 function drawRunTrail(a, moving, t, id = 0) {
   let trail = a.runTrail
-  if (!trail && (!moving || !a.mesh.visible)) return
+  const early = a.runAt
+  a.runAt = null
+  if (!trail && (!moving && !early?.some(e => e[4]) || !a.mesh.visible)) return
   if (!trail) {
     const faces = []
     for (let i = 0; i < 500; i++) { const v = i * 4; faces.push(v, v + 1, v + 2, v + 2, v + 1, v + 3) }
@@ -8083,14 +8095,18 @@ function drawRunTrail(a, moving, t, id = 0) {
   const { mesh, points } = trail, p = a.mesh.position, g = mesh.geometry, H = 2 * (a.spec.h + a.spec.r)
   mesh.visible = false; g.setDrawRange(0, 0)
   if (!a.mesh.visible) { trail.count = 0; return }
-  const last = trail.count && points[(trail.head + trail.count - 1) % 18]
-  const distance = last ? (p.x - last.x) ** 2 + (p.y - last.y) ** 2 + (p.z - last.z) ** 2 : 0
-  if (last && (distance > 9 || t < last.w)) trail.count = 0
-  while (trail.count && t - points[trail.head].w > 280) { trail.head = (trail.head + 1) % 18; trail.count-- }
-  if (moving && (!trail.count || distance > 0.0036 && t - last.w >= 16)) {
-    if (trail.count === 18) { trail.head = (trail.head + 1) % 18; trail.count-- }
-    points[(trail.head + trail.count++) % 18].set(p.x, p.y, p.z, t)
+  const admit = (x, y, z, t, moving) => {
+    const last = trail.count && points[(trail.head + trail.count - 1) % 18]
+    const distance = last ? (x - last.x) ** 2 + (y - last.y) ** 2 + (z - last.z) ** 2 : 0
+    if (last && (distance > 9 || t < last.w)) trail.count = 0
+    while (trail.count && t - points[trail.head].w > 280) { trail.head = (trail.head + 1) % 18; trail.count-- }
+    if (moving && (!trail.count || distance > 0.0036 && t - last.w >= 16)) {
+      if (trail.count === 18) { trail.head = (trail.head + 1) % 18; trail.count-- }
+      points[(trail.head + trail.count++) % 18].set(x, y, z, t)
+    }
   }
+  if (early) for (const e of early) admit(...e)
+  admit(p.x, p.y, p.z, t, moving)
   if (culling) {
     trail.box.makeEmpty().expandByPoint(p)
     for (let i = 0; i < trail.count; i++) trail.box.expandByPoint(points[(trail.head + i) % 18])
@@ -8216,7 +8232,16 @@ function posePunch(a, t, restore = false, hold) {
     if (p) p.applied = false
     return
   }
-  if (a.hold !== hold) { if (p) p.blend = !!(a.hold && hold); a.hold = hold; a.holdAt = t; wear(a) }
+  const was = a.posedAt
+  a.posedAt = t
+  if (a.hold !== hold) {
+    if (p) {
+      p.blend = !!(a.hold && hold)
+      for (const part of p.parts) part.from = p.blend && part.outAt === was ? (part.from || new THREE.Quaternion()).copy(part.out) : null
+      p.th0 = p.blend && p.thAt === was ? p.th : 0
+    }
+    a.hold = hold; a.holdAt = t; wear(a)
+  }
   const G = GUNS[a.shotGun], C = GUNS[a.chargeGun], chargeAge = t - a.chargeAt
   const charging = C && C.charge === 'palms' && chargeAge >= 0 && chargeAge < C.windup * 1000 && !(a.shotAt >= a.chargeAt)
   const landing = t - a.landAt < LAND_MS, absorbed = G?.punch === 'slam' && a.shotAt - a.landAt < LAND_MS
@@ -8259,9 +8284,9 @@ function posePunch(a, t, restore = false, hold) {
     else if (kind === 'slam') part.target.copy(part.slam)
     else part.target.copy(palms ? part.cup : part.guard).slerp(palms ? part.push : kind === 'rise' ? part.rise : part.jab,
       palms || part.side === (kind === 'rise' ? -1 : p.side) ? strike : 0)
-    if (hold && p.blend && weight < 1 && part.out) part.bone.quaternion.copy(part.out)
+    if (hold && p.blend && weight < 1 && part.from) part.bone.quaternion.copy(part.from)
     part.bone.quaternion.slerp(part.target, weight)
-    ;(part.out ||= new THREE.Quaternion()).copy(part.bone.quaternion)
+    ;(part.out ||= new THREE.Quaternion()).copy(part.bone.quaternion); part.outAt = t
   }
   if (hold === 'lift') for (const s of [1, -1]) {
     const [U, L] = ['upper', 'lower'].map(n => p.parts.find(q => !q.leg && !q.body && q.side === s && q.bone.name.includes(n)).bone)
@@ -8286,7 +8311,7 @@ function posePunch(a, t, restore = false, hold) {
     const k = a.mesh.children[0]
     p.k ||= [k.position.x, k.position.y, k.position.z, k.rotation.x]          // the clip's, put back on restore
     if (hold) {
-      const from = p.blend && weight < 1 ? p.th || 0 : 0, th = p.th = from + (HOLD_TILT[hold] - from) * weight
+      const from = p.blend && weight < 1 ? p.th0 : 0, th = p.th = from + (HOLD_TILT[hold] - from) * weight; p.thAt = t
       k.rotation.x = th; k.position.set(0, k.userData.y * Math.cos(th), k.userData.y * Math.sin(th))
     }
     a.mesh.updateMatrixWorld(true)
@@ -8314,7 +8339,7 @@ function posePunch(a, t, restore = false, hold) {
   p.applied = true
 }
 
-function setAnim(id, want, dt, t, hold, still) {
+function setAnim(id, want, dt, t, hold, still, ticks) {
   if (hold === 'ceiling') want = 'ceiling'
   const a = avatars.get(id)
   if (!a) return
@@ -8324,12 +8349,19 @@ function setAnim(id, want, dt, t, hold, still) {
     avatarDetail(id, distance > (a.far ? 32 : 40))
   }
   drawAvatarShadow(a)
-  if (a.spec.trail) drawRunTrail(a, want === 1 && a.v > 1.5 * (a.spec.run ?? a.spec.speed * RUN), t, id)
+  // smoothed drawn speed, a tick at a time where the ticks are known (the last is the drawn mesh; trail points go by tick
+  // time); a step past any run speed over at least a tick (the sim moves whole ticks) is a teleport
+  const m = a.mesh.position, n = ticks ? ticks.length : 1
+  for (let i = 0; i < n; i++) {
+    const s = i < n - 1 && ticks[i], h = ticks ? TICK : dt, x = s ? s.px ?? s.x : m.x, y = s ? s.py ?? s.y : m.y, z = s ? s.pz ?? s.z : m.z
+    const d = !a.at ? 0 : ticks?.[i].fresh ? Infinity : Math.hypot(x - a.at.x, z - a.at.z)
+    if (d < 60 * Math.max(h, TICK)) a.v += (d / Math.max(h, 1e-3) - a.v) * timeShare(h, TICK / 0.15)
+    ;(a.at ||= new THREE.Vector3()).set(x, y, z)
+    if (s && a.spec.trail) (a.runAt ||= []).push([x, y, z, tickAt - (n - 1 - i) * TICK * 1000, s.anim === 1 && a.v > 1.5 * (a.spec.run ?? a.spec.speed * RUN)])
+  }
+  if (!n) a.at?.copy(m)
+  if (a.spec.trail) drawRunTrail(a, want === 1 && a.v > 1.5 * (a.spec.run ?? a.spec.speed * RUN), ticks ? tickAt : t, id)
   if (a.spec.sparks !== undefined) throwSparks(a, want === 1, dt, t)
-  // smoothed drawn speed; a step past any run speed over at least a tick (the sim moves whole ticks) is a teleport
-  const m = a.mesh.position, d = a.at ? Math.hypot(m.x - a.at.x, m.z - a.at.z) : 0
-  if (d < 60 * Math.max(dt, TICK)) a.v += (d / Math.max(dt, 1e-3) - a.v) * Math.min(1, dt / 0.15)
-  ;(a.at ||= new THREE.Vector3()).copy(m)
   if (still) return
   if (a.animate) { if (a.hold !== hold) { a.hold = hold; wear(a) } a.anim = want; a.animate(a, want, dt, t); return }
   if (!a.mixer) return
@@ -12553,7 +12585,7 @@ function reconcile(a) {
     restore(); blend()
     restoreChar(predicted, a[F.x], a[F.y], a[F.z], 0, 0, 0, a[F.fuel])
     untie(predicted)
-    pending.length = 0
+    pending.length = 0; predJump = true
     replaySteps = 0; reconcileErr = 0
     return
   }
@@ -12564,7 +12596,7 @@ function reconcile(a) {
     tie(predicted, web)
     predicted.jLock = !!a[F.jLock]
     pending.length = 0
-    predLost = false
+    predLost = false; predJump = true
     replaySteps = 0; reconcileErr = 0
     return
   }
@@ -12585,7 +12617,7 @@ function reconcile(a) {
     e.x = predicted.x; e.y = predicted.y; e.z = predicted.z; e.web = predicted.web || 0; e.ob = objs.map(o => [o.id, ...objState(o)])
   }
   blend()
-  replaySteps = n
+  replaySteps = n; predJump = true
 }
 
 function clearSession() {
@@ -12614,7 +12646,7 @@ function clearSession() {
   lastRecvAt = 0; lastSeen.clear()
   levelSwitchAt = -Infinity; levelMissTold = false
   outSeq = 0; spawnAvoid = []
-  pending.length = 0; replaySteps = 0; reconcileErr = 0
+  pending.length = 0; replaySteps = 0; reconcileErr = 0; predJump = false; tickSamples.clear()
   inqFloor.clear(); inqAt = 0; lagOwed = 0; lagGive = 0
   document.body.classList.remove('playing')
   releasePointer()          // flagged, or teardown would trip the pause menu
@@ -12698,6 +12730,15 @@ function remoteAt(t) {
 }
 // ---------------------------------------------------------------- loop
 let acc = 0, last = now(), snapAcc = 0, tickAt = 0      // ms: when the last tick fell due
+// this frame's ticks of each player simulated here, for the drawn side to step through; fresh: moved by a reconcile, not a tick
+const tickSamples = new Map()
+let predJump = false
+function sampleTick(id, c, fresh, fire) {
+  let list = tickSamples.get(id)
+  if (!list) tickSamples.set(id, list = [])
+  const anim = animOf(c)
+  list.push({ x: c.x, y: c.y, z: c.z, yaw: c.yaw, wy: c.wy, vx: c.vx, vy: c.vy, vz: c.vz, anim, turned: anim === 4 && !!rowFor(id, c.cid).wallRun, ceil: !!c.ceil, fresh, fire })
+}
 // server panel: rates per second, bytes per session
 let ticksRun = 0, tickRate = 0, snapsOut = 0, snapOutRate = 0, bytesUpAll = 0, bytesDownAll = 0
 
@@ -12988,6 +13029,7 @@ function stepSim(t) {
   if (!isHost && connected && helloAt && !admitted && t - helloAt > HELLO_MS) hello()
 
   let steps = 0
+  tickSamples.clear()
   while (acc >= TICK && steps < MAX_CATCHUP) {
     acc -= TICK; steps++; tickAt = t - acc * 1000
     if (lagGive > 0) lagGive--
@@ -13005,6 +13047,7 @@ function stepSim(t) {
       predictObjects(predicted)
       tickChars([predicted], () => inp, TICK)
       lookStep(predicted, input)
+      sampleTick(myId, predicted, predJump, input.fire || input.alt); predJump = false
       msPhys = msPhys * 0.9 + (now() - _p1) * 0.1
       const seq = ++outSeq
       pending.push({ seq, inp, x: predicted.x, y: predicted.y, z: predicted.z, fuel: predicted.fuel, jl: !!predicted.jLock, web: predicted.web || 0, ob: objs.map(o => [o.id, ...objState(o)]) })
@@ -13019,6 +13062,7 @@ function stepSim(t) {
       lastSeqOut = seq
       input.sw = input.sh = input.use = false
     }
+    if (isHost && players.size) for (const [id, c] of players) sampleTick(id, c, false, !id && (input.fire || input.alt))
   }
   // one packet a frame: INPUT_DUP >= MAX_CATCHUP (asserted at the constants), so the ring covers every tick
   if (steps && !isHost && connected && predicted) sendHost({ k: 'i', s: lastSeqOut, a: sendRing })
@@ -13173,14 +13217,19 @@ const mmss = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart
 
 // drawn facing: the run on the ground; the aim when still, attacking or in a state of its own; in the air the turn it had
 const FACE_MS = 400, FACE_RATE = 14
-function faceYaw(id, c, anim, own, t, dt, firing) {
+// ticks: this frame's sim ticks (the last is c), else one step of dt
+function faceYaw(id, c, anim, own, t, dt, firing, ticks) {
   const a = avatars.get(id)
   if (!a) return c.yaw
-  const G = GUNS[a.shotGun], C = GUNS[a.chargeGun], y = a.face ?? c.yaw
-  const attack = firing || t - a.shotAt < Math.max(FACE_MS, G?.punchMs ?? G?.rate * 1000) || t - a.chargeAt < (C?.windup ?? 0) * 1000
-  const flyWant = anim === 5 && Math.hypot(c.vx, c.vz) > FLY_V * 0.6 ? Math.atan2(-c.vx, -c.vz) : null
-  const want = attack ? c.yaw : own && flyWant === null ? c.yaw : flyWant ?? (anim === 0 ? c.yaw : anim === 1 && Math.hypot(c.vx, c.vz) > 0.8 ? Math.atan2(-c.vx, -c.vz) : y), k = dt * FACE_RATE * (own ? 4 : attack ? 2 : 1)
-  return a.face = y + clamp(Math.atan2(Math.sin(want - y), Math.cos(want - y)), -k, k)
+  const G = GUNS[a.shotGun], C = GUNS[a.chargeGun], n = ticks ? ticks.length : 1
+  for (let i = 0; i < n; i++) {
+    const s = i < n - 1 ? ticks[i] : c, an = s === c ? anim : s.anim, at = t - (n - 1 - i) * TICK * 1000, y = a.face ?? s.yaw, mine = own || an > 3
+    const attack = (s === c ? firing : s.fire) || at - a.shotAt < Math.max(FACE_MS, G?.punchMs ?? G?.rate * 1000) || at - a.chargeAt < (C?.windup ?? 0) * 1000
+    const flyWant = an === 5 && Math.hypot(s.vx, s.vz) > FLY_V * 0.6 ? Math.atan2(-s.vx, -s.vz) : null
+    const want = attack ? s.yaw : mine && flyWant === null ? s.yaw : flyWant ?? (an === 0 ? s.yaw : an === 1 && Math.hypot(s.vx, s.vz) > 0.8 ? Math.atan2(-s.vx, -s.vz) : y), k = (ticks ? TICK : dt) * FACE_RATE * (mine ? 4 : attack ? 2 : 1)
+    a.face = y + clamp(Math.atan2(Math.sin(want - y), Math.cos(want - y)), -k, k)
+  }
+  return a.face ?? c.yaw
 }
 // GTA's radar while seated: each static chunk baked top-down once, then one rotated drawImage apiece; up is where the
 // camera looks (world north, the N on the rim, is -z)
@@ -13278,9 +13327,10 @@ function draw(dt, t) {
   meMesh.visible = !(me.dead > 0) && !joinPick()
   meMesh.position.set(me.x, me.y, me.z)
   const myHold = holdOf(myId, me) || me.ceil && 'ceiling'
-  meMesh.rotation.y = faceYaw(myId, me, animOf(me), myHold || animOf(me) > 3 || firstPerson || carries.has(myId), t, dt, input.fire || input.alt)
-  if (!drawSeat(meMesh, me, sits.get(myId), obl) && !drawCeiling(meMesh, me, myHold === 'ceiling', dt)) drawTurned(meMesh, me, animOf(me) === 4 && rowOf(me)?.wallRun, dt)
-  setAnim(myId, crouchOf(myId, me.cid, animOf(me), me.springT > 0, myHold), dt, t, myHold)
+  const myTicks = tickSamples.get(myId) || []
+  meMesh.rotation.y = faceYaw(myId, me, animOf(me), myHold || firstPerson || carries.has(myId), t, dt, input.fire || input.alt, myTicks)
+  if (!drawSeat(meMesh, me, sits.get(myId), obl) && !drawCeiling(meMesh, me, myHold === 'ceiling', dt, myTicks)) drawTurned(meMesh, me, animOf(me) === 4 && rowOf(me)?.wallRun, dt, myTicks)
+  setAnim(myId, crouchOf(myId, me.cid, animOf(me), me.springT > 0, myHold), dt, t, myHold, false, myTicks)
   drawHealth(myId, me.hp)
 
   cullFrom(camera)
@@ -13294,11 +13344,12 @@ function draw(dt, t) {
     const C = rowFor(o.id, o.cid)
     o.ceil = o.anim === 4 && C.climb && !C.wallRun && ceilAbove(o.x, o.y, o.z, C.r, 0.1)
     const hold = holdOf(o.id, o) || o.ceil && 'ceiling'
-    m.rotation.y = faceYaw(o.id, o, o.anim || 0, hold || o.anim > 3 || carries.has(o.id), t, dt)
+    const ticks = isHost ? tickSamples.get(o.id) || [] : undefined
+    m.rotation.y = faceYaw(o.id, o, o.anim || 0, hold || carries.has(o.id), t, dt, false, ticks)
     if (o.anim === 4 && C.wallRun && o.wy === undefined) o.wy = wallYawAt(o.x, o.y, o.z, C.h + C.r + 0.4)
-    if (!drawSeat(m, o, sits.get(o.id), obl) && !drawCeiling(m, o, hold === 'ceiling', dt)) drawTurned(m, o, o.anim === 4 && C.wallRun, dt)
+    if (!drawSeat(m, o, sits.get(o.id), obl) && !drawCeiling(m, o, hold === 'ceiling', dt, ticks)) drawTurned(m, o, o.anim === 4 && C.wallRun, dt, ticks)
     const still = !posed(m.position)
-    setAnim(o.id, crouchOf(o.id, o.cid, o.anim || 0, o.jl, hold), dt, t, hold, still)
+    setAnim(o.id, crouchOf(o.id, o.cid, o.anim || 0, o.jl, hold), dt, t, hold, still, ticks)
     drawHealth(o.id, o.hp)
     drawEffect(o.id, o.markT > 0 ? o.mark : 0)
     drawAura(o.id, o.anim || 0, dt)
@@ -13314,7 +13365,7 @@ function draw(dt, t) {
   const cam = updateCamera(me, input, camera, firstPerson)
   drawRadar(me, others, t)
   const held = cam.ray && obl.find(o => !o.K.carry && (o.heldBy ?? objHeld.get(o.id)) === myId)
-  heldF += ((held ? heldFade(cam.ray, me, held) : 1) - heldF) * Math.min(1, dt / 0.15)
+  heldF += ((held ? heldFade(cam.ray, me, held) : 1) - heldF) * timeShare(dt, TICK / 0.15)
   for (const m of objPool) if (m.visible) ghost(m, 0, (held && m.userData.oid === held.id ? heldF : 1) * (OBJECTS[m.userData.k].glow === undefined ? 1 : GLOW_OP))
   shake(camera, t)
   followSun()
