@@ -227,8 +227,8 @@
     max-height:70vh;overflow:auto;background:rgba(8,10,14,.86);
     border:1px solid #2d3441;border-radius:8px;padding:12px 14px}
   .tabinner table{border-collapse:collapse;width:100%}
-  .tabinner td{padding:2px 10px 2px 0;white-space:nowrap}
-  .tabinner .k{text-align:right;color:#e3b341}
+  .tabinner td,#srv-players td{padding:2px 10px 2px 0;white-space:nowrap}
+  .tabinner .k,#srv-players .k{text-align:right;color:#e3b341}
   .tabinner h3{margin:0 0 8px;font-size:12px;color:#7d8590;font-weight:400;letter-spacing:.08em}
 
   /* the HUD shows while playing, by a rule that out-specifies #id{display:none} */
@@ -343,8 +343,6 @@
   body.serving > canvas{display:none}
   #srv-head{margin:14px 0 6px}
   #srv-players{width:100%;border-collapse:collapse}
-  #srv-players td{padding:2px 10px 2px 0;white-space:nowrap}
-  #srv-players .k{text-align:right;color:#e3b341}
   #srv-players .d{color:#7d8590}
   #srv-players button{padding:2px 9px;font-size:12px}
   #srv-stats{margin-top:10px;white-space:pre;color:#7d8590;font-size:12.5px;line-height:1.55;overflow:auto}
@@ -4867,8 +4865,7 @@ function chargeUp(c, k, G, gun, held, dt) {
   const was = c[k] || 0
   c[k] = held ? Math.min(G.windup, was + dt) : 0
   if (!(was === 0 && c[k] > 0)) return null
-  const [aimYaw, aimPitch] = aimAngles(c), cp = Math.cos(aimPitch)
-  const dx = -Math.sin(aimYaw) * cp, dy = Math.sin(aimPitch), dz = -Math.cos(aimYaw) * cp
+  const [dx, dy, dz] = aimDir(...aimAngles(c))
   const [ex, ey, ez] = eyeAt(c), ox = ex + dx * 0.5, oy = ey + dy * 0.5, oz = ez + dz * 0.5
   return [r2(ox), r2(oy), r2(oz), r2(ox), r2(oy), r2(oz), gun, 0]
 }
@@ -4962,8 +4959,7 @@ function deliver(c, P, gunId, aimed, onKill) {
     for (const seg of impactFx(h, gunId, killed || P.lethal)) fx.push(seg)
     if (downed(h) && onKill) onKill(h, P, profRoll(c, P))
   }
-  const [aimYaw, aimPitch] = aimAngles(c), cp = Math.cos(aimPitch)
-  const dx = -Math.sin(aimYaw) * cp, dy = Math.sin(aimPitch), dz = -Math.cos(aimYaw) * cp
+  const [dx, dy, dz] = aimDir(...aimAngles(c))
   const [ox, oy, oz] = eyeAt(c)
   const fx = []
 
@@ -9905,8 +9901,8 @@ function profPanel(me, G, P) {
 // the picker's art, drawn by the game's renderer in a corner of its canvas and copied out: a card's head and shoulders,
 // built at idle once the rig is in, and the selected row turning once the selection rests. Until then a card shows its
 // colour and initials. The avatars sit under negative ids, outside draw()'s set
-const PICK_VIEW = -214, PICK_SHOT = -215, PICK_REST = 400, pickArts = new Map(), pickCvs = new Map(), pickDue = []
-let pickStage = null, pickIdle = false, pickHeld = -1
+const PICK_VIEW = -214, PICK_SHOT = -215, PICK_REST = 400, PICK_SLOW = 250, pickArts = new Map(), pickCvs = new Map(), pickDue = []
+let pickStage = null, pickIdle = false, pickHeld = -1, pickSlow = false, pickSpent = 0
 function pickHold(cv, i) {
   const g = cv.getContext('2d'), C = CHARS[i], w = cv.width, h = cv.height, f = g.createLinearGradient(0, 0, 0, h)
   f.addColorStop(0, css(C.color) + '55'); f.addColorStop(1, '#151b24')
@@ -9921,10 +9917,12 @@ function pickArt(i, cv) {
   if (P && !P.left) cv.getContext('2d').drawImage(P.c, 0, 0)
   else pickHold(cv, i)
 }
-// the rows the room builds anyway first (the pick, its players), then with the JIT on the rest
+// the rows the room builds anyway first (the pick, its players), then with the JIT on the rest; once one portrait has
+// taken over PICK_SLOW ms to build (the JIT off and not yet detected, or a slow machine), the free rows only
+const pickFree = () => new Set([myCid, ...[...roster].filter(([id]) => id < BOT_ID0).map(([, p]) => p.cid)].map(pickEntry))
 function pickPlan() {
-  const free = new Set([myCid, ...[...roster].filter(([id]) => id < BOT_ID0).map(([, p]) => p.cid)].map(pickEntry)), want = [...free, ...jit.off ? [] : pickAll().filter(i => !free.has(i))]
-  pickDue.length = 0
+  const free = pickFree(), want = [...free, ...jit.off || pickSlow ? [] : pickAll().filter(i => !free.has(i))]
+  pickDue.length = 0; pickSpent = 0
   for (const i of want) {
     if (pickArts.get(i)?.left === 0) continue
     const M = teamOf(i) ? members(teamOf(i)) : [i], c = document.createElement('canvas')
@@ -9950,11 +9948,19 @@ function pickStep(id, cid) {
   return bodyStep(B, M, id, cid, key, () => now() - t0 < PREP_MS)
 }
 function pickSlice() {
-  const [i, m, x0, x1] = pickDue[0], P = pickArts.get(i)
-  if (!pickReady(m) || !pickStep(PICK_SHOT, m)) return
+  const [i, m, x0, x1] = pickDue[0], P = pickArts.get(i), t0 = now()
+  try {
+    if (!pickReady(m) || !pickStep(PICK_SHOT, m)) return
+  } finally { pickSpent += now() - t0 }
   pickDue.shift()
   pickShoot(PICK_SHOT, m, P.c, x0, x1, true, 0.35, 0)
   if (!--P.left) pickCvs.get(i)?.getContext('2d').drawImage(P.c, 0, 0)
+  if (pickSpent > PICK_SLOW && !pickSlow) {
+    pickSlow = true
+    const free = pickFree()
+    for (let k = pickDue.length - 1; k >= 0; k--) if (!free.has(pickDue[k][0])) { pickArts.delete(pickDue[k][0]); pickDue.splice(k, 1) }
+  }
+  pickSpent = 0
 }
 function pickShoot(id, cid, cv, x0, x1, head, yaw, t) {
   const S = pickStage ||= { scene: new THREE.Scene(), cam: new THREE.PerspectiveCamera(26, 1, 0.05, 60), vp: new THREE.Vector4(), sc: new THREE.Vector4() }
@@ -12167,7 +12173,7 @@ let renderT = 0, haveT = false, lastSeqOut = 0
 const FX_WAIT_MAX = 32
 let fxWait = []
 let predLost = false
-let snapPk = [], snapFx = [], snapTw = null
+let snapPk = [], snapTw = null
 let pkAt = 0, twAt = 0            // host clock
 const tracks = new Map()
 const TRACK_KEEP = 8, TRACK_GONE_MS = 1000
