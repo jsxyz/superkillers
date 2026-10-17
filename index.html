@@ -1649,6 +1649,7 @@ const SOUNDS = {
   'Mallet Construct': { say: 'a humming energy swing ending in a heavy hollow thud', seed: 0 },
   'Ring Blaster': { say: 'a bright, ringing green energy zap', seed: 0 },
   'Heat Vision': { say: 'a searing, crackling heat-ray hum from the eyes', seed: 0 },
+  'Speed Dash': { say: 'a crackling electric whoosh as he blurs off at super speed', seed: 0 },
   'Freeze Breath': { say: 'a long icy exhale, crackling into frost', seed: 0 },
   'Spider Strike': { say: 'a fast, springy punch landing with a heavy smack', seed: 0 },
   'Web Shooter': { say: 'a quick sticky thwip of a web line firing', seed: 0 },
@@ -8214,8 +8215,8 @@ function drawRunTrail(a, moving, t, id = 0) {
   if (!trail && (!moving && !early?.some(e => e[4]) || !a.mesh.visible)) return
   if (!trail) {
     const faces = []
-    for (let i = 0; i < 500; i++) { const v = i * 4; faces.push(v, v + 1, v + 2, v + 2, v + 1, v + 3) }
-    const mesh = fxRibbon(2000, faces, { blending: THREE.AdditiveBlending }); mesh.geometry.setDrawRange(0, 0)
+    for (let i = 0; i < 800; i++) { const v = i * 4; faces.push(v, v + 1, v + 2, v + 2, v + 1, v + 3) }
+    const mesh = fxRibbon(3200, faces, { blending: THREE.AdditiveBlending }); mesh.geometry.setDrawRange(0, 0)
     avatarGroup.add(mesh)
     trail = a.runTrail = { mesh, points: Array.from({ length: 18 }, () => new THREE.Vector4()), head: 0, count: 0,
       start: new THREE.Vector3(), end: new THREE.Vector3(), view: new THREE.Vector3(), across: new THREE.Vector3(),
@@ -8224,6 +8225,12 @@ function drawRunTrail(a, moving, t, id = 0) {
     a.mesh.traverse(n => n.isBone && /^(leg_|arm_lower|body_[ul])/.test(n.name) && trail.bones.push(n))
   }
   const { mesh, points } = trail, p = a.mesh.position, g = mesh.geometry, H = 2 * (a.spec.h + a.spec.r)
+  // dashing: a step drawn faster than halfway from its speed to its dash row's, in the last 150 ms (a frame with no new tick steps 0)
+  const D = a.dashV ??= (G => G?.kind === 'dash' ? (a.spec.speed + G.speed) / 2 : Infinity)(a.spec.far && GUNS[gunNamed(a.spec.far)])
+  if (a.stepV > D) a.dashSeen = t
+  const on = moving && (t - (a.dashSeen ?? -1e9) < 150 || a.dashOn && a.v > D)
+  if (on && !a.dashOn) a.dashAt = t
+  a.dashOn = on
   mesh.visible = false; g.setDrawRange(0, 0)
   if (!a.mesh.visible) { trail.count = 0; return }
   const admit = (x, y, z, t, moving) => {
@@ -8254,7 +8261,7 @@ function drawRunTrail(a, moving, t, id = 0) {
     ;(camera ? trail.across.subVectors(trail.view, trail.start) : trail.across.set(0, 0.2, 1)).cross(trail.direction).normalize()
     if (trail.across.lengthSq() < 0.01) trail.across.set(0, 1, 0)
     trail.across.multiplyScalar(w)
-    for (const half of soft ? [1, -1] : [0]) for (let k = 0; k < 4 && near && quad < 500; k++) {
+    for (const half of soft ? [1, -1] : [0]) for (let k = 0; k < 4 && near && quad < 800; k++) {
       const edge = k % 2, at = quad * 4 + k
       trail.point.copy(k >> 1 ? trail.end : trail.start).addScaledVector(trail.across, half ? edge * half : edge ? 1 : -1)
       pos.setXYZ(at, trail.point.x, trail.point.y, trail.point.z)
@@ -8293,6 +8300,19 @@ function drawRunTrail(a, moving, t, id = 0) {
         seg(0.026, [1, 0.5, 0], 0.6 * alpha, 0.6 * alpha, true); seg(0.006, [1, 0.95, 0.6], alpha, alpha)
       }
     })
+  }
+  if (a.dashOn) {                    // bolts over the whole body, feet to above the head, re-struck every RUN_FLICK ms; taller and whiter as it starts
+    const burst = t - a.dashAt < 180, k = Math.floor(t / RUN_FLICK), ra = (burst ? 0.34 : 0.3) * H, rb = (burst ? 0.85 : 0.62) * H
+    for (let i = 0; i < (burst ? 16 : 8); i++) {
+      const r = q => cityHash(((id * 131 + k) * 29 + i) * 11 + q) / 2 ** 32, th = r(0) * 6.283, sw = (0.6 + 0.8 * r(1)) * (r(2) < 0.5 ? 1 : -1)
+      const f0 = Math.asin(2 * r(3) - 1), f1 = Math.max(-1.5, Math.min(1.5, f0 + (r(4) - 0.5) * 1.6)), alpha = 0.7 + 0.3 * r(5)
+      const pt = (j, v) => { const u = j / 6, w = j % 6 ? 1 + (r(6 + j) - 0.5) * 0.4 : 1, an = th + sw * u, f = f0 + (f1 - f0) * u
+        return v.set(p.x + Math.cos(f) * Math.cos(an) * ra * w, p.y + Math.sin(f) * rb * w, p.z + Math.cos(f) * Math.sin(an) * ra * w) }
+      for (let j = 0; j < 6; j++) {
+        pt(j, trail.start); pt(j + 1, trail.end)
+        seg(burst ? 0.07 : 0.032, [1, 0.5, 0], 0.6 * alpha, 0.6 * alpha, true); seg(burst ? 0.014 : 0.007, burst ? [1, 1, 0.9] : [1, 0.95, 0.6], alpha, alpha)
+      }
+    }
   }
   if (!quad) return
   mesh.visible = true
@@ -8487,6 +8507,8 @@ function setAnim(id, want, dt, t, hold, still, ticks) {
     const s = i < n - 1 && ticks[i], h = ticks ? TICK : dt, x = s ? s.px ?? s.x : m.x, y = s ? s.py ?? s.y : m.y, z = s ? s.pz ?? s.z : m.z
     const d = !a.at ? 0 : ticks?.[i].fresh ? Infinity : Math.hypot(x - a.at.x, z - a.at.z)
     if (d < 240 * Math.max(h, TICK)) a.v += (d / Math.max(h, 1e-3) - a.v) * timeShare(h, TICK / 0.15)
+    a.stepD = (a.stepD || 0) + (d < 240 * Math.max(h, TICK) ? d : 0); a.stepH = (a.stepH || 0) + h      // drawn speed over two ticks or more
+    if (a.stepH >= 2 * TICK) { a.stepV = a.stepD / a.stepH; a.stepD = a.stepH = 0 }
     ;(a.at ||= new THREE.Vector3()).set(x, y, z)
     if (s && a.spec.trail) (a.runAt ||= []).push([x, y, z, tickAt - (n - 1 - i) * TICK * 1000, s.anim === 1 && a.v > 1.5 * (a.spec.run ?? a.spec.speed * RUN)])
   }
