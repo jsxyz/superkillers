@@ -3836,7 +3836,7 @@ function growChunk(ci, cj) {
 function growTick() {
   for (let n = 0; n < 4 && navQueue.length; n++) navTile(...navQueue.shift())
   const me = isHost ? players.get(0) : predicted, pts = isHost ? [...players.values()].map(c => [c.x, c.z])
-    : [...tracks.values()].map(tr => [tr.at(-1).p[1], tr.at(-1).p[3]])
+    : [...tracks.values()].map(tr => [tr.at(-1).p[PLAYER_STATE.col.x], tr.at(-1).p[PLAYER_STATE.col.z]])
   if (me) growNear([[me.x, me.z]], true, growReach() - 96)
   if (isHost) growNear(pts, true, 96)
   growNear(me ? [[me.x, me.z], ...pts] : pts, false)
@@ -11776,16 +11776,17 @@ function noteSnap(t) {
 }
 const extrapMs = () => TIER_MS + 2 * snapGap
 function trackAt(tr, t) {
+  const F = PLAYER_STATE.col
   const last = tr[tr.length - 1]
   let j = 0
   while (j < tr.length && tr[j].t < t) j++
   const lo = tr[Math.max(0, j - 1)], hi = j < tr.length ? tr[j] : last
   const k = hi.t === lo.t ? 1 : clamp((t - lo.t) / (hi.t - lo.t), 0, 1)
   const q = lo.p, p = hi.p
-  const go = j < tr.length || p[8] > 0 ? 0 : Math.min(t - last.t, extrapMs()) / 1000
-  return { q, p, k, x: lerp(q[1], p[1], k) + (p[14] || 0) * go,
-           y: lerp(q[2], p[2], k) + (p[10] ? (p[10] + 0.5 * GRAV * go) * go : 0),
-           z: lerp(q[3], p[3], k) + (p[15] || 0) * go }
+  const go = j < tr.length || p[F.dead] > 0 ? 0 : Math.min(t - last.t, extrapMs()) / 1000
+  return { q, p, k, x: lerp(q[F.x], p[F.x], k) + (p[F.vx] || 0) * go,
+           y: lerp(q[F.y], p[F.y], k) + (p[F.vy] ? (p[F.vy] + 0.5 * GRAV * go) * go : 0),
+           z: lerp(q[F.z], p[F.z], k) + (p[F.vz] || 0) * go }
 }
 // a correction blends out; a respawn/teleport jumps
 const BLEND_MS = 60, BLEND_MAX = 4
@@ -11793,10 +11794,11 @@ const flatList = (x, stride, cap, int) => Array.isArray(x) && x.length % stride 
 const finiteFields = (r, F) => F.every(i => Number.isFinite(r[i]))
 function trackRow(p, t) {
   if (!Array.isArray(p)) return
+  const F = PLAYER_STATE.col
   // hostile host: JSON 1e999 = Infinity, which `|| 0` misses; never let it reach a matrix
-  if (!finiteFields(p, [1, 2, 3, 4, 10, 14, 15])) return
-  const tr = tracks.get(p[0]), was = tr && haveT && !(p[8] > 0) ? trackAt(tr, renderT) : null
-  track(tracks, p[0], ENTITY_MAX, t, p)
+  if (!finiteFields(p, [F.x, F.y, F.z, F.yaw, F.vy, F.vx, F.vz])) return
+  const tr = tracks.get(p[F.id]), was = tr && haveT && !(p[F.dead] > 0) ? trackAt(tr, renderT) : null
+  track(tracks, p[F.id], ENTITY_MAX, t, p)
   if (!was) return
   const is = trackAt(tr, renderT), dx = was.x - is.x, dy = was.y - is.y, dz = was.z - is.z
   if (Math.hypot(dx, dy, dz) < BLEND_MAX) { tr.ox = (tr.ox || 0) + dx; tr.oy = (tr.oy || 0) + dy; tr.oz = (tr.oz || 0) + dz }
@@ -12548,7 +12550,7 @@ function onGuestData(d) {
     if (!(now() - (burnHeard.get(f[10]) ?? -1e9) < 1000)) sfxPlay('burning', { x: f[0], y: f[1], z: f[2] }, 'world', 1, 0, 3, K && K.name)
     burnHeard.set(f[10], now())
   }
-  const mine = (d.P || []).find(p => p[0] === myId)
+  const mine = (d.P || []).find(p => p[PLAYER_STATE.col.id] === myId)
   if (mine) { admitted ||= myId > 0; reconcile(mine) }
 }
 
@@ -13142,8 +13144,11 @@ const tierSent = new Map()        // gid -> Map(pid -> rowState sent)
 const hotUntil = new Map()        // pairKey -> host time the fight ends
 const pairKey = (a, b) => a < b ? a + ':' + b : b + ':' + a
 let snapSeq = 0
-const rowState = r => [r[5], r[6], r[8] > 0, r[9], r[11], r[13] > 0, r[19], r[22] > 0,
-                       r[24], r[25], r[26]].join()
+const rowState = r => {
+  const F = PLAYER_STATE.col
+  return [r[F.hp], r[F.gun], r[F.dead] > 0, r[F.cid], r[F.kills], r[F.prot] > 0, r[F.pow], r[F.markT] > 0,
+          r[F.cap], r[F.prof], r[F.sprof]].join()
+}
 // resent until this guest has had the current value OBJ_REPEAT times
 const repeatField = (sent, key, text) => {
   const h = sent.get(key), emit = ',"' + key + '":' + text
@@ -13158,7 +13163,7 @@ function sendSnapshot(s) {
   const held = JSON.stringify(objs.flatMap(o => o.heldBy === undefined ? [] : [o.id, o.heldBy]))
   // a guest reads an absent vehicle as RADIO_START
   const tuned = JSON.stringify(objs.flatMap(o => o.V && o.radio !== RADIO_START ? [o.id, o.radio] : []))
-  const rows = s.P.map(r => ({ id: r[0], json: JSON.stringify(wireRow(r)), state: rowState(r), c: players.get(r[0]) }))
+  const rows = s.P.map(r => ({ id: r[PLAYER_STATE.col.id], json: JSON.stringify(wireRow(r)), state: rowState(r), c: players.get(r[PLAYER_STATE.col.id]) }))
   const head = '{"k":"s","t":' + JSON.stringify(s.t) + ',"P":['
   const rest = Object.assign({}, s, { k: undefined, t: undefined, P: undefined })
   const tails = {}
