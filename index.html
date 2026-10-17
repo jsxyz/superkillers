@@ -2376,6 +2376,7 @@ function teleportBody(body, x, y, z, q, v, w) {
   if (q) { quatVec.setValue(...q); tr.setRotation(quatVec) }
   body.setWorldTransform(tr)
   body.getMotionState().setWorldTransform(tr)
+  body.updateInertiaTensor()        // Bullet's own update waits for the next step
   if (v) { velVec.setValue(...v); body.setLinearVelocity(velVec) }
   if (w) { velVec.setValue(...w); body.setAngularVelocity(velVec) }
 }
@@ -12213,11 +12214,13 @@ function takeSeats(s) {
   }
 }
 const burnHeard = new Map()
-// `ov`: [vehicle, vx, vy, vz, wx, wy, wz], this guest's vehicle only; malformed = none
+// `ov`: [[object, x, y, z, qx, qy, qz, qw, vx, vy, vz, wx, wy, wz], …], exact: this guest's vehicle and the awake objects
+// near it; malformed = none
 let objVel = null, vehHp = null       // `vh`: hp of this guest's vehicle
+const exactRow = e => Array.isArray(e) && e.length === 14 && Number.isInteger(e[0]) && e[0] >= 0 && e[0] < OBJ_MAX && e.every(Number.isFinite) &&
+  e.slice(1, 4).every(x => Math.abs(x) <= ARENA) && Math.abs(Math.hypot(...e.slice(4, 8)) - 1) < 0.01 && e.slice(8).every(x => Math.abs(x) < 200)
 function takeVel(v) {
-  objVel = Array.isArray(v) && v.length === 7 && Number.isInteger(v[0]) && v[0] >= 0 && v[0] < OBJ_MAX &&
-    v.slice(1).every(x => Number.isFinite(x) && Math.abs(x) < 200) ? v : null
+  objVel = Array.isArray(v) && v.length <= 16 && v.every(exactRow) && new Set(v.map(e => e[0])).size === v.length ? new Map(v.map(e => [e[0], e.slice(1)])) : null
 }
 function seatFrom(o) {
   const was = o.riders.includes(predicted.id)
@@ -12961,16 +12964,16 @@ function reconcile(a) {
     if (e.seq === ack) predAt = e
   }
 
-  // objects: host row at ack's tick vs ours then; rotation as surface travel
+  // objects: host state (exact where `ov` has it) at ack's tick vs ours then; rotation as surface travel
   let objErr = 0
   const auth = objs.map(o => {
-    const tr = objTracks.get(o.id), m = predAt && predAt.ob && predAt.ob.find(e => e[0] === o.id)
+    const tr = objTracks.get(o.id), m = predAt && predAt.ob && predAt.ob.find(e => e[0] === o.id), w = objVel?.get(o.id)
     if (!tr) return null
-    const h = tr.at(-1).p
+    const h = w ? [o.id, ...w] : tr.at(-1).p
     const dot = m ? Math.abs(h[4] * m[4] + h[5] * m[5] + h[6] * m[6] + h[7] * m[7]) : 0
     objErr = Math.max(objErr, m ? Math.hypot(h[1] - m[1], h[2] - m[2], h[3] - m[3]) +
       2 * Math.acos(Math.min(1, dot)) * o.R : Infinity)
-    return [...h.slice(1), ...(objVel && objVel[0] === o.id ? objVel.slice(1) : m ? m.slice(8) : [0, 0, 0, 0, 0, 0])]
+    return w || [...h.slice(1), ...(m ? m.slice(8) : [0, 0, 0, 0, 0, 0])]
   })
   const restore = () => objs.forEach((o, i) => {
     if (!auth[i]) return
@@ -13643,9 +13646,10 @@ function sendSnapshot(s) {
       ob.push(o.row)
     }
     const oh = ['oh', 'od'].map((key, i) => repeatField(sent, key, i ? seats : held)).join('')
-    // rider's vehicle velocity, every snapshot, for its replay
-    const sat = objs.find(o => o.V && o.riders.includes(gid)), lv = sat && sat.body.getLinearVelocity(), av = sat && sat.body.getAngularVelocity()
-    const ov = sat ? ',"ov":' + JSON.stringify([sat.id, ...[lv.x(), lv.y(), lv.z(), av.x(), av.y(), av.z()].map(r2)]) : ''
+    // the rider's vehicle and the awake objects near it, exactly (Bullet's float32 in 9 digits), every snapshot, for its replay
+    const sat = objs.find(o => o.V && o.riders.includes(gid)), far = o => Math.hypot(o.x - sat.x, o.z - sat.z)
+    const ov = sat ? ',"ov":' + JSON.stringify([sat, ...objs.filter(o => o !== sat && o.body.isActive() && far(o) < 15).sort((a, b) => far(a) - far(b)).slice(0, 6)]
+      .map(o => [o.id, ...objState(o).map(v => +v.toPrecision(9))])) : ''
     const vh = sat ? Math.round(Math.max(0, sat.hp)) : null
     const vhs = vh === null ? '' : repeatField(sent, 'vh', vh)
     const ot = repeatField(sent, 'or', tuned)
