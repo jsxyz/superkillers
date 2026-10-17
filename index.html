@@ -13395,15 +13395,8 @@ function takeInput(id) {
 }
 
 function hostTick(dt) {
-  if (resultsLeft > 0) {
-    if ((resultsLeft -= dt) <= 0) {
-      if (nextLevel >= 0 && nextLevel !== levelId) setLevel(nextLevel); else resetMatch()
-      nextLevel = -1
-    }
-  } else if (timeLimit && matchLeft > 0 && (matchLeft -= dt) <= 0) {
-    matchLeft = 0
-    endMatch('Time.')
-  }
+  const t = { dt }
+  HOST_PHASES.beforeTick(t)
   const me = players.get(0)
   if (me) me.pitch = aimed(input).pitch
   const all = [...players.values()]
@@ -13422,6 +13415,34 @@ function hostTick(dt) {
     if (seen === undefined || q.length < seen) inqFloor.set(id, q.length)
   }
 
+  t.all = all; t.cur = cur
+  HOST_PHASES.beforeIntent(t)
+  preTick(all, c => cur.get(c.id) || IDLE_INPUT, dt)
+  for (const c of all) { carryStep(c, cur.get(c.id) || IDLE_INPUT, dt); driveStep(c, cur.get(c.id) || IDLE_INPUT) }
+
+  HOST_PHASES.beforePhysics(t)
+  const _p0 = now()
+  stepPhysics(dt)                          // once per tick
+  msPhys = msPhys * 0.9 + (now() - _p0) * 0.1
+  postTick(all)
+  HOST_PHASES.afterPhysics(t)
+  recordHistory(tickAt, all)
+}
+// a host tick's rules, in its order around the engine's own steps (see hostTick); t: the tick's dt, all (players), cur (their
+// inputs), and what one phase hands the next
+const HOST_PHASES = {
+  beforeTick: t => { const { dt } = t
+  if (resultsLeft > 0) {
+    if ((resultsLeft -= dt) <= 0) {
+      if (nextLevel >= 0 && nextLevel !== levelId) setLevel(nextLevel); else resetMatch()
+      nextLevel = -1
+    }
+  } else if (timeLimit && matchLeft > 0 && (matchLeft -= dt) <= 0) {
+    matchLeft = 0
+    endMatch('Time.')
+  }
+  },
+  beforeIntent: t => { const { dt, cur } = t
   for (const [id, c] of players) {
     const inp = cur.get(id) || IDLE_INPUT
     if (id !== 0) c.pitch = inp.pitch || 0
@@ -13446,9 +13467,8 @@ function hostTick(dt) {
     c.shiftCool = Math.max(0, c.shiftCool - dt)
     if (inp.sh) shiftForm(c)
   }
-  preTick(all, c => cur.get(c.id) || IDLE_INPUT, dt)
-  for (const c of all) { carryStep(c, cur.get(c.id) || IDLE_INPUT, dt); driveStep(c, cur.get(c.id) || IDLE_INPUT) }
-
+  },
+  beforePhysics: t => { const { dt, all, cur } = t
   const credit = (id, c) => (victim, G, up) => {
     if (rowOf(c).gib) emit(id, gibFx(victim, c.gun))
     if (resultsLeft > 0) return
@@ -13514,16 +13534,15 @@ function hostTick(dt) {
   stepSquad()
   stepPickups(dt, all)
   weakenNear(all)
-  const _p0 = now()
-  stepPhysics(dt)                          // once per tick
-  msPhys = msPhys * 0.9 + (now() - _p0) * 0.1
-  postTick(all)
+  t.credit = credit
+  },
+  afterPhysics: t => { const { dt, all, credit } = t
   dashStrikes(all, credit)
   // Bullet's contacts matter only with something thrown, or a vehicle in play or knocked awake
   const touch = objs.some(o => o.thrownBy !== undefined || o.V && (!o.parked || o.body.isActive())) ? touching(all) : []
   strikeObjects(all, dt, touch, credit)
   vehicleTick(all, credit, touch, dt)
-  recordHistory(tickAt, all)
+  },
 }
 
 
