@@ -4152,7 +4152,10 @@ function putObject(o, s) {
 // guest: local bodies only for objects near it
 // seated per the host (mine: me; else: another)
 const seated = (id, mine) => [...objSeats].some(([s, p]) => s >> 3 === id && (p === myId) === mine)
-function predictObjects(c) {
+function predictObjects(c, lead = 0) {
+  const V = seatOf(c)?.[0], vv = V?.body.getLinearVelocity(), reach = V ? Math.hypot(vv.x(), vv.z()) * lead : 0
+  // near the player, or near its own vehicle by as far as it goes in `lead` s
+  const near = (x, y, z, R, pad) => Math.hypot(x - c.x, y - c.y, z - c.z) < c.r + R + pad || V && Math.hypot(x - V.x, y - V.y, z - V.z) < V.R + R + pad + reach
   for (const o of objs) {
     const m = Math.hypot(...o.off)
     o.off = o.off.map(v => v * (1 - Math.min(0.2, 0.15 / m)))
@@ -4161,7 +4164,7 @@ function predictObjects(c) {
   objs = objs.filter(o => {
     const mine = seated(o.id, true) || o.V && o.riders.includes(c.id), theirs = !mine && seated(o.id, false)
     const keep = objTracks.has(o.id) && objTracks.get(o.id).at(-1).p[0] === o.k && !(objHeld.has(o.id) && objHeld.get(o.id) !== myId) &&
-      !theirs && (mine || o.body.isActive() || Math.hypot(o.x - c.x, o.y - c.y, o.z - c.z) < c.r + o.R + 2.5)
+      !theirs && (mine || o.body.isActive() || near(o.x, o.y, o.z, o.R, 2.5))
     if (!keep) dropObject(o)
     return keep
   })
@@ -4169,7 +4172,7 @@ function predictObjects(c) {
     const p = tr[tr.length - 1].p, K = OBJECTS[p[0]], H = hullOf(K), mine = seated(id, true)
     if (objs.length >= OBJ_MAX || objs.some(o => o.id === id) || K.shape === 'hull' && !H ||
         objHeld.has(id) && objHeld.get(id) !== myId || !mine && (seated(id, false) ||
-        Math.hypot(p[1] - c.x, p[2] - c.y, p[3] - c.z) >= c.r + objR(K) + 1.5)) continue
+        !near(p[1], p[2], p[3], objR(K), 1.5))) continue
     const o = addObject(p[0], p.slice(1, 4), id)
     if (o) putObject(o, [...p.slice(1), 0, 0, 0, 0, 0, 0])
     if (o && o.V) seatFrom(o)
@@ -12254,7 +12257,7 @@ const objectsDrawn = (others = []) => (objDrawn.clear(), isHost ? objs.map(drawn
   if (k <= 0) objEase.delete(o.id)
   return k <= 0 ? o : { ...o, x: o.x + e.off[0] * k, y: o.y + e.off[1] * k, z: o.z + e.off[2] * k }
 }).concat(objs.map(o => {
-  const d = drawnObj(o), e = { id: o.id, held: o.heldBy !== undefined, k: o.k, K: o.K, x: d.x + o.off[0], y: d.y + o.off[1], z: d.z + o.off[2], q: d.q, seed: o.seed, of: o }
+  const d = drawnObj(o), e = { id: o.id, held: o.heldBy !== undefined, k: o.k, K: o.K, x: d.x + o.off[0], y: d.y + o.off[1], z: d.z + o.off[2], q: o.offQ ? qmulTo([0, 0, 0, 1], o.offQ, d.q) : d.q, seed: o.seed, of: o }
   objDrawn.set(o, e)
   return e
 })))
@@ -12973,10 +12976,21 @@ function reconcile(a) {
     if (!auth[i]) return
     holdBy(o, objHeld.get(o.id) === myId ? predicted : null)
     if (o.V) seatFrom(o)
-    o.was = [o.x + o.off[0], o.y + o.off[1], o.z + o.off[2]]
+    o.was = [o.x, o.y, o.z, o.q, o.off, o.offQ]
     putObject(o, auth[i])
+    if (A.getPointer(o.body.getBroadphaseHandle())) world.updateSingleAabb(o.body)
+    const sh = predAt?.sh?.find(e => e[0] === o.id)
+    if (sh) { o.steer = sh[1]; o.hand = sh[2] }
   })
-  const blend = () => objs.forEach(o => { if (o.was) o.off = [o.was[0] - o.x, o.was[1] - o.y, o.was[2] - o.z]; o.was = null })
+  // the correction drawn away from where it was drawn; the tick it is drawn from moves with it
+  const blend = () => objs.forEach(o => {
+    if (!o.was) return
+    const [x, y, z, q, off, offQ] = o.was, back = qmulTo([0, 0, 0, 1], q, [-o.q[0], -o.q[1], -o.q[2], o.q[3]]), r = offQ ? qmulTo([0, 0, 0, 1], offQ, back) : back, p = prevPose.get(o)
+    o.off = [x + off[0] - o.x, y + off[1] - o.y, z + off[2] - o.z]; o.offQ = Math.abs(r[3]) > 0.88 ? r : null; o.was = null
+    if (!p) return
+    const turn = [-back[0], -back[1], -back[2], back[3]], d = rotq(turn, [p[0] - x, p[1] - y, p[2] - z])
+    p.splice(0, 7, o.x + d[0], o.y + d[1], o.z + d[2], ...qmulTo([0, 0, 0, 1], turn, p.slice(3, 7)))
+  })
 
   if (predicted.dead > 0) {
     restore(); blend()
@@ -13011,7 +13025,7 @@ function reconcile(a) {
   for (let i = 0; i < n; i++) {
     const e = pending[i]
     tickChars([predicted], () => e.inp, TICK)
-    e.x = predicted.x; e.y = predicted.y; e.z = predicted.z; e.web = predicted.web || 0; e.ob = objs.map(o => [o.id, ...objState(o)])
+    e.x = predicted.x; e.y = predicted.y; e.z = predicted.z; e.web = predicted.web || 0; e.ob = objs.map(o => [o.id, ...objState(o)]); e.sh = objs.filter(o => o.V).map(o => [o.id, o.steer || 0, o.hand || 0])
   }
   blend()
   replaySteps = n; predJump = true
@@ -13190,6 +13204,10 @@ function aimed(inp) {
   return inp.aimed = { ...inp, yaw, pitch, d: viaCam ? (P[0] - r.x) * r.dx + (P[1] - r.y) * r.dy + (P[2] - r.z) * r.dz : 0 }
 }
 let predJump = false
+// a reconcile's turn drawn away: 20% a tick, at most 1.5° a tick
+function easeOffsets() {
+  for (const o of objs) if (o.offQ) { const a = 2 * Math.acos(Math.min(1, Math.abs(o.offQ[3]))); o.offQ = a < 1e-4 ? null : nlerp(o.offQ, [0, 0, 0, 1], Math.min(0.2, 0.026 / a)) }
+}
 function sampleTick(id, c, fresh, fire) {
   let list = tickSamples.get(id)
   if (!list) tickSamples.set(id, list = [])
@@ -13502,13 +13520,15 @@ function stepSim(t) {
       const aim = input.fire || input.alt || input.descend, A = aimed(input)
       const inp = INPUT_SCHEMA.predict(input, aim, A)
       const _p1 = now()
-      predictObjects(predicted)
+      predictObjects(predicted, (Math.max(rtt, 0) + 100) / 1000)
+      easeOffsets()
       tickChars([predicted], () => inp, TICK)
       lookStep(predicted, input)
       sampleTick(myId, predicted, predJump, input.fire || input.alt); predJump = false
       msPhys = msPhys * 0.9 + (now() - _p1) * 0.1
       const seq = ++outSeq
       pending.push({ seq, inp, x: predicted.x, y: predicted.y, z: predicted.z, fuel: predicted.fuel, jl: !!predicted.jLock, web: predicted.web || 0, ob: objs.map(o => [o.id, ...objState(o)]) })
+      pending.at(-1).sh = objs.filter(o => o.V).map(o => [o.id, o.steer || 0, o.hand || 0])
       // a dropped unacked input breaks the replay chain: flag it
       while (pending.length > MAX_PENDING) { pending.shift(); predLost = true }
       // [f, r, bits, yaw, pitch, renderT (host clock), d]; d and 1e-4 angles only on a shot
