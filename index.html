@@ -1842,7 +1842,7 @@ const CAP_TEXT = [
   'PERFORMANCE REVIEW', 'GREEN BELT', 'ON A CALL',
 ]
 
-const primaryName = c => { const C = c.bot || CHARS[c.cid]; return C && (c.bot ? C.primary : C.primary ?? C.far ?? [].concat(C.atk ?? [])[1]) }
+const primaryName = c => { const C = c.bot || CHARS[c.cid]; return C && (c.bot ? C.primary ?? (GUNS[gunNamed(C.far)]?.kind === 'dash' ? C.far : undefined) : C.primary ?? C.far ?? [].concat(C.atk ?? [])[1]) }
 const primaryOf = c => { const n = primaryName(c); return n ? GUNS[gunNamed(n)] : null }
 const primaryId = c => { const n = primaryName(c); return n ? gunNamed(n) : 0 }
 const PICKABLE = CHARS.map((C, i) => i).filter(i => !CHARS[i].hidden)
@@ -3201,6 +3201,22 @@ function navPlan(b, tgt, dt) {
 }
 
 const botD = []
+// a bot's dash: through a target 10-20 m off in sight and in its sights, then DASH_CD s; never with a same-side person in its path
+const DASH_CD = 12
+function dashWant(b, tgt, dist, los, on, dt, all) {
+  const ai = b.ai, G = primaryOf(b)
+  if (G?.kind !== 'dash' || !tgt || tgt.id < 0) return false
+  if (ai.dashT > 0) { if ((ai.dashT -= dt) <= 0) ai.dashCd = DASH_CD; return true }
+  if ((ai.dashCd = (ai.dashCd || 0) - dt) > 0 || !los || !on || dist < 10 || dist > 20) return false
+  const ux = (tgt.x - b.x) / dist, uz = (tgt.z - b.z) / dist
+  for (const o of all) {
+    if (o === b || o.dead > 0 || sideOf(o) !== sideOf(b)) continue
+    const along = (o.x - b.x) * ux + (o.z - b.z) * uz
+    if (along > 0 && along < dist + 3 && Math.abs((o.x - b.x) * uz - (o.z - b.z) * ux) < b.r + o.r + 0.5) return false
+  }
+  ai.dashT = (dist + 3) / G.speed
+  return true
+}
 function botThink(b, all, dt) {
   const ai = b.ai, spec = b.bot
   ai.t += dt
@@ -3323,7 +3339,7 @@ function botThink(b, all, dt) {
   const yaw = ai.yaw + ai.aimX
   const pitch = ai.pitch + ai.aimY
 
-  const farGun = (spec.far && GUNS[gunNamed(spec.far)].kind !== 'dash' ? spec.far : undefined) ?? (b.sp > 0 ? spec.primary : undefined)      // no bot dashes
+  const farGun = (spec.far && GUNS[gunNamed(spec.far)].kind !== 'dash' ? spec.far : undefined) ?? (b.sp > 0 ? spec.primary : undefined)      // a dash is never a gun: dashWant runs it
   if ((farGun || spec.primary || spec.atk.map) && tgt) {
     if ((spec.atk.map || farGun?.map) && !((ai.pickT -= dt) > 0)) ai.pickT = 6, ai.pick = Math.random()
     // list: a dive attack from above, else reaching ones (mostly the nearest-reaching), else the farthest-reaching
@@ -3423,7 +3439,7 @@ function botThink(b, all, dt) {
     j: sj ?? (air ? ai.hop || (flier ? !b.flying || b.y < wantY - 0.5 : b.y + rise(b.vy, jetOf(b).grav || 1) < wantY)
        : ai.hop && !(b.wall > 0) || (charging || pace < 1 || b.wall > 0 || POWERS[tgt.mark - 1]?.move === 0 ? false : Math.random() < spec.jumpy * dt)),   // wall: climbs on; held target: on foot
     descend: flier && b.flying && !ai.hop && b.y > wantY + 0.5 || _doZip,
-    fire: fire && !sig && !_wrForward, alt: fire && sig && !_wrForward, use: !!prey && objGap(b, prey) <= (H.reach ?? 1.5), sprint: !((jetOf(b)?.sprint && b.flying) || prey),
+    fire: fire && !sig && !_wrForward, alt: fire && sig && !_wrForward || dashWant(b, tgt, dist, los, onTarget, dt, all), use: !!prey && objGap(b, prey) <= (H.reach ?? 1.5), sprint: !((jetOf(b)?.sprint && b.flying) || prey),
     yaw: yaw + sy, pitch: sp ?? pitch,
   }
 }
