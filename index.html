@@ -12195,7 +12195,7 @@ function hostIn() {
   picking = false
   players.set(0, Object.assign(newChar(myCid, -6, 0), { id: 0 }))
   roster.set(0, { cid: myCid, name: myName })
-  if (CHARS[myCid].team) fieldTeam(players.get(0)), teamsChanged()
+  GAME.rows.joined(players.get(0), myCid)
   pushRoster()
   if (poll) countVote()
 }
@@ -12721,20 +12721,12 @@ function dropBot(c) { detachBody(c); players.delete(c.id); inputs.delete(c.id); 
 const HOST_MSGS = {
   hello: { apply: (id, d) => {
     if (players.has(id)) { const c = conns.get(id); if (!(now() - c.welcomedAt < HELLO_MS)) c.welcomedAt = now(), c.send(welcome(id)); return }
-    let cid = clamp(d.cid | 0, 0, CHARS.length - 1)
-    if (CHARS[cid].hidden) cid = START
-    if (!sideOffered(CHARS[cid].side)) {
-      cid = fallbackRow(id)
-      tell(id, '§eThis room plays ' + gameMode + ': ' + Object.keys(SIDES).filter(sideOffered).map(k => SIDES[k].name).join(', ') + ' only')
-    } else if (sideLocked(CHARS[cid].side, id).locked || taken(CHARS[cid].team, id)) {
-      cid = fallbackRow(id)
-      tell(id, '§eThe room changed while you picked: you play §f' + CHARS[cid].name + '§e. Pause → Character to change.')
-    }
+    const cid = GAME.rows.admit(id, d.cid)
     const name = cleanName(d.name) || 'player'
     players.set(id, Object.assign(newChar(cid, 0, 0), { id }))
     respawn(players.get(id))
     roster.set(id, { cid, name })
-    if (CHARS[cid].team) fieldTeam(players.get(id)), teamsChanged()
+    GAME.rows.joined(players.get(id), cid)
     inputs.set(id, { f: 0, r: 0, j: false, fire: false, yaw: 0, pitch: 0 })
     inQ.set(id, []); inAck.set(id, 0)
     announce('§e' + name + ' joined')
@@ -12760,14 +12752,6 @@ const HOST_MSGS = {
   } },
   vote: { apply: (id, d) => callVote(id, d.lv) },
   ballot: { validate: d => typeof d.y === 'boolean' ? d : null, apply: (id, d) => ballot(id, d.y) },
-  char: { apply: (id, d) => {
-    const cid = clamp(d.cid | 0, 0, CHARS.length - 1)      // switchChar refuses hidden rows
-    const c = players.get(id)
-    if (!c || !switchChar(c, cid)) return c && noSwap(c, cid)
-    const p = roster.get(id)
-    if (p && p.cid !== cid) { p.cid = cid; pushRoster() }
-    return
-  } },
   bye: { apply: (id, d) => {
     const c = conns.get(id)
     if (c) { try { c.close() } catch (e) {} }
@@ -12808,7 +12792,7 @@ const HOST_MSGS = {
 }
 function onHostData(id, d) {
   if (!d) return
-  const M = typeof d.k === 'string' && Object.hasOwn(HOST_MSGS, d.k) ? HOST_MSGS[d.k] : null
+  const M = typeof d.k === 'string' ? (Object.hasOwn(HOST_MSGS, d.k) ? HOST_MSGS[d.k] : Object.hasOwn(GAME.msgs.host, d.k) ? GAME.msgs.host[d.k] : null) : null
   if (M) { const v = M.validate ? M.validate(d) : d; return v ? M.apply(id, v) : undefined }
 }
 
@@ -13576,6 +13560,34 @@ GAME.lifecycle = {
   },
 }
 
+// a joining player's row: the one it asked for, unless this room cannot take it (told why), and its team fielded once it stands
+GAME.rows = {
+  admit(id, asked) {
+    let cid = clamp(asked | 0, 0, CHARS.length - 1)
+    if (CHARS[cid].hidden) cid = START
+    if (!sideOffered(CHARS[cid].side)) {
+      cid = fallbackRow(id)
+      tell(id, '§eThis room plays ' + gameMode + ': ' + Object.keys(SIDES).filter(sideOffered).map(k => SIDES[k].name).join(', ') + ' only')
+    } else if (sideLocked(CHARS[cid].side, id).locked || taken(CHARS[cid].team, id)) {
+      cid = fallbackRow(id)
+      tell(id, '§eThe room changed while you picked: you play §f' + CHARS[cid].name + '§e. Pause → Character to change.')
+    }
+    return cid
+  },
+  joined(c, cid) { if (CHARS[cid].team) fieldTeam(c), teamsChanged() },
+}
+// the guest messages this game adds to the engine's
+GAME.msgs = { host: {
+  char: { apply: (id, d) => {
+    const cid = clamp(d.cid | 0, 0, CHARS.length - 1)      // switchChar refuses hidden rows
+    const c = players.get(id)
+    if (!c || !switchChar(c, cid)) return c && noSwap(c, cid)
+    const p = roster.get(id)
+    if (p && p.cid !== cid) { p.cid = cid; pushRoster() }
+    return
+  } },
+} }
+
 // ---------------------------------------------------------------- loop
 let acc = 0, last = now(), snapAcc = 0, tickAt = 0      // ms: when the last tick fell due
 // this frame's ticks of each player simulated here, for the drawn side to step through; fresh: moved by a reconcile, not a tick
@@ -13731,8 +13743,9 @@ const OWN_PREDICTION = (F => {
     restore: (c, a, web) => { restoreChar(c, a[F.x], a[F.y], a[F.z], a[F.vx], a[F.vy], a[F.vz], a[F.fuel]); tie(c, web); c.jLock = !!a[F.jLock] },
   }
 })(GAME.schema.col)
-// the game this engine runs: its messages, state schema, input, host tick rules and own predicted component
-Object.assign(GAME, { msgs: { host: HOST_MSGS, guest: GUEST_MSGS }, input: INPUT_SCHEMA, predict: OWN_PREDICTION })
+// the engine's input and own predicted component join the game's parts; a game message never reuses an engine kind
+Object.assign(GAME, { input: INPUT_SCHEMA, predict: OWN_PREDICTION })
+for (const k in GAME.msgs.host) if (Object.hasOwn(HOST_MSGS, k)) throw new Error('host message ' + k + ' is both the engine\'s and the game\'s')
 
 // background tabs throttle rAF to ~0 Hz, freezing a host: a worker is its clock
 const BG_SRC = 'var h;onmessage=function(e){clearInterval(h);' +
