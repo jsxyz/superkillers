@@ -7645,12 +7645,17 @@ const skipStill = g => { g.updateMatrixWorld = () => { for (const c of g.childre
 // a level, its faces clipped against its own boxes and the ground's
 // a subtree that never moves: its matrices composed once, from where it was put
 const still = root => { root.updateMatrixWorld(true); root.traverse(n => { n.matrixAutoUpdate = false; n.matrixWorldAutoUpdate = false }) }
+// a chunk's meshes take the first material of the same settings, so three draws them without switching state
+const sharedMats = new Map(), matKey = m => JSON.stringify(Object.entries(m).map(([k, v]) => k === 'uuid' || k === 'version' || k[0] === '_' || typeof v === 'function' ? 0
+  : [k, v?.isTexture ? v.uuid : v?.isColor ? [v.r, v.g, v.b] : v?.toArray ? v.toArray() : v?.map ? v.map(p => p?.isPlane ? [p.normal.toArray(), p.constant] : p) : v]))
+const shareMaterials = g => g.traverse(o => { const m = o.material
+  if (m?.isMaterial && !Object.hasOwn(m, 'onBeforeCompile')) { const k = matKey(m); o.material = sharedMats.get(k) ?? (sharedMats.set(k, m), m) } })
 function onChunk({ cell, boxes, scenery }) {
   if (!worldGroup) return
   const g = drawBoxes(boxes, scenery, [BOXES[0]]), mine = []
   g.userData.cell = cell
   worldGroup.add(g)
-  still(g)
+  still(g); shareMaterials(g)
   g.traverse(n => { if (n.isMesh && !n.isInstancedMesh) mine.push(n) })
   scarSurfaces.push(...mine); scarSend(mine); groundStale = !!cityGround
 }
@@ -7665,7 +7670,7 @@ function applyView() {
 }
 function rebuildWorld() {
   if (!worldGroup) return
-  clearScars()
+  clearScars(); sharedMats.clear()
   const geometries = new Set(), materials = new Set()
   worldGroup.traverse(n => {
     if (n.isInstancedMesh) n.dispose()
