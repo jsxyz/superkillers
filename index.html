@@ -4035,12 +4035,7 @@ function craterBuild(list, done) {
     if (d) { R.gone = [R.render]; Object.assign(R, d); out.push(R) } else crb.regions.delete(R.key); ask(k + 1) }) : done({ regions: out, replaces: [...gs.keys()] })
   ask(0)
 }
-const smashRow = () => [...BOTS, ...CHARS].find(R => R.smash)
 function craterEnsure() { const p = smashRow() && CRATER_BUILDER.ensure(); if (p) p.catch(e => console.error(e)) }
-function smashCheck(c, impact) {
-  const S = rowOf(c).smash, g = S && impact > S.speed && craterGround(craterSquare(c.x, c.z, S.r), c.y - c.h - c.r, S.depth)
-  if (g) addCrater(c.x, c.z, S.r, g.cy + g.ey)
-}
 const craterSquare = (x, z, r) => { const g = v => Math.round(v * 2) / 2, e = g(1.25 * r); return { a0: g(x) - e, a1: g(x) + e, b0: g(z) - e, b1: g(z) + e } }
 const over = (p, q) => p.a0 < q.a1 && q.a0 < p.a1 && p.b0 < q.b1 && q.b0 < p.b1
 const craterGround = (q, y, below = 0.3) => BOXES.filter(b => !b.paint && b.cx - b.ex <= q.a0 && b.cx + b.ex >= q.a1 && b.cz - b.ez <= q.b0 && b.cz + b.ez >= q.b1 &&
@@ -4201,17 +4196,6 @@ function stepObjects() {
   }
 }
 
-const weakFx = (c, K) => { const R = rowOf(c); return [R.weak].flat().includes(K.name) && powerNamed(R.weakness || K.weakens.effect) }
-function weakenFrom(o, K, list) {
-  if (K.weakens) for (const c of list) {
-    const e = c !== o && !(c.dead > 0) && Math.hypot(o.x - c.x, o.y - c.y, o.z - c.z) < K.weakens.within && weakFx(c, K)
-    if (e) { c.mark = e; c.markT = Math.max(c.markT, POWERS[e - 1].dur) }
-  }
-}
-function weakenNear(list) {
-  for (const o of objs) weakenFrom(o, o.K, list)
-  for (const b of list) if (!(b.dead > 0)) weakenFrom(b, rowOf(b), list)
-}
 
 
 // held: out of the world and out of play
@@ -13353,6 +13337,27 @@ function stepWaves(dt) {
   if (waveGap > 0) { if (waveGap === WAVE_GAP_S) prepareRows(botPairs(picked(WAVES[(waveAt + 1) % WAVES.length].pick))); waveGap -= dt; return }
   if (waveGap > -WAVE_HOLD_S && prepQueue.some(q => !Array.isArray(q) || botPairs(picked(WAVES[(waveAt + 1) % WAVES.length].pick)).some(p => skinKey(...p) === skinKey(...q)))) { waveGap -= dt; return }
   startWave((waveAt + 1) % WAVES.length)
+}
+
+const smashRow = () => [...BOTS, ...CHARS].find(R => R.smash)
+
+function smashCheck(c, impact) {
+  const S = rowOf(c).smash, g = S && impact > S.speed && craterGround(craterSquare(c.x, c.z, S.r), c.y - c.h - c.r, S.depth)
+  if (g) addCrater(c.x, c.z, S.r, g.cy + g.ey)
+}
+
+const weakFx = (c, K) => { const R = rowOf(c); return [R.weak].flat().includes(K.name) && powerNamed(R.weakness || K.weakens.effect) }
+
+function weakenFrom(o, K, list) {
+  if (K.weakens) for (const c of list) {
+    const e = c !== o && !(c.dead > 0) && Math.hypot(o.x - c.x, o.y - c.y, o.z - c.z) < K.weakens.within && weakFx(c, K)
+    if (e) { c.mark = e; c.markT = Math.max(c.markT, POWERS[e - 1].dur) }
+  }
+}
+
+function weakenNear(list) {
+  for (const o of objs) weakenFrom(o, o.K, list)
+  for (const b of list) if (!(b.dead > 0)) weakenFrom(b, rowOf(b), list)
 }
 
 // ---------------------------------------------------------------- loop
