@@ -2227,6 +2227,8 @@ const ENTITY_MAX = MAX_PLAYERS + BOTS.length + CHARS.filter(C => C.team).length 
 let BOT_COUNT = 3
 
 // ---------------------------------------------------------------- helpers
+// the game this engine runs: each part is attached where the game defines it, and the engine reads them only at call time
+const GAME = {}
 const elCache = {}
 const el = sel => elCache[sel] ||
   (elCache[sel] = sel[0] === '#' && !sel.includes(' ')
@@ -4200,11 +4202,11 @@ function stepObjects() {
 
 // held: out of the world and out of play
 const USE_S = 0.3
-const liftOf = c => stat(c, 'lift', rowOf(c).lift || 0), hurlOf = c => rowOf(c).hurl
+const liftOf = c => stat(c, 'lift', GAME.participantOf(c).lift || 0), hurlOf = c => GAME.participantOf(c).hurl
 // seat room, plus room beside any rider in the same seat row
-const riderRow = id => rowFor(id, players.get(id)?.cid ?? roster.get(id)?.cid ?? 0)
+const riderRow = id => GAME.participant(id, players.get(id)?.cid ?? roster.get(id)?.cid ?? 0)
 function fits(c, o, i) {
-  const C = rowFor(c.id, c.cid), [x, , z] = o.V.seats[i], M = R => MODELS[R.model || 'man'], half = R => M(R).room?.[0] / 2 || R.r
+  const C = GAME.participant(c.id, c.cid), [x, , z] = o.V.seats[i], M = R => MODELS[R.model || 'man'], half = R => M(R).room?.[0] / 2 || R.r
   const at = (R, x) => Math.sign(x) * (Math.abs(x) - (M(R).sitIn || 0))      // seatFit's inward
   return seatRoom(C, o.V, i) && o.V.seats.every(([x2, , z2], j) => { if (j === i || o.riders[j] === undefined || Math.abs(z2 - z) > 0.3) return true
     const B = riderRow(o.riders[j]); return !(M(C).room || M(B).room) || Math.abs(at(B, x2) - at(C, x)) >= half(C) + half(B) })
@@ -4264,7 +4266,7 @@ function carryStep(c, inp, dt) {
   for (const p of objs) if (takeable(c, p) && (!best || objGap(c, p) < objGap(c, best))) best = p
   if (best) { c.useT = USE_S; best.V && !canLift(c, best) ? sit(c, best, best.riders.findIndex((r, i) => r === undefined && fits(c, best, i))) : liftUp(best, c) }
   else if (isHost && objs.some(p => p.V && p.riders.includes(undefined) && objGap(c, p) <= 1.5)) {
-    c.useT = USE_S; tell(c.id, '§7' + rowFor(c.id, c.cid).name + " doesn't fit") }
+    c.useT = USE_S; tell(c.id, '§7' + GAME.participant(c.id, c.cid).name + " doesn't fit") }
 }
 // Bullet resolves any overlap
 function release(c, o, speed) {
@@ -4320,7 +4322,7 @@ const qmulTo = (o, p, q) => {
 const seatedIn = id => { for (let i = 0; i < 8; i++) if (objSeats.has(id * 8 + i)) return true; return false }
 const seatAt = (o, p) => rotq(o.q, p.map((v, i) => v - o.at0[i])).map((v, i) => v + [o.x, o.y, o.z][i])
 const seatOf = c => { const s = c.seat; return s && s[0].V && s[0].riders[s[1]] === c.id ? s : null }
-const onSeat = (s, c) => seatFit(s, c.id !== undefined ? rowFor(c.id, c.cid) : c)      // c: character or row
+const onSeat = (s, c) => seatFit(s, c.id !== undefined ? GAME.participant(c.id, c.cid) : c)      // c: character or row
 const WHEELS_NEAR = 40                    // m: past it, wheel travel < a pixel
 const wheelState = new Map(), wq = [0, 0, 0, 1], wv = [0, 0, 0], wsteer = [0, 0, 0, 1], wspin = [0, 0, 0, 1], wdq = [0, 0, 0, 1], wsq = [0, 0, 0, 1]
 // spin capped at SPIN_STEP a frame (faster, the 12-sided tyre strobes); rolling toward -Z spins it backward
@@ -12978,9 +12980,9 @@ function reconcile(a) {
 
   const ack = a[F.ack] | 0
   predicted.ack = ack
-  predicted.ackTurn = [a[F.anim] === 4 && !!rowOf(predicted)?.wallRun, +a[F.yaw] || 0,
-    a[F.anim] === 4 && !rowOf(predicted)?.wallRun && !!rowOf(predicted)?.climb && ceilAbove(a[F.x], a[F.y], a[F.z], predicted.r),
-    a[F.anim] === 4 && rowOf(predicted)?.wallRun ? wallYawAt(a[F.x], a[F.y], a[F.z], predicted.h + predicted.r + 0.4) : undefined]
+  predicted.ackTurn = [a[F.anim] === 4 && !!GAME.participantOf(predicted)?.wallRun, +a[F.yaw] || 0,
+    a[F.anim] === 4 && !GAME.participantOf(predicted)?.wallRun && !!GAME.participantOf(predicted)?.climb && ceilAbove(a[F.x], a[F.y], a[F.z], predicted.r),
+    a[F.anim] === 4 && GAME.participantOf(predicted)?.wallRun ? wallYawAt(a[F.x], a[F.y], a[F.z], predicted.h + predicted.r + 0.4) : undefined]
 
   let predAt = null
   while (pending.length && pending[0].seq <= ack) {
@@ -13157,7 +13159,7 @@ function remoteAt(t) {
     for (const [s, id] of objSeats) {
       const c = out.find(p => p.id === id), o = c && ob.find(o => o.id === s >> 3), K = o && OBJECTS[o.k]
       const V = vehicleOf(K)
-      const C = c && rowFor(id, c.cid)
+      const C = c && GAME.participant(id, c.cid)
       if (V && V.seats[s & 7]) [c.x, c.y, c.z] = seatAt({ ...o, at0: hullAt(K) }, onSeat(V.seats[s & 7], C))
     }
   }
@@ -13165,6 +13167,9 @@ function remoteAt(t) {
 }
 // ---------------------------------------------------------------- rules
 // this game's rules: modes, bots, waves, combat; the engine reaches them through GAME and the phases
+// a participant's body and abilities as the engine reads them: { r, h, model, room?, wallRun?, climb?, lift?, hurl?, name }
+GAME.participant = rowFor
+GAME.participantOf = rowOf
 function spawnList(rows) {
   for (const [id, c] of [...players]) if (c.bot && !c.bot.squad && c.owner === undefined) dropBot(c)
   rows.forEach(addBot)
@@ -13438,7 +13443,7 @@ function sampleTick(id, c, fresh, fire) {
   let list = tickSamples.get(id)
   if (!list) tickSamples.set(id, list = [])
   const anim = animOf(c)
-  list.push({ x: c.x, y: c.y, z: c.z, yaw: c.yaw, wy: c.wy, vx: c.vx, vy: c.vy, vz: c.vz, anim, turned: anim === 4 && !!rowFor(id, c.cid).wallRun, ceil: !!c.ceil, fresh, fire })
+  list.push({ x: c.x, y: c.y, z: c.z, yaw: c.yaw, wy: c.wy, vx: c.vx, vy: c.vy, vz: c.vz, anim, turned: anim === 4 && !!GAME.participant(id, c.cid).wallRun, ceil: !!c.ceil, fresh, fire })
 }
 // server panel: rates per second, bytes per session
 let ticksRun = 0, tickRate = 0, snapsOut = 0, snapOutRate = 0, bytesUpAll = 0, bytesDownAll = 0
@@ -13669,7 +13674,7 @@ const OWN_PREDICTION = (F => {
   }
 })(PLAYER_STATE.col)
 // the game this engine runs: its messages, state schema, input, host tick rules and own predicted component
-const GAME = { msgs: { host: HOST_MSGS, guest: GUEST_MSGS }, schema: PLAYER_STATE, input: INPUT_SCHEMA, host: HOST_PHASES, predict: OWN_PREDICTION }
+Object.assign(GAME, { msgs: { host: HOST_MSGS, guest: GUEST_MSGS }, schema: PLAYER_STATE, input: INPUT_SCHEMA, host: HOST_PHASES, predict: OWN_PREDICTION })
 
 // background tabs throttle rAF to ~0 Hz, freezing a host: a worker is its clock
 const BG_SRC = 'var h;onmessage=function(e){clearInterval(h);' +
