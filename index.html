@@ -11422,7 +11422,7 @@ function pickSel(i) {
   el('#pick-stats').innerHTML = PICK_STATS.map(([k, f]) => '<div><span>' + k + '</span><i><b style="width:' +
     Math.round(100 * C[f] / Math.max(...PICKABLE.map(j => CHARS[j][f]))) + '%;background:' + css(sideColor(C)) + '"></b></i><span>' + +C[f].toFixed(1) + '</span></div>').join('')
   const atks = [].concat(C.atk ?? []), many = gunless(C) && atks.length > 1, right = primaryName({ cid: i })
-  el('#pick-atk').innerHTML = '<div><em>' + (IS_TOUCH ? 'FIRE' : 'Click') + '</em>' + (many ? atks.join(' · ') + ' <kbd>' + (IS_TOUCH ? 'WPN' : 'R') + '</kbd> switch' : GUNS[handsOf(C)].name) + '</div>' +
+  el('#pick-atk').innerHTML = '<div><em>' + (IS_TOUCH ? 'FIRE' : 'Click') + '</em>' + (many ? atks.join(' · ') + ' <kbd>' + (IS_TOUCH ? 'WPN' : 'R') + '</kbd> switch' : (GUNS[handsOf(C)]?.name ?? '')) + '</div>' +
     (right ? '<div><em>' + (IS_TOUCH ? 'ATK' : 'Right-click') + '</em>' + right + '</div>' : '')
   const go = el('#pick-go')
   go.textContent = why || (mine ? 'Playing as ' : joinPick() ? 'Play as ' : 'Change to ') + pickName(i)
@@ -13553,7 +13553,7 @@ const PLAYER_STATE = stateSchema([
   ['markT', c => r2(c.markT), (c, v) => { c.markT = v || 0 }],
   ['bag', c => c.bag | 0, (c, v) => { c.bag = v | 0 }],
   ['cap', c => c.cap | 0, (c, v) => { c.cap = v | 0 }],
-  ['prof', c => profBits(c, GUNS[c.gun].name), (c, v) => { c.prof = v | 0 }],
+  ['prof', c => profBits(c, GUNS[c.gun]?.name), (c, v) => { c.prof = v | 0 }],
   ['sprof', c => primaryOf(c) ? profBits(c, primaryOf(c).name) : 0, (c, v) => { c.sprof = v | 0 }],
   ['mark', c => c.mark | 0, (c, v) => { c.mark = effId(v) }],
   ['web', c => c.web || 0]
