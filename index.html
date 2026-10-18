@@ -12308,6 +12308,10 @@ const burnHeard = new Map()
 let objVel = null, vehHp = null       // `vh`: hp of this guest's vehicle
 const exactRow = e => Array.isArray(e) && e.length === 14 && Number.isInteger(e[0]) && e[0] >= 0 && e[0] < OBJ_MAX && e.every(Number.isFinite) &&
   e.slice(1, 4).every(x => Math.abs(x) <= ARENA) && Math.abs(Math.hypot(...e.slice(4, 8)) - 1) < 0.01 && e.slice(8).every(x => Math.abs(x) < 200)
+// `pv`: [x, y, z, vx, vy, vz], this guest's own character exactly; malformed = none
+let ownExact = null
+const takeOwn = v => { ownExact = Array.isArray(v) && v.length === 6 && v.every(Number.isFinite) && Math.abs(v[0]) <= ARENA + 8 && Math.abs(v[2]) <= ARENA + 8 &&
+  v[1] >= VOID_Y && v[1] <= LV.theme.lid && v.slice(3).every(x => Math.abs(x) < 200) ? v : null }
 function takeVel(v) {
   objVel = Array.isArray(v) && v.length <= 16 && v.every(exactRow) && new Set(v.map(e => e[0])).size === v.length ? new Map(v.map(e => [e[0], e.slice(1)])) : null
 }
@@ -12900,6 +12904,7 @@ const GUEST_MSGS = {
   takeHeld(d.oh)
   takeSeats(d.od)
   takeVel(d.ov)
+  takeOwn(d.pv)
   GAME.audio.takeRadio(d.or)
   if (d.vh !== undefined) vehHp = Number.isInteger(d.vh) && d.vh >= 0 && d.vh <= 1e6 ? d.vh : null
   if (d.o) takeObjects(d.o, d.t)       // after lv: a switch clears the tracks
@@ -13804,7 +13809,7 @@ const OWN_PREDICTION = (F => {
     agrees: (e, a, web) => (e.web || 0) === web && Math.abs(e.fuel - a[F.fuel]) <= fuelEps && e.jl === !!a[F.jLock],
     carry: (e, c) => { c.flying = e.fl; c.springT = e.sp; c.flyTurn = e.ft; [c.knT, c.knx, c.knz, c.knUp] = e.kn; c.wallHeld = e.wh; c.slide = e.sl; c.rope = e.rope },
     // re-tying the web its own prediction had, it keeps that prediction's reel target (off the wire); the length is the restored distance
-    restore: (c, a, web) => { restoreChar(c, a[F.x], a[F.y], a[F.z], a[F.vx], a[F.vy], a[F.vz], a[F.fuel]); tie(c, web); if (c.tie && c.rope?.[0] === web) c.tie.want = Math.min(c.tie.len, c.rope[1]); c.rope = null; c.jLock = !!a[F.jLock] },
+    restore: (c, a, web) => { const [x, y, z, vx, vy, vz] = ownExact || [a[F.x], a[F.y], a[F.z], a[F.vx], a[F.vy], a[F.vz]]; restoreChar(c, x, y, z, vx, vy, vz, a[F.fuel]); tie(c, web); if (c.tie && c.rope?.[0] === web) c.tie.want = Math.min(c.tie.len, c.rope[1]); c.rope = null; c.jLock = !!a[F.jLock] },
   }
 })(GAME.schema.col)
 // the engine's input and own predicted component join the game's parts; a game message never reuses an engine kind
@@ -14043,10 +14048,12 @@ function sendSnapshot(s) {
     const sat = objs.find(o => o.V && o.riders.includes(gid)), at = sat || players.get(gid), far = o => Math.hypot(o.x - at.x, o.z - at.z)
     const exact = at ? [...sat ? [sat] : [], ...objs.filter(o => o !== sat && o.body.isActive() && far(o) < 15).sort((a, b) => far(a) - far(b)).slice(0, 6)] : []
     const ov = exact.length ? ',"ov":' + JSON.stringify(exact.map(o => [o.id, ...objState(o).map(v => +v.toPrecision(9))])) : ''
+    // its own character exactly while it swings or flies off a web, for its replay
+    const pv = me?.tie || me?.flung ? ',"pv":' + JSON.stringify([me.x, me.y, me.z, me.vx, me.vy, me.vz].map(v => +v.toPrecision(9))) : ''
     const vh = sat ? Math.round(Math.max(0, sat.hp)) : null
     const vhs = vh === null ? '' : repeatField(sent, 'vh', vh)
     const ot = repeatField(sent, 'or', tuned)
-    const withPk = pkSent.get(gid) !== pk, end = (ob.length ? ',"o":[' + ob + ']' : '') + oh + ot + ov + vhs
+    const withPk = pkSent.get(gid) !== pk, end = (ob.length ? ',"o":[' + ob + ']' : '') + oh + ot + ov + pv + vhs
     const msg = head + out.join(',') + (end ? tail(withPk).slice(0, -1) + end + '}' : tail(withPk))
     try { c.send(msg); bytesUp += msg.length; if (withPk) pkSent.set(gid, pk) } catch (e) {}
   }
