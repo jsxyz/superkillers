@@ -3059,22 +3059,6 @@ function swapTo(c, m) {
   if (p) { p.cid = m.cid; if (conns.size) pushRoster() }
 }
 
-// fraction of range, 1 = no hit; backfaces filtered: a box the ray starts inside is missed
-let rayCb = null
-function castRay(ox, oy, oz, dx, dy, dz, range, mask = RAY_GROUP) {
-  if (!rayCb) { rayCb = new A.ClosestRayResultCallback(rayFrom, rayTo); rayCb.set_m_flags(1); rayCb.set_m_collisionFilterGroup(RAY_CAST) }
-  rayFrom.setValue(ox, oy, oz); rayTo.setValue(ox + dx * range, oy + dy * range, oz + dz * range)
-  rayCb.set_m_rayFromWorld(rayFrom); rayCb.set_m_rayToWorld(rayTo); rayCb.set_m_closestHitFraction(1); rayCb.set_m_collisionFilterMask(mask)
-  world.rayTest(rayFrom, rayTo, rayCb)
-  return rayCb.get_m_closestHitFraction()
-}
-// distance to the level's first face, else range; hit = [point, normal]
-function staticRay(ox, oy, oz, dx, dy, dz, range, hit, mask) {
-  const p = castRay(ox, oy, oz, dx, dy, dz, range, mask) < 1 && rayCb.get_m_hitPointWorld()
-  const t = p ? Math.min(range, Math.hypot(p.x() - ox, p.y() - oy, p.z() - oz)) : range
-  if (hit) hit.splice(0, hit.length, ...p ? [p, rayCb.get_m_hitNormalWorld()].flatMap(v => [v.x(), v.y(), v.z()]) : [])
-  return t
-}
 
 function clearLine(b, t) {
   const ox = b.x, oy = b.y + b.h * 0.55, oz = b.z
@@ -3560,6 +3544,22 @@ function stepTornado(dt, all, onKill) {
 }
 
 // ---------------------------------------------------------------- raycast
+// fraction of range, 1 = no hit; backfaces filtered: a box the ray starts inside is missed
+let rayCb = null
+function castRay(ox, oy, oz, dx, dy, dz, range, mask = RAY_GROUP) {
+  if (!rayCb) { rayCb = new A.ClosestRayResultCallback(rayFrom, rayTo); rayCb.set_m_flags(1); rayCb.set_m_collisionFilterGroup(RAY_CAST) }
+  rayFrom.setValue(ox, oy, oz); rayTo.setValue(ox + dx * range, oy + dy * range, oz + dz * range)
+  rayCb.set_m_rayFromWorld(rayFrom); rayCb.set_m_rayToWorld(rayTo); rayCb.set_m_closestHitFraction(1); rayCb.set_m_collisionFilterMask(mask)
+  world.rayTest(rayFrom, rayTo, rayCb)
+  return rayCb.get_m_closestHitFraction()
+}
+// distance to the level's first face, else range; hit = [point, normal]
+function staticRay(ox, oy, oz, dx, dy, dz, range, hit, mask) {
+  const p = castRay(ox, oy, oz, dx, dy, dz, range, mask) < 1 && rayCb.get_m_hitPointWorld()
+  const t = p ? Math.min(range, Math.hypot(p.x() - ox, p.y() - oy, p.z() - oz)) : range
+  if (hit) hit.splice(0, hit.length, ...p ? [p, rayCb.get_m_hitNormalWorld()].flatMap(v => [v.x(), v.y(), v.z()]) : [])
+  return t
+}
 function rayBox(ox, oy, oz, dx, dy, dz, b) {
   let tmin = -Infinity, tmax = Infinity
   const o = [ox, oy, oz], d = [dx, dy, dz]
@@ -4700,7 +4700,6 @@ function rewindTargets(all, shooter, viewT) {
 
 // ---------------------------------------------------------------- guns
 let pickups = []
-let tracers = []
 let fragLimit = FRAG_LIMIT, timeLimit = TIME_LIMIT
 let matchLeft = 0         // s, 0 = untimed
 let resultsLeft = 0       // s, 0 while playing
@@ -12256,6 +12255,8 @@ function fadeChat(t) {
 let phase = 'menu'
 let isHost = false, connected = false, peer = null
 let kickedBy = null
+// the host's effects this tick, sent once as the snapshot's fx
+let tracers = []
 const LINK_DEAD_MS = 8000        // guest: host silence
 const ICE_GRACE_MS = 4000        // 'disconnected' can recover; 'failed' cannot
 const GUEST_DEAD_MS = 12000      // host: guest silence
