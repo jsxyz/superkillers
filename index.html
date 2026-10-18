@@ -13204,9 +13204,7 @@ function reconcile(a) {
 
   if (predLost) {
     restore(); blend()
-    restoreChar(predicted, a[F.x], a[F.y], a[F.z], a[F.vx], a[F.vy], a[F.vz], a[F.fuel])
-    tie(predicted, web)
-    predicted.jLock = !!a[F.jLock]
+    OWN_PREDICTION.restore(predicted, a, web)
     pending.length = 0
     predLost = false; predJump = true
     replaySteps = 0; reconcileErr = 0
@@ -13214,20 +13212,18 @@ function reconcile(a) {
   }
 
   reconcileErr = predAt
-    ? Math.hypot(predAt.x - a[F.x], predAt.y - a[F.y], predAt.z - a[F.z])
+    ? OWN_PREDICTION.err(predAt, a)
     : Infinity
-  if (reconcileErr <= REWIND_EPS && objErr <= REWIND_EPS && (predAt.web || 0) === web && Math.abs(predAt.fuel - a[F.fuel]) <= 0.011 && predAt.jl === !!a[F.jLock]) { replaySteps = 0; return }
+  if (reconcileErr <= REWIND_EPS && objErr <= REWIND_EPS && OWN_PREDICTION.agrees(predAt, a, web)) { replaySteps = 0; return }
 
-  if (predAt?.sp !== undefined) { predicted.flying = predAt.fl; predicted.springT = predAt.sp; predicted.flyTurn = predAt.ft }      // not in the snapshot
+  if (predAt?.sp !== undefined) OWN_PREDICTION.carry(predAt, predicted)
   restore()
-  restoreChar(predicted, a[F.x], a[F.y], a[F.z], a[F.vx], a[F.vy], a[F.vz], a[F.fuel])
-  tie(predicted, web)
-  predicted.jLock = !!a[F.jLock]
+  OWN_PREDICTION.restore(predicted, a, web)
   const n = Math.min(pending.length, MAX_PENDING)
   for (let i = 0; i < n; i++) {
     const e = pending[i]
     tickChars([predicted], () => e.inp, TICK)
-    e.x = predicted.x; e.y = predicted.y; e.z = predicted.z; e.fuel = predicted.fuel; e.jl = !!predicted.jLock; e.web = predicted.web || 0; e.fl = !!predicted.flying; e.sp = predicted.springT || 0; e.ft = !!predicted.flyTurn; e.ob = objs.map(o => [o.id, ...objState(o)]); e.sh = objs.filter(o => o.V).map(o => [o.id, o.steer || 0, o.hand || 0])
+    OWN_PREDICTION.take(predicted, e); e.ob = objs.map(o => [o.id, ...objState(o)]); e.sh = objs.filter(o => o.V).map(o => [o.id, o.steer || 0, o.hand || 0])
   }
   blend()
   replaySteps = n; predJump = true
@@ -13582,18 +13578,20 @@ const HOST_PHASES = {
 
 
 // Ordered fields define wire columns; readers keep their context's coercions and defaults. A field's third element is
-// how the guest takes its own row's value onto its predicted character; own(a, c) runs them in column order.
+// how the guest takes its own row's value onto its predicted character; own(a, c) runs them in column order. A fourth is
+// the step the row rounds it to.
 function stateSchema(fields) {
   const owns = fields.flatMap(([, , own], i) => own ? [[i, own]] : [])
   return { col: Object.fromEntries(fields.map(([name], i) => [name, i])),
+           step: Object.fromEntries(fields.filter(f => f[3]).map(([name, , , step]) => [name, step])),
            pack: (id, c) => fields.map(([, encode]) => encode(c, id)),
            own: (a, c) => { for (const [i, own] of owns) own(c, a[i]) } }
 }
 const PLAYER_STATE = stateSchema([
   ['id', (c, id) => id],
-  ['x', c => r2(c.x)],
-  ['y', c => r2(c.y)],
-  ['z', c => r2(c.z)],
+  ['x', c => r2(c.x), null, 0.01],
+  ['y', c => r2(c.y), null, 0.01],
+  ['z', c => r2(c.z), null, 0.01],
   ['yaw', c => r2(c.yaw)],
   ['hp', c => Math.round(c.hp), (c, v) => { c.hp = v }],
   ['gun', c => c.gun, (c, v) => { c.gun = GUNS[v] ? v : handsOf(CHARS[c.cid]) }],
@@ -13602,7 +13600,7 @@ const PLAYER_STATE = stateSchema([
   ['cid', c => c.cid],
   ['vy', c => r2(c.vy)],
   ['kills', c => c.kills, (c, v) => { c.kills = v | 0 }],
-  ['fuel', c => r2(c.fuel)],
+  ['fuel', c => r2(c.fuel), null, 0.01],
   ['prot', c => r2(c.prot), (c, v) => { if (v !== undefined) c.prot = v }],
   ['vx', c => r2(c.vx)],
   ['vz', c => r2(c.vz)],
@@ -13627,6 +13625,21 @@ function packPlayer(id, c) {
 // trailing zeros trimmed to WIRE_MIN: decoders read missing cols >= 16 as 0; old guests drop rows missing 1-4,10,12,14,15
 const WIRE_MIN = 16
 const wireRow = r => { let n = r.length; while (n > WIRE_MIN && r[n - 1] === 0) n--; return n < r.length ? r.slice(0, n) : r }
+// the guest's own capsule, predicted: what a pending input remembers (into e, or a new record), how far and whether the host's row at its ack agrees,
+// what a replay carries that the row lacks, and the restore onto the row. A tolerance under the row's rounding (half a step
+// from the row, half from a restore from one) replays forever: fuel's is a step and a tenth, and REWIND_EPS may not be under
+// position's.
+const OWN_PREDICTION = (F => {
+  const S = PLAYER_STATE.step, fuelEps = S.fuel + S.fuel / 10
+  if (REWIND_EPS < Math.hypot(S.x, S.y, S.z)) throw Error('REWIND_EPS is under the wire step')
+  return {
+    take: (c, e = {}) => { e.x = c.x; e.y = c.y; e.z = c.z; e.fuel = c.fuel; e.jl = !!c.jLock; e.fl = !!c.flying; e.sp = c.springT || 0; e.ft = !!c.flyTurn; e.web = c.web || 0; return e },
+    err: (e, a) => Math.hypot(e.x - a[F.x], e.y - a[F.y], e.z - a[F.z]),
+    agrees: (e, a, web) => (e.web || 0) === web && Math.abs(e.fuel - a[F.fuel]) <= fuelEps && e.jl === !!a[F.jLock],
+    carry: (e, c) => { c.flying = e.fl; c.springT = e.sp; c.flyTurn = e.ft },
+    restore: (c, a, web) => { restoreChar(c, a[F.x], a[F.y], a[F.z], a[F.vx], a[F.vy], a[F.vz], a[F.fuel]); tie(c, web); c.jLock = !!a[F.jLock] },
+  }
+})(PLAYER_STATE.col)
 
 // background tabs throttle rAF to ~0 Hz, freezing a host: a worker is its clock
 const BG_SRC = 'var h;onmessage=function(e){clearInterval(h);' +
@@ -13743,7 +13756,7 @@ function stepSim(t) {
       sampleTick(myId, predicted, predJump, input.fire || input.alt); predJump = false
       msPhys = msPhys * 0.9 + (now() - _p1) * 0.1
       const seq = ++outSeq
-      pending.push({ seq, inp, x: predicted.x, y: predicted.y, z: predicted.z, fuel: predicted.fuel, jl: !!predicted.jLock, fl: !!predicted.flying, sp: predicted.springT || 0, ft: !!predicted.flyTurn, web: predicted.web || 0, ob: objs.map(o => [o.id, ...objState(o)]) })
+      pending.push({ seq, inp, ...OWN_PREDICTION.take(predicted), ob: objs.map(o => [o.id, ...objState(o)]) })
       pending.at(-1).sh = objs.filter(o => o.V).map(o => [o.id, o.steer || 0, o.hand || 0])
       // a dropped unacked input breaks the replay chain: flag it
       while (pending.length > MAX_PENDING) { pending.shift(); predLost = true }
