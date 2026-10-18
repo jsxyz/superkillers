@@ -12504,12 +12504,9 @@ function startHost() {
   scarsLater = false
   loadLevel(pickedLevel)          // before spawns/bodies
   markStart('level')
-  resultsLeft = 0
-  fragLimit = settings.frags; timeLimit = settings.mins * 60
-  matchLeft = timeLimit
+  GAME.lifecycle.matchStart()
   picking = !serving
-  if (gameMode === 'waves') startWave(0)
-  else spawnBots(BOT_COUNT)
+  GAME.lifecycle.populate()
   markStart('bots')
   el('#stage-menu').style.display = 'none'
   el('#stage-host').style.display = ''
@@ -12575,14 +12572,14 @@ function openHostPeer(attempt) {
     c.on('close', () => {
       const had = conns.delete(id), p = roster.get(id)
       if (players.has(id)) detachBody(players.get(id))
-      players.delete(id); roster.delete(id); if (dropMates(id)) teamsChanged(); inputs.delete(id); pkSent.delete(id); tierSent.delete(id); objSent.delete(id)
+      players.delete(id); roster.delete(id); GAME.lifecycle.left(id); inputs.delete(id); pkSent.delete(id); tierSent.delete(id); objSent.delete(id)
       inputSeq.delete(id); lastChatSeq.delete(id); lastChatAt.delete(id); lastSeen.delete(id)
       inQ.delete(id); inAck.delete(id)
       if (poll) { poll.yes.delete(id); poll.no.delete(id); countVote() }
       if (p) announce('§e' + p.name + ' left')
       dropAvatar(id)
       pushRoster()
-      if (serving && had && !conns.size) resetMatch()
+      if (serving && had && !conns.size) GAME.lifecycle.empty()
     })
   })
 }
@@ -12676,7 +12673,7 @@ let serving = false, servedAt = 0
 function startServer() {
   serving = true
   servedAt = now()
-  bytesUpAll = 0; bytesDownAll = 0; srvSig = null; srvDrawnAt = 0
+  bytesUpAll = 0; bytesDownAll = 0; GAME.view.serverReset()
   myName = 'The server'
   document.body.classList.add('serving')
   el('#stage-server').style.display = ''
@@ -13091,7 +13088,7 @@ function clearSession() {
   pkSent.clear(); pkRefreshAt = 0
   tierSent.clear(); hotUntil.clear(); snapSeq = 0; tracks.clear()
   sendRing.length = 0
-  resultsLeft = 0; matchLeft = 0; lastResSig = null
+  GAME.lifecycle.sessionEnd()
   setRoomTag(false)
   clearHistory()
   for (const id of [...avatars.keys()]) dropAvatar(id)
@@ -13542,6 +13539,23 @@ const PLAYER_STATE = stateSchema([
   ['web', c => c.web || 0]
 ])
 GAME.schema = PLAYER_STATE
+
+// a match's lifecycle where the engine reaches it: a hosted match starts and is peopled, a session ends, a guest leaves, the
+// serving room empties
+GAME.lifecycle = {
+  matchStart() {
+  resultsLeft = 0
+  fragLimit = settings.frags; timeLimit = settings.mins * 60
+  matchLeft = timeLimit
+  },
+  populate() {
+  if (gameMode === 'waves') startWave(0)
+  else spawnBots(BOT_COUNT)
+  },
+  sessionEnd() { resultsLeft = 0; matchLeft = 0; lastResSig = null },
+  left(id) { if (dropMates(id)) teamsChanged() },
+  empty() { resetMatch() },
+}
 
 // ---------------------------------------------------------------- loop
 let acc = 0, last = now(), snapAcc = 0, tickAt = 0      // ms: when the last tick fell due
@@ -14417,7 +14431,7 @@ function drawRadar(me, others, t) {
 // what the host draws of the pickups: the ones standing, as their snapshot rows
 const hostPickups = () => pickups.filter(p => p.respawn <= 0).map(p => [p.x, p.y, p.z, p.gun, p.pow, p.heal])
 
-GAME.view = { tab: drawTab, results: drawResults, server: drawServer, serverInit: initServerPanel, hud: drawHud, faceYaw, radar: drawRadar, pickups: hostPickups }
+GAME.view = { serverReset: () => { srvSig = null; srvDrawnAt = 0 }, tab: drawTab, results: drawResults, server: drawServer, serverInit: initServerPanel, hud: drawHud, faceYaw, radar: drawRadar, pickups: hostPickups }
 
 // ---------------------------------------------------------------- boot
 class Arena extends ENABLE3D.Scene3D {
