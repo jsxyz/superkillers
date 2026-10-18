@@ -787,7 +787,8 @@ const CHARS = [
 ]
 // rate: s/shot, spread: rad, range: m. Gun 0 never runs dry. look: line|beam|slash|blast; held: glow, heldScale, tether
 // kind: ray|pierce|chain|radius. dive: speed m/s, pull m/s²; dmg, knock × clamp(impact/ref, 1, cap), range × its root
-// kind dash: held, runs along the aim at speed m/s through people; each it passes takes dmg and knock once a hold
+// kind dash: held, runs along the aim at speed m/s through people and objects; each it passes takes dmg and knock once a hold
+//   launch: { speed, lift m/s, spin rad/s, mass }: each object leaves along the dash at speed, up at lift, rolling at spin; heavier than mass, slower in proportion
 // gate: effect key it needs. dmg or lethal; knock; apply: POWERS effect; extra: the fifth upgrade
 // Append rows only; Beck's 32-bit bag holds no 33rd gun.
 // ground marks a GUNS row's `scar` names: r m, color centre, edge rim
@@ -872,7 +873,7 @@ const GUNS = [
     held:false, look:'beam', apply:'Webbed', kind:'ray' },
   { name:'Ground Slam', kind:'radius', rate:1.40, dmg:10, range: 4, knock:12.0, color:0xf2c53d,
     held:false, punch:'slam', punchMs:600, dive:{ speed:10, pull:40, ref:12, cap:2.5 } },
-  { name:'Speed Dash', kind:'dash', speed:80, rate:0, dmg:30, range:0, knock:12.0, color:0xffd23f, held:false },
+  { name:'Speed Dash', kind:'dash', speed:80, rate:0, dmg:30, range:0, knock:12.0, launch: { speed: 30, lift: 12, spin: 4, mass: 12 }, color:0xffd23f, held:false },
 ].map(G => ({ ...GUN_ROW, ...G }))
 // POWERS: dur s, then scales of move jump rate give take fuel jet reach lift (jet 0 grounds; reach 0 spares melee)
 // drop:false: by `apply` only. look: an EFFECT_LOOKS overlay
@@ -2678,12 +2679,23 @@ function pressesOn(c, o, x, z) {
   const n = Math.hypot(x, z) || 1
   return castRay(c.x, c.y, c.z, -x / n, 0, -z / n, c.r + 0.25, G_OBJ) < 1 && A.getPointer(rayCb.get_m_collisionObject()) === A.getPointer(o.body)
 }
+// Bullet: is c's capsule sunk into an object now
+let inCb = null, inHit = false
+function insideObject(c) {
+  if (!inCb) {
+    inCb = new A.ConcreteContactResultCallback()
+    inCb.addSingleResult = cp => { inHit ||= A.wrapPointer(cp, A.btManifoldPoint).getDistance() < -0.01; return 0 }
+    inCb.needsCollision = p => (A.wrapPointer(p, A.btBroadphaseProxy).get_m_collisionFilterGroup() & G_OBJ) !== 0
+  }
+  inHit = false; world.contactTest(c.body, inCb)
+  return inHit
+}
 function applyIntent(c, inp, dt) {
   if (!c.body) attachBody(c)
-  // held, a dash row runs him along the aim at its speed; Bullet pairs him with no other person meanwhile
+  // held, a dash row runs him along the aim at its speed; Bullet pairs him with no person or object meanwhile, nor with an object he is still in after
   c.dashing = inp.alt && !(c.dead > 0) && !seatOf(c) && primaryOf(c)?.kind === 'dash' ? primaryId(c) : 0
-  if (c.dashing || c.dashOn) { const bh = c.body.getBroadphaseHandle(), m = A.getPointer(bh) && bh.get_m_collisionFilterMask()
-    if (A.getPointer(bh)) bh.set_m_collisionFilterMask(c.dashing ? m & ~G_CAPSULE : m | G_CAPSULE); c.dashOn = !!c.dashing }
+  if (c.dashing || c.dashOn) { const bh = c.body.getBroadphaseHandle(), m = A.getPointer(bh) && bh.get_m_collisionFilterMask(), inside = !c.dashing && insideObject(c)
+    if (A.getPointer(bh)) bh.set_m_collisionFilterMask(c.dashing ? m & ~(G_CAPSULE | G_OBJ) : m | G_CAPSULE | (inside ? 0 : G_OBJ)); c.dashOn = !!c.dashing || inside }
   if (c.dashing) c.dashFrom = [c.x, c.y, c.z]; else c.dashHit = null
 
   if (c.prot > 0) c.prot -= dt
@@ -2784,7 +2796,7 @@ function applyIntent(c, inp, dt) {
   let mx = wx * spd, mz = wz * spd
   // a vehicle in this tick's sweep is closed on at most cap m/s faster than it moves away: deeper in its hull in one tick, Bullet flips it
   const sm = Math.hypot(mx, mz)
-  if (ram && S.cap && sm > 0.1) {
+  if (ram && S.cap && !c.dashing && sm > 0.1) {
     const H = sweepHits(c, c.x, c.y, c.z, c.x + mx * TICK, c.y, c.z + mz * TICK, G_OBJ), B = H.get_m_hitCollisionObjects(), F = H.get_m_hitFractions()
     let lim = Infinity
     for (let i = 0; i < B.size(); i++) {
@@ -4635,6 +4647,11 @@ function strikeObject(c, o, G, ux, uy, uz, px = o.x, py = o.y, pz = o.z) {
   const m = G.knock * o.K.hit
   impVec.setValue(ux * m, uy * m, uz * m); relVec.setValue(px - o.x, py - o.y, pz - o.z)
   o.body.activate(); o.body.applyImpulse(impVec, relVec)
+}
+function launchObject(o, L, ux, uz) {
+  const k = Math.min(1, L.mass / o.K.mass), v = o.body.getLinearVelocity(), a = Math.max(v.x() * ux + v.z() * uz, L.speed * k)
+  impVec.setValue(ux * a, Math.max(v.y(), L.lift * k), uz * a); o.body.setLinearVelocity(impVec)
+  impVec.setValue(uz * L.spin * k, 0, -ux * L.spin * k); o.body.setAngularVelocity(impVec); o.body.activate()
 }
 
 // a seated rider is struck through its vehicle, once a volley (rode)
@@ -13424,7 +13441,7 @@ function strikeObjects(list, dt, touch, credit) {
   for (const [o, c, , hit] of touch) if (hit && o.thrownBy !== undefined && list.includes(c) && !o.struck.has(c.id) && c.dead <= 0) { o.struck.add(c.id); objectStrikes(o, c, credit) }
 }
 
-// host, after the step: Bullet sweeps a dasher's capsule over this tick's run; each person it passes is struck once a hold
+// host, after the step: Bullet sweeps a dasher's capsule over this tick's run; each person and object it passes is struck once a hold, each object launched
 function dashStrikes(list, credit) {
   for (const c of list) {
     if (!c.dashing || !c.dashFrom || c.dead > 0 || seatOf(c)) continue
@@ -13437,6 +13454,12 @@ function dashStrikes(list, credit) {
       if (!v || v === c || v.dead > 0 || v.prot > 0 || seatOf(v) || (c.dashHit ??= new Set()).has(v.id)) continue
       c.dashHit.add(v.id); strike(c, v, G, ux, 0.3, uz)
       if (downed(v)) credit(c.id, c)(v, G)
+    }
+    const L = G.launch, B = L && sweepHits(c, x, y, z, c.x, c.y, c.z, G_OBJ).get_m_hitCollisionObjects()
+    for (let i = 0; i < (B?.size() ?? 0); i++) {
+      const o = objs.find(o => A.getPointer(o.body) === A.getPointer(B.at(i)))
+      if (!o || o.heldBy !== undefined || (c.dashHit ??= new Set()).has(o)) continue
+      c.dashHit.add(o); launchObject(o, L, ux, uz); strikeObject(c, o, G, ux, 0.3, uz)
     }
   }
 }
