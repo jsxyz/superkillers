@@ -1855,12 +1855,12 @@ const powerOf = c => (c && c.pow > 0 ? POWERS[c.pow - 1] : null)
 // bounds a wire effect id
 const effId = v => (v |= 0) > 0 && v <= POWERS.length ? v : 0
 const powerNamed = n => POWERS.findIndex(P => P.name === n) + 1
-const jetOf = c => rowOf(c).jet
+const jetOf = c => GAME.participantOf(c).jet
 // tankOf reads this, so it cannot go through flying()
 const eff = (c, k) => (POWERS[c.pow - 1]?.[k] ?? 1) * (POWERS[c.mark - 1]?.[k] ?? 1)
 const flying = c => !c.grounded && tankOf(c) > 0
 const holdsFire = (c, G = GUNS[c.gun]) => flying(c) && jetOf(c).grounded || !G.melee && !eff(c, 'reach')
-const stat = (c, k, v = 1) => v * eff(c, k) * (flying(c) ? jetOf(c).aloft?.[k] ?? 1 : c.grounded || c.wall ? 1 : rowOf(c)?.leap?.[k] ?? 1)
+const stat = (c, k, v = 1) => v * eff(c, k) * (flying(c) ? jetOf(c).aloft?.[k] ?? 1 : c.grounded || c.wall ? 1 : GAME.participantOf(c)?.leap?.[k] ?? 1)
 const dropping = T => T.flatMap((R, i) => R.drop === false ? [] : [i + 1])
 
 const DROPS = GUNS.map((G, i) => i).filter(i => i > 0 && GUNS[i].drop !== false)
@@ -2504,9 +2504,9 @@ const surfV = (nx, ny, nz, wx, wz, v, up = -(nx * wx + nz * wz)) => [(wx + up * 
 const SLIDE_V = 5.5      // m/s down a wall runner with the stick idle slides to before it drops off
 // velocity on the wall, or null
 function runUpWall(c, inp, spd, wx, wz, dt) {
-  const W = rowOf(c).wallRun, fx = -Math.sin(inp.yaw), fz = -Math.cos(inp.yaw), reach = c.r + 0.15
+  const W = GAME.participantOf(c).wallRun, fx = -Math.sin(inp.yaw), fz = -Math.cos(inp.yaw), reach = c.r + 0.15
   if (!c.wallRun) {
-    const run = rowOf(c).run ?? c.speed * RUN
+    const run = GAME.participantOf(c).run ?? c.speed * RUN
     const m = Math.hypot(wx, wz)
     if (!inp.sprint || c.knT > 0 || c.grounded && inp.j || m < 0.5 || spd * m < W.at * run) return null
     const n = faceTouched(c)
@@ -2707,20 +2707,20 @@ function applyIntent(c, inp, dt) {
   let vy = c.vy
   const tank = tankOf(c), J = tank > 0 && jetOf(c)
   const wasWall = c.wall
-  c.wall = !J && rowOf(c)?.climb && m > 0.5 ? wallPush(c, wx, wz) : 0
+  c.wall = !J && GAME.participantOf(c)?.climb && m > 0.5 ? wallPush(c, wx, wz) : 0
   if (!c.wall && wasWall && !c.grounded && !inp.j && !c.bot) c.wall = wallPush(c, -c.wnx, -c.wnz)
   if (c.grounded || c.wall) untie(c)
   if (c.grounded || c.wall || c.tie) c.flung = false
-  if (!c.ceil) { if (!J && !c.bot && rowOf(c)?.climb && !c.grounded && !inp.j && (c.wall > 0 || c.vy >= 0) && ceilAbove(c.x, c.y + c.h, c.z, c.r)) ceilTurn(c, true, inp.yaw) }
+  if (!c.ceil) { if (!J && !c.bot && GAME.participantOf(c)?.climb && !c.grounded && !inp.j && (c.wall > 0 || c.vy >= 0) && ceilAbove(c.x, c.y + c.h, c.z, c.r)) ceilTurn(c, true, inp.yaw) }
   else if (inp.j || !ceilAbove(c.x, c.y, c.z, c.r)) { if (inp.j) c.jLock = true; ceilTurn(c, false, c.yaw) }     // latched: no web
   else if (inp.yaw !== c.yaw) { c.yaw = inp.yaw; teleportBody(c.body, c.x, c.y, c.z, turnOf(c)) }
   if (c.ceil) c.wall = 0
-  const up = c.wall && !inp.j ? -rowOf(c).climb * (wx * c.wnx + wz * c.wnz) : 0
-  const cling = !!c.wall && !inp.j && c.vy <= 1.25 * rowOf(c).climb
+  const up = c.wall && !inp.j ? -GAME.participantOf(c).climb * (wx * c.wnx + wz * c.wnz) : 0
+  const cling = !!c.wall && !inp.j && c.vy <= 1.25 * GAME.participantOf(c).climb
   if (J) {
     if (J.flier) {
       if (c.grounded) c.flying = false
-      const P = (!c.bot || c.ai?.doCharge) && !seatOf(c) && rowOf(c)?.spring
+      const P = (!c.bot || c.ai?.doCharge) && !seatOf(c) && GAME.participantOf(c)?.spring
       if (!c.grounded) c.springT = 0
       if (P && c.grounded && !c.flying && (inp.j && (c.springT > 0 || !c.jLock) || c.springT)) {
         if (inp.j) c.springT = (c.springT || 0) + dt
@@ -2748,15 +2748,15 @@ function applyIntent(c, inp, dt) {
   } else {
     if (c.flying) c.flying = false
     // one jump a take-off: latched until airborne, or grounded and not rising (a swinger: until let go)
-    const S = !seatOf(c) && rowOf(c)?.swing, held = S && inp.j && c.jLock && !c.grounded, fresh = inp.j && !c.jLock    // seated, jump is the handbrake
+    const S = !seatOf(c) && GAME.participantOf(c)?.swing, held = S && inp.j && c.jLock && !c.grounded, fresh = inp.j && !c.jLock    // seated, jump is the handbrake
     if (!c.grounded || vy <= 0) c.jLock = false
-    const P = (!c.bot || c.ai?.doCharge) && !seatOf(c) && rowOf(c)?.spring        // a bot charges only when its AI holds one
+    const P = (!c.bot || c.ai?.doCharge) && !seatOf(c) && GAME.participantOf(c)?.spring        // a bot charges only when its AI holds one
     if (!c.grounded) c.springT = 0
     c.jAir = !!inp.j && (c.jAir || !c.grounded)     // held since the air: not a ground press
     if (P && c.grounded && inp.j && (!c.jAir || c.ai?.doCharge)) { c.springT = (c.springT || 0) + dt; c.jLock = true }
     else if (P && c.springT) { vy = (1 + (P.k - 1) * clamp((c.springT - SPRING_TAP) / (P.full - SPRING_TAP), 0, 1)) * stat(c, 'jump', c.jump); c.springT = 0; c.jLock = true }
     else if (!P && inp.j && c.grounded && !c.jLock) { vy = stat(c, 'jump', c.jump); c.jLock = true }
-    else if (fresh && (c.wall || wasWall)) { vy = (rowOf(c).spring?.k || 1) * stat(c, 'jump', c.jump); c.jLock = true; if (m < 0.1) wx = c.wnx, wz = c.wnz }
+    else if (fresh && (c.wall || wasWall)) { vy = (GAME.participantOf(c).spring?.k || 1) * stat(c, 'jump', c.jump); c.jLock = true; if (m < 0.1) wx = c.wnx, wz = c.wnz }
     else if (cling) vy = up
     else if (S && c.tie && !inp.j) { untie(c); vy = Math.max(vy, 0) + WEB_HOP; c.flung = true }
     else if (held) c.jLock = true
@@ -2772,8 +2772,8 @@ function applyIntent(c, inp, dt) {
 
   // a shove: decaying floor on speed along the throw; across it untouched
   if (c.knUp) { vy = Math.max(vy, 0) + c.knUp; c.knUp = 0 }
-  const spd = c.dashing ? stat(c, 'move', GUNS[c.dashing].speed) : stat(c, 'move', J && !c.grounded ? (inp.sprint ? J.sprint ?? c.speed : c.speed) : (inp.sprint ? rowOf(c).sprintSpd ?? c.speed : rowOf(c).run ?? c.speed * RUN))
-  const S = rowOf(c)?.shove, ram = S && (!S.sprint || inp.sprint), M = ram ? S.mass : 1
+  const spd = c.dashing ? stat(c, 'move', GUNS[c.dashing].speed) : stat(c, 'move', J && !c.grounded ? (inp.sprint ? J.sprint ?? c.speed : c.speed) : (inp.sprint ? GAME.participantOf(c).sprintSpd ?? c.speed : GAME.participantOf(c).run ?? c.speed * RUN))
+  const S = GAME.participantOf(c)?.shove, ram = S && (!S.sprint || inp.sprint), M = ram ? S.mass : 1
   if (c.ramM !== M) { c.ramM = M; c.body.setMassProps(M, zeroVec) }
   if (ram) c.vehT = 0
   let mx = wx * spd, mz = wz * spd
@@ -2788,17 +2788,17 @@ function applyIntent(c, inp, dt) {
     }
     if (sm > lim) { mx *= lim / sm; mz *= lim / sm }
   }
-  if (cling) [mx, , mz] = surfV(c.wnx, 0, c.wnz, wx, wz, rowOf(c).climb)
-  else if (c.air && !c.tie && Math.hypot(wx, wz) < 0.1 && rowOf(c)?.swing) mx = c.vx, mz = c.vz
+  if (cling) [mx, , mz] = surfV(c.wnx, 0, c.wnz, wx, wz, GAME.participantOf(c).climb)
+  else if (c.air && !c.tie && Math.hypot(wx, wz) < 0.1 && GAME.participantOf(c)?.swing) mx = c.vx, mz = c.vz
   else if (c.flung) {
     const dx = mx - c.vx, dz = mz - c.vz, d = Math.hypot(dx, dz), k = d > FLING_ACC * dt ? FLING_ACC * dt / d : 1
     mx = c.vx + dx * k; mz = c.vz + dz * k
   }
-  if (c.ceil) [mx, vy, mz] = surfV(0, -1, 0, wx, wz, rowOf(c).climb)
-  if (c.springT > 0 && c.grounded) { const k = stat(c, 'move', rowOf(c).run ?? c.speed * RUN) / 2; mx = wx * k; mz = wz * k }
+  if (c.ceil) [mx, vy, mz] = surfV(0, -1, 0, wx, wz, GAME.participantOf(c).climb)
+  if (c.springT > 0 && c.grounded) { const k = stat(c, 'move', GAME.participantOf(c).run ?? c.speed * RUN) / 2; mx = wx * k; mz = wz * k }
   const fly = flyFast(c, inp.yaw)
   if (fly || c.flyTurn) { c.flyTurn = fly; teleportBody(c.body, c.x, c.y, c.z, turnOf(c, inp.yaw)) }
-  const runner = rowOf(c)?.wallRun && !J && !c.tie && !seatOf(c), R = runner && runUpWall(c, inp, spd, wx, wz, dt)
+  const runner = GAME.participantOf(c)?.wallRun && !J && !c.tie && !seatOf(c), R = runner && runUpWall(c, inp, spd, wx, wz, dt)
   if (R) [mx, vy, mz] = R
   const V = !R && runner && runOver(c, inp, spd)
   if (V) vy = Math.max(vy, V)
@@ -2823,7 +2823,7 @@ function applyIntent(c, inp, dt) {
   reel(c, dt)
   if (c.zip) {
     const [x, y, z, how] = c.zip, dx = x - c.x, dy = y - c.y, dz = z - c.z, d = Math.hypot(dx, dy, dz)
-    const hold = how === 'wall' && rowOf(c).climb, k = (hold ? Math.min(ZIP_SPEED, d / dt) : ZIP_SPEED) / d
+    const hold = how === 'wall' && GAME.participantOf(c).climb, k = (hold ? Math.min(ZIP_SPEED, d / dt) : ZIP_SPEED) / d
     if (d > (hold ? 0.05 : ZIP_SPEED * dt) && (c.zipT -= dt) > 0) { mx = dx * k; vy = dy * k; mz = dz * k }
     else {
       c.zip = null
@@ -2857,7 +2857,7 @@ function knockChar(c, dx, dy, dz, mag) {
 
 // foot to head; c.axis: a rewound one as recorded
 const AXIS_UP = [0, 1, 0]
-const axisOf = c => c.axis || (c.ceil ? [-Math.sin(c.yaw), 0, -Math.cos(c.yaw)] : c.wallRun || c.anim === 4 && rowFor(c.id, c.cid).wallRun ? [Math.sin(c.wy ?? c.yaw), 0, Math.cos(c.wy ?? c.yaw)]
+const axisOf = c => c.axis || (c.ceil ? [-Math.sin(c.yaw), 0, -Math.cos(c.yaw)] : c.wallRun || c.anim === 4 && GAME.participant(c.id, c.cid).wallRun ? [Math.sin(c.wy ?? c.yaw), 0, Math.cos(c.wy ?? c.yaw)]
   : c.flyTurn ?? flyFast(c) ? [Math.sin(FLY_TILT) * Math.sin(c.yaw), Math.cos(FLY_TILT), Math.sin(FLY_TILT) * Math.cos(c.yaw)] : AXIS_UP)
 function eyeAt(c) { const [x, y, z] = axisOf(c), k = c.h * 0.55; return [c.x + x * k, c.y + y * k, c.z + z * k] }
 function eyeOf(c) { return eyeAt(c)[1] }
@@ -3720,7 +3720,7 @@ function wallLook(inp, k, dt) {
 // a tick's look: up a wall run (the aim the sim reads), and the chase camera's easing
 function lookStep(me, inp) {
   if (!me) return
-  wallLook(inp, animOf(me) === 4 && rowOf(me)?.wallRun ? wallUp(me) : 0, TICK)
+  wallLook(inp, animOf(me) === 4 && GAME.participantOf(me)?.wallRun ? wallUp(me) : 0, TICK)
   const s = !(me.dead > 0) && seatOf(me)
   if (s) chaseStep(s[0], inp)
   const o = !s && rideOf(me)
@@ -5002,7 +5002,7 @@ function codeOf(text, base = linkBase()) {
 
 const bonesOf = C => 'bones' in C ? C.bones : MODELS[C.model || 'man'].bones
 const standOf = C => { const M = MODELS[C.model || 'man'], S = C.stand !== undefined ? C.stand : bonesOf(C) ? M.stand : undefined; return S && [...S, ...M.rest || []] }
-const modelFor = (id, cid) => { const C = rowFor(id, cid), M = MODELS[C.model || 'man'], B = bonesOf(C); return B && M.proto ? rigFor(M, B) : M }
+const modelFor = (id, cid) => { const C = GAME.participant(id, cid), M = MODELS[C.model || 'man'], B = bonesOf(C); return B && M.proto ? rigFor(M, B) : M }
 
 // wire anim (fixed): 0 idle, 1 moving, 2 rising, 3 falling, 4 climbing, 5 flying, 6 diving; profiles pick local clips
 function animProfile(spec) {
@@ -5031,7 +5031,7 @@ const BOT_PROFILES = BOTS.map(B => animProfile({ ...B, speed: B.speed ?? CHARS[B
 const profOf = (id, cid) => botOf(id) ? BOT_PROFILES[id - BOT_ID0] : PROFILES[cid]
 
 // jl: jump latch (wire column 17 for remote players)
-const crouchOf = (id, cid, anim, jl, hold) => !hold && anim < 2 && jl && rowFor(id, cid).spring ? anim ? 'crouchRun' : 'crouch' : anim
+const crouchOf = (id, cid, anim, jl, hold) => !hold && anim < 2 && jl && GAME.participant(id, cid).spring ? anim ? 'crouchRun' : 'crouch' : anim
 function animOf(c) {
   if (c.dead > 0 || seatOf(c)) return 0
   // own fall threshold while hovering, or the pose flickers
@@ -7194,14 +7194,14 @@ const WALL_EASE = 0.15, wallTurns = new WeakMap(), wallRolls = new WeakMap(), ea
 function drawSeat(m, c, seat, list) {
   const o = seat && list.find(o => o.id === seat[0]), V = o && vehicleOf(o.K)
   if (!V?.seats[seat[1]]) return false
-  m.position.set(...seatAt({ ...o, at0: hullAt(o.K) }, seatFit(V.seats[seat[1]], rowFor(c.id, c.cid))))
+  m.position.set(...seatAt({ ...o, at0: hullAt(o.K) }, seatFit(V.seats[seat[1]], GAME.participant(c.id, c.cid))))
   m.quaternion.set(...o.q)
   wallTurns.delete(m); wallRolls.delete(m); ceilingTurns.delete(m)
   return true
 }
 function drawTurned(m, c, on, dt, ticks) {
   let k = wallTurns.get(m) || 0, r = wallRolls.get(m) || 0, th = 0, yaw = 0
-  const h = c.h ?? rowFor(c.id, c.cid).h, n = ticks ? ticks.length : 1
+  const h = c.h ?? GAME.participant(c.id, c.cid).h, n = ticks ? ticks.length : 1
   const step = (c, on, dt) => {
     k = eased(k, on, dt); th = k * Math.PI / 2; yaw = c.wy ?? c.yaw
     const s = Math.sin(yaw), q = Math.cos(yaw), [ax, ay, az] = on ? [s, 0, q] : [0, 1, 0]
@@ -7231,7 +7231,7 @@ function drawCeiling(m, c, on, dt, ticks) {
   for (let i = 0; i < n - 1; i++) p.k = eased(p.k, ticks[i].ceil, TICK)
   const k = p.k = eased(p.k, on, ticks ? n && TICK : dt), th = k * Math.PI / 2
   if (!k) ceilingTurns.delete(m)
-  const C = rowFor(c.id, c.cid), h = c.h ?? C.h, x = -Math.sin(c.yaw), z = -Math.cos(c.yaw), d = ((on ? 1 : 0) - Math.sin(th)) * h
+  const C = GAME.participant(c.id, c.cid), h = c.h ?? C.h, x = -Math.sin(c.yaw), z = -Math.cos(c.yaw), d = ((on ? 1 : 0) - Math.sin(th)) * h
   p.top = c.y + (on ? 0 : h) + C.r + 0.02
   m.position.set(c.x + x * d, c.y + (on ? 0 : h) - Math.cos(th) * h, c.z + z * d)
   const a = c.yaw / 2, s = Math.sin(th / 2), q = Math.cos(th / 2)
@@ -7778,7 +7778,7 @@ function* warmSteps(root, far) {
 function bodyStep(B, M, id, cid, key, more) {
   if (M.kind === 'built' && BUILT_CACHE.has(key)) { B.inst ||= BUILT_CACHE.get(key); return true }
   if (!B.inst) {
-    const r = (B.gen ||= bodySteps(M, id, cid, key, rowFor(id, cid))).next()
+    const r = (B.gen ||= bodySteps(M, id, cid, key, GAME.participant(id, cid))).next()
     if (r.done && (B.inst = r.value) && !M.proto) BUILT_CACHE.set(key, B.inst)
     return false
   }
@@ -7805,7 +7805,7 @@ const offPlay = () => phase !== 'playing' || pickOpen || isHost && gameMode === 
 const prepLook = (key, steps) => prepQueue.some(q => q.key === key) || prepQueue.push({ key, steps })
 // every pickup a pad can roll and the rows' held guns
 function prepareLooks(pairs) {
-  const held = pairs.flatMap(([id, cid]) => [id >= BOT_ID0 ? gunNamed([rowFor(id, cid).atk].flat()[0]) : handsOf(CHARS[cid]), ...[].concat(rowFor(id, cid).atk ?? []).map(gunNamed)])
+  const held = pairs.flatMap(([id, cid]) => [id >= BOT_ID0 ? gunNamed([GAME.participant(id, cid).atk].flat()[0]) : handsOf(CHARS[cid]), ...[].concat(GAME.participant(id, cid).atk ?? []).map(gunNamed)])
   for (const [kind, id] of [...DROPS.map(g => ['gun', g]), ...held.filter(g => GUNS[g] && GUNS[g].held !== false).map(g => ['gun', g]),
     ...dropping(POWERS).map(v => ['power', v - 1]), ...dropping(HEALS).map(v => ['heal', v - 1]),
     ...PADS.filter(p => p[3]).map(([, , , n]) => healNamed(n) > 0 ? ['heal', healNamed(n) - 1] : ['gun', gunNamed(n)])])
@@ -7839,7 +7839,7 @@ function prepareStep() {
     const [id, cid] = prepQueue[0], M = modelFor(id, cid), key = skinKey(id, cid)
     if (M.kind !== 'built' && !M.proto) return
     if (!bodyStep(prepAt ||= {}, M, id, cid, key, more)) { fresh = false; continue }
-    if (camera && id >= 0 && !detailCache.has(key)) { (prepAt.far ||= farSteps(id, cid, profOf(id, cid), rowFor(id, cid))).next(); fresh = false; continue }
+    if (camera && id >= 0 && !detailCache.has(key)) { (prepAt.far ||= farSteps(id, cid, profOf(id, cid), GAME.participant(id, cid))).next(); fresh = false; continue }
     if (!(prepAt.far2 ||= warmSteps(prepAt.inst, detailCache.get(key)?.list || [])).next().done) { fresh = false; continue }
     if (!fresh) return
     const had = avatars.get(id), body = prepAt?.inst
@@ -7913,7 +7913,7 @@ function avatarFor(id, cid, cap, body) {
     return a.mesh
   }
   if (a) dropAvatar(id)
-  const C = rowFor(id, cid)
+  const C = GAME.participant(id, cid)
   const tint = colorOf(id, cid)
   let mesh, mixer = null, actions = null, drop = 0, walkDrop = 0, sprintDrop = 0, ankle = 0, turned = new Map()
 
@@ -8121,7 +8121,7 @@ function throwSparks(a, on, dt, t) {
 }
 // A jet's `aura` glows round its flier while airborne (the anim state guests get too), easing in and out.
 function drawAura(id, want, dt) {
-  const a = avatars.get(id), J = a && rowFor(id, a.cid).jet
+  const a = avatars.get(id), J = a && GAME.participant(id, a.cid).jet
   if (!J || !('aura' in J)) return
   a.auraOp = Math.min(1, Math.max(0, (a.auraOp || 0) + (want >= 2 ? 4 : -4) * dt))
   if (a.auraOp > 0) bodyShell(id, J.aura, a.auraOp * 0.35, 0.08)
@@ -8750,7 +8750,7 @@ function drawHeld(id, state, t, view = null, fade = 1) {
   const a = avatars.get(id)
   if (!a) return
   if (!state || state.dead > 0) { if (a.held) a.held.visible = false; return }
-  let gun = Number.isInteger(state.gun) && GUNS[state.gun] ? state.gun : handsOf(rowFor(id, a.cid))
+  let gun = Number.isInteger(state.gun) && GUNS[state.gun] ? state.gun : handsOf(GAME.participant(id, a.cid))
   const age = a.shotAt === undefined ? Infinity : t - a.shotAt
   if (GUNS[a.shotGun]?.flashMs > age) gun = a.shotGun
   if (a.chargeAt !== undefined && a.chargeGun !== gun) a.chargeAt = undefined
