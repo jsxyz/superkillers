@@ -11420,12 +11420,6 @@ function closeCharPick() {
 // join mode: a guest connected and not yet in; its hello waits for this pick
 const joinPick = () => picking
 const pickSelf = () => joinPick() ? -1 : myId
-// why the room refuses character i to this player now, '' if it doesn't
-function refusal(i) {
-  const C = CHARS[i], L = sideLocked(C.side, pickSelf())
-  return !sideOffered(C.side) ? roomName() + ': ' + Object.keys(SIDES).filter(sideOffered).map(k => SIDES[k].name).join(', ') + ' only'
-    : L.locked ? 'Balanced: ' + L.mine + ' v ' + L.theirs : taken(C.team, pickSelf()) ? 'Taken' : ''
-}
 const roomName = () => gameMode === 'waves' ? 'Waves' : 'Free-for-all'
 // the room's sides in one grid: a card selects, Play (or Enter, or a second click) confirms
 const pickSides = () => [...Object.keys(SIDES), ''], sideColor = C => (SIDES[C.side] || C).color
@@ -11436,11 +11430,11 @@ const pickName = i => teamOf(i) ? TEAMS[teamOf(i)].name : CHARS[i].card || CHARS
 const playing = i => { const c = !joinPick() && selfChar(); return !!c && pickEntry(c.cid) === i }
 function paintPicker() {
   const wrap = el('#pick-cards'), live = selfChar(), joining = joinPick(), now = live ? live.cid : myCid
-  if (pickAt < 0) pickAt = joining && refusal(now) ? pickAll().find(i => !refusal(i)) ?? pickEntry(now) : pickEntry(now)
+  if (pickAt < 0) pickAt = joining && GAME.rows.refusal(now) ? pickAll().find(i => !GAME.rows.refusal(i)) ?? pickEntry(now) : pickEntry(now)
   pickAt ??= pickAll()[0]
   el('#pick-title').textContent = joining ? 'Choose your character' : 'Character'
   el('#pick-back').textContent = joining ? 'Leave' : 'Back'
-  el('#pick-note').textContent = joining ? roomName() + ' · ' + LEVELS[levelId].name + (balanced() ? ' · sides balanced' : '')
+  el('#pick-note').textContent = joining ? roomName() + ' · ' + LEVELS[levelId].name + GAME.rows.pickNote()
     : live && live.shiftCool > 0 ? 'Changing again in a moment.' : 'You keep the damage you have taken; this is not a respawn.'
   el('#pick-keys').textContent = 'Arrow keys choose · Enter picks · Esc: ' + el('#pick-back').textContent
   wrap.innerHTML = ''
@@ -11450,7 +11444,7 @@ function paintPicker() {
     const h = wrap.appendChild(document.createElement('div'))
     h.className = 'hd'; h.textContent = SIDES[k]?.name ?? 'Others'; h.style.borderLeftColor = css(SIDES[k]?.color ?? 0x7d8590)
     for (const i of E) {
-      const why = refusal(i), n = teamOf(i) ? members(teamOf(i)).length : 1, d = wrap.appendChild(document.createElement('div'))
+      const why = GAME.rows.refusal(i), n = teamOf(i) ? members(teamOf(i)).length : 1, d = wrap.appendChild(document.createElement('div'))
       d.className = 'card pc' + (i === pickAt ? ' sel' : '') + (why ? ' taken' : '')
       d.innerHTML = '<div class="nm">' + pickName(i) + '</div>' +
         (n > 1 ? '<span class="n">×' + n + '</span>' : '') + (why ? '<span class="why">' + why + '</span>' : '')
@@ -11469,7 +11463,7 @@ function pickSel(i) {
   if (pickAt !== i) pickAtT = now()
   pickAt = i
   for (const d of pickCards()) d.classList.toggle('sel', +d.dataset.i === i)
-  const C = CHARS[i], T = teamOf(i) && TEAMS[teamOf(i)], why = refusal(i), mine = playing(i)
+  const C = CHARS[i], T = teamOf(i) && TEAMS[teamOf(i)], why = GAME.rows.refusal(i), mine = playing(i)
   el('#pick-name').textContent = pickName(i)
   el('#pick-role').textContent = T ? T.role + ' · ' + members(teamOf(i)).map(k => CHARS[k].name).join(', ') : C.role || ''
   el('#pick-stats').innerHTML = PICK_STATS.map(([k, f]) => '<div><span>' + k + '</span><i><b style="width:' +
@@ -11483,7 +11477,7 @@ function pickSel(i) {
 }
 function pickGo() {
   const i = pickAt, joining = joinPick()
-  if (refusal(i) || playing(i)) return
+  if (GAME.rows.refusal(i) || playing(i)) return
   if (joining) { if (!teamOf(i) || teamOf(i) !== teamOf(myCid)) myCid = settings.cid = i; saveSettings(); closeCharPick(); isHost ? hostIn() : hello(); lockPointer(); joinGesture(); return }
   requestChar(i)
   closeCharPick()
@@ -13748,6 +13742,12 @@ GAME.commands = {
               spawnBots(n)
               sysMsg('§7Enemies: §f' + BOT_COUNT) } },
 }
+// why the room refuses character i to this player now, '' if it doesn't
+function refusal(i) {
+  const C = CHARS[i], L = sideLocked(C.side, pickSelf())
+  return !sideOffered(C.side) ? roomName() + ': ' + Object.keys(SIDES).filter(sideOffered).map(k => SIDES[k].name).join(', ') + ' only'
+    : L.locked ? 'Balanced: ' + L.mine + ' v ' + L.theirs : taken(C.team, pickSelf()) ? 'Taken' : ''
+}
 // a joining player's row: the one it asked for, unless this room cannot take it (told why), and its team fielded once it stands
 GAME.rows = {
   admit(id, asked) {
@@ -13765,6 +13765,9 @@ GAME.rows = {
   joined(c, cid) { if (CHARS[cid].team) fieldTeam(c), teamsChanged() },
   switch: switchChar,
   refuse: noSwap,
+  refusal,
+  // what the pick screen's room note adds
+  pickNote: () => balanced() ? ' · sides balanced' : '',
   cid: v => clamp(v | 0, 0, CHARS.length - 1),
   of: cid => CHARS[cid],
 }
