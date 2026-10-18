@@ -12922,27 +12922,14 @@ const GUEST_MSGS = {
     if (clean.length !== d.fx.length) snapDropped += d.fx.length - clean.length
     d.fx = clean
   }
-  // pk absent = unchanged, not none; unordered, so versioned by packet time
-  if (Array.isArray(d.pk) && d.t > pkAt) { snapPk = d.pk; pkAt = d.t }
-  // whole triples within the host's max, else dropped entire; absent = none, so versioned by packet time too
-  if (d.t > twAt) {
-    twAt = d.t
-    snapTw = Array.isArray(d.tw) && d.tw.length && d.tw.length % 3 === 0 &&
-      d.tw.length <= TOR_MAX * 3 && d.tw.every(v => Number.isFinite(v))
-      ? d.tw.map((v, i) => i % 3 === 2 ? clamp(v, 0, 40) : clamp(v, -ARENA, ARENA)) : null
-  }
+  GAME.lifecycle.takeItems(d)
   if (Number.isFinite(d.t) && Array.isArray(d.P)) for (const p of d.P) trackRow(p, d.t)
   if (Number.isFinite(d.t)) noteSnap(d.t)
   if (buf.length && d.t <= buf[buf.length - 1].t) return   // unordered channel
   buf.push(d)
   if (buf.length > 24) buf.shift()
   if (!haveT) { renderT = d.t - INTERP_MS; haveT = true }
-  resultsLeft = d.mo || 0
-  matchLeft = d.ml || 0
-  fragLimit = d.fl | 0
-  if (MODES.includes(d.md)) gameMode = d.md
-  if (d.bl !== undefined) balanceOn = !!d.bl
-  if (joinPick() && !pickOpen && phase === 'playing') { openCharPick(); if (gameMode === 'waves') prepareRows(botPairs(waveOrder())) }
+  GAME.lifecycle.takeMatch(d)
   // every snapshot, not just at join: a mid-match switch
   hostLevel(d.lv, d.ls, d.lh)
   if (d.lv === levelId && Array.isArray(d.cr) && !craterHeld(d.cr) && now() - levelSwitchAt >= LEVEL_SWITCH_MS) {
@@ -13544,17 +13531,44 @@ GAME.schema = PLAYER_STATE
 // serving room empties
 GAME.lifecycle = {
   matchStart() {
-  resultsLeft = 0
-  fragLimit = settings.frags; timeLimit = settings.mins * 60
-  matchLeft = timeLimit
+    resultsLeft = 0
+    fragLimit = settings.frags; timeLimit = settings.mins * 60
+    matchLeft = timeLimit
   },
   populate() {
-  if (gameMode === 'waves') startWave(0)
-  else spawnBots(BOT_COUNT)
+    if (gameMode === 'waves') startWave(0)
+    else spawnBots(BOT_COUNT)
   },
   sessionEnd() { resultsLeft = 0; matchLeft = 0; lastResSig = null },
   left(id) { if (dropMates(id)) teamsChanged() },
   empty() { resetMatch() },
+  // a snapshot's match fields, in their wire order, and a guest taking them
+  snapshot: () => ({
+    pk: pickups.filter(p => p.respawn <= 0).map(p => [p.x, p.y, p.z, p.gun, p.pow, p.heal]),
+    mo: resultsLeft > 0 ? r2(resultsLeft) : 0,
+    ml: timeLimit ? r2(matchLeft) : 0,
+    fl: gameMode === 'waves' ? 0 : fragLimit, md: gameMode, bl: settings.balance !== false ? 1 : 0,
+    tw: tornadoNow()?.map(r2),
+  }),
+  takeItems(d) {
+    // pk absent = unchanged, not none; unordered, so versioned by packet time
+    if (Array.isArray(d.pk) && d.t > pkAt) { snapPk = d.pk; pkAt = d.t }
+    // whole triples within the host's max, else dropped entire; absent = none, so versioned by packet time too
+    if (d.t > twAt) {
+      twAt = d.t
+      snapTw = Array.isArray(d.tw) && d.tw.length && d.tw.length % 3 === 0 &&
+        d.tw.length <= TOR_MAX * 3 && d.tw.every(v => Number.isFinite(v))
+        ? d.tw.map((v, i) => i % 3 === 2 ? clamp(v, 0, 40) : clamp(v, -ARENA, ARENA)) : null
+    }
+  },
+  takeMatch(d) {
+    resultsLeft = d.mo || 0
+    matchLeft = d.ml || 0
+    fragLimit = d.fl | 0
+    if (MODES.includes(d.md)) gameMode = d.md
+    if (d.bl !== undefined) balanceOn = !!d.bl
+    if (joinPick() && !pickOpen && phase === 'playing') { openCharPick(); if (gameMode === 'waves') prepareRows(botPairs(waveOrder())) }
+  },
 }
 
 // ---------------------------------------------------------------- loop
@@ -13856,11 +13870,7 @@ function stepSim(t) {
       snapsOut++
       sendSnapshot({ k: 's', t: tickAt,
         P: [...players].map(([id, c]) => packPlayer(id, c)),
-        pk: pickups.filter(p => p.respawn <= 0).map(p => [p.x, p.y, p.z, p.gun, p.pow, p.heal]),
-        mo: resultsLeft > 0 ? r2(resultsLeft) : 0,
-        ml: timeLimit ? r2(matchLeft) : 0,
-        fl: gameMode === 'waves' ? 0 : fragLimit, md: gameMode, bl: settings.balance !== false ? 1 : 0,
-        tw: tornadoNow()?.map(r2),
+        ...GAME.lifecycle.snapshot(),
         lv: levelId, ...levelWire(),
         fx: tracers })
       if (tracers.length) { if (drawing()) addTracers(tracers, t); tracers = [] }
