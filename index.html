@@ -2676,6 +2676,15 @@ function padTouching(obj) {
 
 const tankOf = c => (jetOf(c)?.fuel || 0) * eff(c, 'jet')
 
+// a person touching a vehicle is held off it (vehT): the contact's normal, towards the person
+function holdOff(list, touch) {
+  for (const [o, c, m] of touch) if (o.V && list.includes(c)) {
+    const n = m.getContactPoint(0).get_m_normalWorldOnB(), k = A.getPointer(m.getBody0()) === A.getPointer(c.body) ? 1 : -1      // on B, towards A
+    c.vehN = [k * n.x(), k * n.y(), k * n.z()]; c.vehO = o; c.vehT = 0.3
+  }
+}
+// Bullet's contacts matter only with something thrown, or a vehicle in play or knocked awake
+const touchOf = list => objs.some(o => o.thrownBy !== undefined || o.V && (!o.parked || o.body.isActive())) ? touching(list) : []
 function pressesOn(c, o, x, z) {
   const n = Math.hypot(x, z) || 1
   return castRay(c.x, c.y, c.z, -x / n, 0, -z / n, c.r + 0.25, G_OBJ) < 1 && A.getPointer(rayCb.get_m_collisionObject()) === A.getPointer(o.body)
@@ -4554,6 +4563,7 @@ function tickChars(list, inputFor, dt, P, t) {
   const ms = now() - p0
   postTick(list)
   if (P) P.afterPhysics(t)
+  else holdOff(list, touchOf(list))
   return ms
 }
 
@@ -13307,12 +13317,9 @@ function weakenNear(list) {
 // host only. A contact's impulse = m/s given a person (mass 1)
 function vehicleTick(list, credit, touch, dt) {
   for (const o of objs) if (o.launchBy !== undefined && ((o.launchT -= dt) <= 0 || !o.body.isActive())) o.launchBy = undefined
+  holdOff(list, touch)
   for (const [o, c, m] of touch) {
     if (!o.V) continue
-    if (list.includes(c)) {
-      const n = m.getContactPoint(0).get_m_normalWorldOnB(), k = A.getPointer(m.getBody0()) === A.getPointer(c.body) ? 1 : -1      // on B, towards A
-      c.vehN = [k * n.x(), k * n.y(), k * n.z()]; c.vehO = o; c.vehT = 0.3
-    }
     let J = 0
     for (let k = m.getNumContacts(); k--;) J += m.getContactPoint(k).getAppliedImpulse()
     if (!(J > 0) || !list.includes(c) || c.dead > 0) continue
@@ -13518,8 +13525,7 @@ const HOST_PHASES = {
   },
   afterPhysics: t => { const { dt, all, credit } = t
   dashStrikes(all, credit)
-  // Bullet's contacts matter only with something thrown, or a vehicle in play or knocked awake
-  const touch = objs.some(o => o.thrownBy !== undefined || o.V && (!o.parked || o.body.isActive())) ? touching(all) : []
+  const touch = touchOf(all)
   strikeObjects(all, dt, touch, credit)
   vehicleTick(all, credit, touch, dt)
   },
@@ -13939,10 +13945,10 @@ const OWN_PREDICTION = (F => {
   const S = GAME.schema.step, fuelEps = S.fuel + S.fuel / 10
   if (REWIND_EPS < Math.hypot(S.x, S.y, S.z)) throw Error('REWIND_EPS is under the wire step')
   return {
-    take: (c, e = {}) => { e.x = c.x; e.y = c.y; e.z = c.z; e.fuel = c.fuel; e.jl = !!c.jLock; e.fl = !!c.flying; e.sp = c.springT || 0; e.ft = !!c.flyTurn; e.kn = [c.knT || 0, c.knx || 0, c.knz || 0, c.knUp || 0]; e.wh = !!c.wallHeld; e.sl = !!c.slide; e.web = c.web || 0; e.rope = c.tie && [c.web, c.tie.want]; return e },
+    take: (c, e = {}) => { e.x = c.x; e.y = c.y; e.z = c.z; e.fuel = c.fuel; e.jl = !!c.jLock; e.fl = !!c.flying; e.sp = c.springT || 0; e.ft = !!c.flyTurn; e.kn = [c.knT || 0, c.knx || 0, c.knz || 0, c.knUp || 0]; e.wh = !!c.wallHeld; e.sl = !!c.slide; e.web = c.web || 0; e.rope = c.tie && [c.web, c.tie.want]; e.vh = c.vehT > 0 && [c.vehT, c.vehO.id, ...c.vehN]; return e },
     err: (e, a) => Math.hypot(e.x - a[F.x], e.y - a[F.y], e.z - a[F.z]),
     agrees: (e, a, web) => (e.web || 0) === web && Math.abs(e.fuel - a[F.fuel]) <= fuelEps && e.jl === !!a[F.jLock],
-    carry: (e, c) => { c.flying = e.fl; c.springT = e.sp; c.flyTurn = e.ft; [c.knT, c.knx, c.knz, c.knUp] = e.kn; c.wallHeld = e.wh; c.slide = e.sl; c.rope = e.rope },
+    carry: (e, c) => { c.flying = e.fl; c.springT = e.sp; c.flyTurn = e.ft; [c.knT, c.knx, c.knz, c.knUp] = e.kn; c.wallHeld = e.wh; c.slide = e.sl; c.rope = e.rope; const o = e.vh && objs.find(o => o.id === e.vh[1]); c.vehT = o ? e.vh[0] : 0; if (o) { c.vehO = o; c.vehN = e.vh.slice(2) } },
     // re-tying the web its own prediction had, it keeps that prediction's reel target (off the wire); the length is the restored distance
     restore: (c, a, web) => { const [x, y, z, vx, vy, vz] = ownExact || [a[F.x], a[F.y], a[F.z], a[F.vx], a[F.vy], a[F.vz]]; restoreChar(c, x, y, z, vx, vy, vz, a[F.fuel]); tie(c, web); if (c.tie && c.rope?.[0] === web) c.tie.want = Math.min(c.tie.len, c.rope[1]); c.rope = null; c.jLock = !!a[F.jLock] },
   }
