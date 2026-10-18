@@ -2584,6 +2584,9 @@ function tie(c, web) {
   const k = new A.btPoint2PointConstraint(hub, c.body, pa, zeroVec)
   A.destroy(pa)
   world.addConstraint(k, true)
+  // the hub turns at the swinger's own rate from the start (r × v / r²): a catch keeps the swing's speed
+  const v = c.body.getLinearVelocity(), rx = c.x - at[0], ry = c.y - at[1], rz = c.z - at[2], r2 = rx * rx + ry * ry + rz * rz || 1
+  posVec.setValue((ry * v.z() - rz * v.y()) / r2, (rz * v.x() - rx * v.z()) / r2, (rx * v.y() - ry * v.x()) / r2); hub.setAngularVelocity(posVec)
   // the length it reels in to: its arc's lowest point WEB_CLEAR over the ground under the swinger (Bullet's ray down);
   // on a wall within WEB_WALL, a zip: 1 m, up the building
   const L = Math.hypot(c.x - at[0], c.y - at[1], c.z - at[2]), floor = c.y - staticRay(c.x, c.y, c.z, 0, -1, 0, 400)
@@ -2596,7 +2599,9 @@ function reel(c, dt) {
   if (!t || t.len <= t.want) return
   const a = t.at, d = Math.hypot(c.x - a[0], c.y - a[1], c.z - a[2]) || 1
   t.len = Math.max(t.want, t.len - WEB_REEL * dt)
-  posVec.setValue((c.x - a[0]) * t.len / d, (c.y - a[1]) * t.len / d, (c.z - a[2]) * t.len / d); t.k.setPivotA(posVec)
+  // the pivot is in the hub's frame, which has turned with the swing
+  const q = t.hub.getWorldTransform().getRotation(), [px, py, pz] = rotq([-q.x(), -q.y(), -q.z(), q.w()], [(c.x - a[0]) * t.len / d, (c.y - a[1]) * t.len / d, (c.z - a[2]) * t.len / d])
+  posVec.setValue(px, py, pz); t.k.setPivotA(posVec)
 }
 function untie(c) {
   if (c.tie) { world.removeConstraint(c.tie.k); world.removeRigidBody(c.tie.hub); A.destroy(c.tie.k); A.destroy(c.tie.hub); A.destroy(c.tie.ms) }
