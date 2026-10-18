@@ -12998,7 +12998,7 @@ function reconcile(a) {
     const h = w ? [o.id, ...w] : tr.at(-1).p
     const dot = m ? Math.abs(h[4] * m[4] + h[5] * m[5] + h[6] * m[6] + h[7] * m[7]) : 0
     objErr = Math.max(objErr, m ? Math.hypot(h[1] - m[1], h[2] - m[2], h[3] - m[3]) +
-      2 * Math.acos(Math.min(1, dot)) * o.R : Infinity)
+      2 * Math.acos(Math.min(1, dot)) * o.R : 0)
     return w || [...h.slice(1), ...(m ? m.slice(8) : [0, 0, 0, 0, 0, 0])]
   })
   const restore = () => objs.forEach((o, i) => {
