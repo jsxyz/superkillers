@@ -11279,6 +11279,9 @@ function speak(who, i) {
   if (conns.size) broadcast({ k: 'say', w: who, i })
 }
 
+// the audio the engine plays through: per frame, the radio, effects, one sound, voice lines and the voices' start
+GAME.audio = { frame: sfxFrame, radio: radioTick, fx: sfxFx, play: sfxPlay, speak, say, takeRadio, voices: startVoices }
+
 // ---------------------------------------------------------------- pause
 // nothing pauses: the host keeps simulating
 function openPause() {
@@ -12291,7 +12294,7 @@ function takeObjects(o, t) {
     if (!OBJECTS[k] || !Number.isInteger(id) || id < 0 || id >= OBJ_MAX) continue
     const was = objTracks.get(id)?.at(-1).p[0], V = was !== k && vehicleOf(OBJECTS[was])
     if (was === undefined && objSeeds[id] === undefined) objFirst.set(id, Math.round(2 * x) + ' ' + Math.round(2 * z))
-    if (V && OBJECTS[k].name === V.wreck) sfxPlay('boom', { x, y, z }, 'world', 1, 0, 0, OBJECTS[was].name)
+    if (V && OBJECTS[k].name === V.wreck) GAME.audio.play('boom', { x, y, z }, 'world', 1, 0, 0, OBJECTS[was].name)
     track(objTracks, id, OBJ_MAX, t, [k, clamp(x, -ARENA, ARENA), clamp(y, VOID_Y, ARENA),
       clamp(z, -ARENA, ARENA), ...(n > 1e-9 && n < Infinity ? q.map(v => v / n) : [0, 0, 0, 1])])
   }
@@ -12895,7 +12898,7 @@ const GUEST_MSGS = {
     },
   },
   lag: { apply: d => { onLag(d.n) } },
-  say: { apply: d => { say(String(d.w), d.i | 0) } },
+  say: { apply: d => { GAME.audio.say(String(d.w), d.i | 0) } },
   sys: { apply: d => { sysMsg(String(d.m || '').slice(0, 200)) } },
   poll: { apply: d => {
     takePoll(d); return
@@ -12952,7 +12955,7 @@ const GUEST_MSGS = {
   takeHeld(d.oh)
   takeSeats(d.od)
   takeVel(d.ov)
-  takeRadio(d.or)
+  GAME.audio.takeRadio(d.or)
   if (d.vh !== undefined) vehHp = Number.isInteger(d.vh) && d.vh >= 0 && d.vh <= 1e6 ? d.vh : null
   if (d.o) takeObjects(d.o, d.t)       // after lv: a switch clears the tracks
   if (d.fx && d.fx.length) {
@@ -12964,10 +12967,10 @@ const GUEST_MSGS = {
     // hitmarker not delayed. f[7]: 1 hit, 3 burst on a body, 2 belly flop ring
     for (const f of d.fx) if (marksHit(f) && f[8] === myId) flashHit()
   }
-  sfxFx(d.fx, 1)
+  GAME.audio.fx(d.fx, 1)
   if (Array.isArray(d.fx)) for (const f of d.fx) if (f[7] === 5 && Number.isInteger(f[10]) && f[10] >= 0 && f[10] < OBJ_MAX) {
     const K = Number.isInteger(f[11]) ? OBJECTS[f[11]] : null
-    if (!(now() - (burnHeard.get(f[10]) ?? -1e9) < 1000)) sfxPlay('burning', { x: f[0], y: f[1], z: f[2] }, 'world', 1, 0, 3, K && K.name)
+    if (!(now() - (burnHeard.get(f[10]) ?? -1e9) < 1000)) GAME.audio.play('burning', { x: f[0], y: f[1], z: f[2] }, 'world', 1, 0, 3, K && K.name)
     burnHeard.set(f[10], now())
   }
   const mine = (d.P || []).find(p => p[PLAYER_STATE.col.id] === myId)
@@ -13141,7 +13144,7 @@ function initEndModal() {
 function beginPlay() {
   phase = 'playing'
   played = true; jitTip()
-  startVoices()
+  GAME.audio.voices()
   lastRecvAt = now()
   kickedBy = null
   el('#ui').style.display = 'none'
@@ -13528,7 +13531,7 @@ const HOST_PHASES = {
     if (id !== 0) c.pitch = inp.pitch || 0
     if (inp.fire || inp.alt) c.aimD = inp.d || 0   // kept for the burst
     c.cool = Math.max(0, c.cool - dt)
-    for (const cm of [stepCharge(c, dt, inp), stepAltCharge(c, dt, inp)]) if (cm) { cm.push(id, 1); tracers.push(cm); sfxFx([cm]) }
+    for (const cm of [stepCharge(c, dt, inp), stepAltCharge(c, dt, inp)]) if (cm) { cm.push(id, 1); tracers.push(cm); GAME.audio.fx([cm]) }
     if (c.powT > 0 && (c.powT -= dt) <= 0) { c.powT = 0; c.pow = 0 }
     if (c.markT > 0 && (c.markT -= dt) <= 0) { c.markT = 0; c.mark = 0 }
     c.spCool = Math.max(0, c.spCool - dt)
@@ -13559,11 +13562,11 @@ const HOST_PHASES = {
     const own = (roster.get(k.id) || {}).name || '?', kn = c === k ? own : rowOf(c).name + ' (' + own + ')'
     announce('§f' + kn + ' §7dropped §f' + vn + ' §8(' + G.name + ')')
     const who = c.bot ? c.bot.name : CHARS[c.cid].name, lines = SPEECH[who]
-    if (lines) speak(who, Math.random() * (lines.length - 1) | 0)
+    if (lines) GAME.audio.speak(who, Math.random() * (lines.length - 1) | 0)
   }
   const emit = (id, fx) => {
     for (const f of fx) { f.push(id); tracers.push(f) }
-    sfxFx(fx)
+    GAME.audio.fx(fx)
     if (id === 0 && fx.some(marksHit)) flashHit()
   }
   for (const [id, f, ms] of zipLines.splice(0)) { emit(id, [f]); f.push(ms) }     // [.., -1, 9, shooter, ms]
@@ -13998,7 +14001,7 @@ function draw(dt, t) {
     if (fxWait.length) {
       let n = 0
       while (n < fxWait.length && fxWait[n].t <= renderT) n++
-      if (n) { for (let i = 0; i < n; i++) { addTracers(fxWait[i].fx, now()); sfxFx(fxWait[i].fx, 2) }
+      if (n) { for (let i = 0; i < n; i++) { addTracers(fxWait[i].fx, now()); GAME.audio.fx(fxWait[i].fx, 2) }
                fxWait.splice(0, n) }
     }
     others = remoteAt(renderT).filter(p => p.id !== myId)
@@ -14048,8 +14051,8 @@ function draw(dt, t) {
 
   drawPickups(pkl, t)
   drawObjects(obl, d => wheelsOf(d, isHost ? now() : renderT, camera.position))      // null: its own stand
-  sfxFrame(me, others, t, obl)
-  radioTick()
+  GAME.audio.frame(me, others, t, obl)
+  GAME.audio.radio()
 
   const cam = updateCamera(meD, input, camera, firstPerson)
   GAME.view.radar(meD, others, t)
