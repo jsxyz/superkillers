@@ -4472,74 +4472,7 @@ function driveStep(c, inp) {
   })
   o.body.activate()
 }
-// host only. A contact's impulse = m/s given a person (mass 1)
-function vehicleTick(list, credit, touch, dt) {
-  for (const [o, c, m] of touch) {
-    if (!o.V) continue
-    if (list.includes(c)) {
-      const n = m.getContactPoint(0).get_m_normalWorldOnB(), k = A.getPointer(m.getBody0()) === A.getPointer(c.body) ? 1 : -1      // on B, towards A
-      c.vehN = [k * n.x(), k * n.y(), k * n.z()]; c.vehO = o; c.vehT = 0.3
-    }
-    let J = 0
-    for (let k = m.getNumContacts(); k--;) J += m.getContactPoint(k).getAppliedImpulse()
-    if (!(J > 0) || !list.includes(c) || c.dead > 0) continue
-    const dx = c.x - o.x, dz = c.z - o.z, d = Math.hypot(dx, dz) || 1, v = o.body.getLinearVelocity(), into = (v.x() * dx + v.z() * dz) / d
-    if (into < 2 || o.thrownBy !== undefined) continue
-    c.hp -= stat(c, 'take', o.V.ram * into)
-    const by = players.get(o.riders[0])
-    knockChar(c, dx / d, 0.3, dz / d, into * 0.5)
-    if (downed(c)) by ? credit(by.id, by)(c, { name: o.K.name }) : fell(c, 'was run over by a ' + o.K.name)
-  }
-  for (const o of objs) if (o.V) {
-    if (o.v0) {                         // m/s lost this step
-      const v = o.body.getLinearVelocity(), dv = Math.hypot(v.x() - o.v0[0], v.y() - o.v0[1], v.z() - o.v0[2])
-      if (dv > 8) o.hp -= (dv - 8) * 4
-      o.v0 = null
-    }
-    const B = o.V.boom
-    if (o.fuse === undefined && o.hp <= o.V.hp * B.burn) {
-      o.fuse = B.fuse; sfxPlay('burning', { x: o.x, y: o.y, z: o.z }, 'world', 1, 0, B.fuse, o.K.name)
-    }
-    if (o.fuse !== undefined && (o.flame = (o.flame || 0) - dt) <= 0) {
-      o.flame = 0.25
-      tracers.push([r2(o.x), r2(o.y), r2(o.z), r2(o.x), r2(o.y + 1.5), r2(o.z), -1, 5, o.by ?? -1, 0, o.id, o.k])
-    }
-    if (o.fuse !== undefined && (o.fuse -= dt) <= 0 || o.hp <= 0) boom(o, list, credit)
-  }
-}
-function boom(o, list, credit) {
-  if (o.heldBy !== undefined) holdBy(o, null)
-  const B = o.V.boom, by = players.get(o.by), at = [o.x, o.y, o.z]
-  o.riders.forEach((id, i) => { const c = id !== undefined && players.get(id); if (c) leave(c, o, i) })
-  for (const c of list) {
-    const dx = c.x - at[0], dz = c.z - at[2], d = Math.hypot(dx, c.y - at[1], dz), k = 1 - d / B.radius
-    if (c.dead > 0 || k <= 0 || seatOf(c)) continue      // riders: their vehicle takes it
-    c.hp -= stat(c, 'take', B.dmg * k)
-    knockChar(c, dx / (d || 1), 0.5, dz / (d || 1), B.knock * k)
-    if (downed(c)) by ? credit(by.id, by)(c, { name: o.K.name }) : fell(c, 'was caught in a ' + o.K.name + '\'s blast')
-  }
-  for (const p of objs) if (p !== o && p.V) {         // chained ones blow on their own turn
-    const d = Math.hypot(p.x - at[0], p.y - at[1], p.z - at[2])
-    if (d < B.radius) { p.hp -= B.dmg * (1 - d / B.radius); p.by = o.by }
-  }
-  // one record; the rest is drawn from the seed
-  const seed = Math.random() * 2 ** 31 | 0, rng = genRng(seed), f = [r2(at[0]), r2(at[1]), r2(at[2]), B.radius, r2(at[1] + o.low), o.k, -1, 6, o.by ?? -1, 0, o.id, seed]
-  tracers.push(f)
-  sfxPlay('boom', { x: at[0], y: at[1], z: at[2] }, 'world', 1, 0, 0, o.K.name)
-  dropCar(o)
-  o.k = OBJECTS.findIndex(K => K.name === o.V.wreck); o.K = OBJECTS[o.k]; o.V = null; o.row = ''
-  const m = o.K.mass, a = rng() * Math.PI * 2
-  o.body.activate(); impVec.setValue(Math.cos(a) * m * 1.5, m * 9, Math.sin(a) * m * 1.5); o.body.applyCentralImpulse(impVec)
-  const s = rng() * Math.PI * 2; velVec.setValue(Math.cos(s) * 2, 0, Math.sin(s) * 2); o.body.setAngularVelocity(velVec)
-  // a wreck draws no wheels: its body is the bare hull, the one a guest builds for it
-  world.removeRigidBody(o.body); o.body.setCollisionShape(o.shape); o.shape.calculateLocalInertia(m, impVec)
-  o.body.setMassProps(m, impVec); o.body.updateInertiaTensor(); world.addRigidBody(o.body, ...COLLIDE.object)
-}
 
-function strikeObjects(list, dt, touch, credit) {
-  for (const o of objs) if (o.thrownBy !== undefined && ((o.thrownT += dt) > 0.3 && !o.body.isActive() || o.thrownT > 8)) o.thrownBy = undefined
-  for (const [o, c, , hit] of touch) if (hit && o.thrownBy !== undefined && list.includes(c) && !o.struck.has(c.id) && c.dead <= 0) { o.struck.add(c.id); objectStrikes(o, c, credit) }
-}
 // Bullet sweeps c's capsule from (x, y, z) to (tx, ty, tz): every body of mask it meets, and how far along
 let sweepCb = null, sweepFrom = null, sweepTo = null
 function sweepHits(c, x, y, z, tx, ty, tz, mask) {
@@ -4550,22 +4483,6 @@ function sweepHits(c, x, y, z, tx, ty, tz, mask) {
   sweepCb.set_m_collisionFilterMask(mask); sweepCb.get_m_hitCollisionObjects().clear(); sweepCb.get_m_hitFractions().clear(); sweepCb.set_m_closestHitFraction(1)
   world.convexSweepTest(c.body.getCollisionShape(), sweepFrom, sweepTo, sweepCb, 0)
   return sweepCb
-}
-// host, after the step: Bullet sweeps a dasher's capsule over this tick's run; each person it passes is struck once a hold
-function dashStrikes(list, credit) {
-  for (const c of list) {
-    if (!c.dashing || !c.dashFrom || c.dead > 0 || seatOf(c)) continue
-    const [x, y, z] = c.dashFrom, d = Math.hypot(c.x - x, c.z - z)
-    if (d < 1e-3) continue
-    const at = new Map(list.map(v => [A.getPointer(v.body), v]))
-    const hits = sweepHits(c, x, y, z, c.x, c.y, c.z, G_CAPSULE).get_m_hitCollisionObjects(), G = GUNS[c.dashing], ux = (c.x - x) / d, uz = (c.z - z) / d
-    for (let i = 0; i < hits.size(); i++) {
-      const v = at.get(A.getPointer(hits.at(i)))
-      if (!v || v === c || v.dead > 0 || v.prot > 0 || seatOf(v) || (c.dashHit ??= new Set()).has(v.id)) continue
-      c.dashHit.add(v.id); strike(c, v, G, ux, 0.3, uz)
-      if (downed(v)) credit(c.id, c)(v, G)
-    }
-  }
 }
 // after the step, each way round: [ours, other (undefined: static), manifold, touching]
 function touching(list) {
@@ -4579,13 +4496,6 @@ function touching(list) {
     if (b) out.push([b, a, m, k >= 0])
   }
   return out
-}
-// effect held for `struck` s
-function objectStrikes(o, c, credit) {
-  const W = o.K.weakens, e = W && weakFx(c, o.K)
-  if (e) { c.mark = e; c.markT = Math.max(c.markT, W.struck) }
-  const by = players.get(o.thrownBy), D = by && hurlOf(by)?.dmg
-  if (D && !(c.prot > 0) && (c.hp -= stat(c, 'take', stat(by, 'give', D))) <= 0 && downed(c) && credit) credit(by.id, by)(c, { name: 'Hurl' })
 }
 
 // not rewound, unlike players
@@ -13358,6 +13268,101 @@ function weakenFrom(o, K, list) {
 function weakenNear(list) {
   for (const o of objs) weakenFrom(o, o.K, list)
   for (const b of list) if (!(b.dead > 0)) weakenFrom(b, rowOf(b), list)
+}
+
+// host only. A contact's impulse = m/s given a person (mass 1)
+function vehicleTick(list, credit, touch, dt) {
+  for (const [o, c, m] of touch) {
+    if (!o.V) continue
+    if (list.includes(c)) {
+      const n = m.getContactPoint(0).get_m_normalWorldOnB(), k = A.getPointer(m.getBody0()) === A.getPointer(c.body) ? 1 : -1      // on B, towards A
+      c.vehN = [k * n.x(), k * n.y(), k * n.z()]; c.vehO = o; c.vehT = 0.3
+    }
+    let J = 0
+    for (let k = m.getNumContacts(); k--;) J += m.getContactPoint(k).getAppliedImpulse()
+    if (!(J > 0) || !list.includes(c) || c.dead > 0) continue
+    const dx = c.x - o.x, dz = c.z - o.z, d = Math.hypot(dx, dz) || 1, v = o.body.getLinearVelocity(), into = (v.x() * dx + v.z() * dz) / d
+    if (into < 2 || o.thrownBy !== undefined) continue
+    c.hp -= stat(c, 'take', o.V.ram * into)
+    const by = players.get(o.riders[0])
+    knockChar(c, dx / d, 0.3, dz / d, into * 0.5)
+    if (downed(c)) by ? credit(by.id, by)(c, { name: o.K.name }) : fell(c, 'was run over by a ' + o.K.name)
+  }
+  for (const o of objs) if (o.V) {
+    if (o.v0) {                         // m/s lost this step
+      const v = o.body.getLinearVelocity(), dv = Math.hypot(v.x() - o.v0[0], v.y() - o.v0[1], v.z() - o.v0[2])
+      if (dv > 8) o.hp -= (dv - 8) * 4
+      o.v0 = null
+    }
+    const B = o.V.boom
+    if (o.fuse === undefined && o.hp <= o.V.hp * B.burn) {
+      o.fuse = B.fuse; sfxPlay('burning', { x: o.x, y: o.y, z: o.z }, 'world', 1, 0, B.fuse, o.K.name)
+    }
+    if (o.fuse !== undefined && (o.flame = (o.flame || 0) - dt) <= 0) {
+      o.flame = 0.25
+      tracers.push([r2(o.x), r2(o.y), r2(o.z), r2(o.x), r2(o.y + 1.5), r2(o.z), -1, 5, o.by ?? -1, 0, o.id, o.k])
+    }
+    if (o.fuse !== undefined && (o.fuse -= dt) <= 0 || o.hp <= 0) boom(o, list, credit)
+  }
+}
+
+function boom(o, list, credit) {
+  if (o.heldBy !== undefined) holdBy(o, null)
+  const B = o.V.boom, by = players.get(o.by), at = [o.x, o.y, o.z]
+  o.riders.forEach((id, i) => { const c = id !== undefined && players.get(id); if (c) leave(c, o, i) })
+  for (const c of list) {
+    const dx = c.x - at[0], dz = c.z - at[2], d = Math.hypot(dx, c.y - at[1], dz), k = 1 - d / B.radius
+    if (c.dead > 0 || k <= 0 || seatOf(c)) continue      // riders: their vehicle takes it
+    c.hp -= stat(c, 'take', B.dmg * k)
+    knockChar(c, dx / (d || 1), 0.5, dz / (d || 1), B.knock * k)
+    if (downed(c)) by ? credit(by.id, by)(c, { name: o.K.name }) : fell(c, 'was caught in a ' + o.K.name + '\'s blast')
+  }
+  for (const p of objs) if (p !== o && p.V) {         // chained ones blow on their own turn
+    const d = Math.hypot(p.x - at[0], p.y - at[1], p.z - at[2])
+    if (d < B.radius) { p.hp -= B.dmg * (1 - d / B.radius); p.by = o.by }
+  }
+  // one record; the rest is drawn from the seed
+  const seed = Math.random() * 2 ** 31 | 0, rng = genRng(seed), f = [r2(at[0]), r2(at[1]), r2(at[2]), B.radius, r2(at[1] + o.low), o.k, -1, 6, o.by ?? -1, 0, o.id, seed]
+  tracers.push(f)
+  sfxPlay('boom', { x: at[0], y: at[1], z: at[2] }, 'world', 1, 0, 0, o.K.name)
+  dropCar(o)
+  o.k = OBJECTS.findIndex(K => K.name === o.V.wreck); o.K = OBJECTS[o.k]; o.V = null; o.row = ''
+  const m = o.K.mass, a = rng() * Math.PI * 2
+  o.body.activate(); impVec.setValue(Math.cos(a) * m * 1.5, m * 9, Math.sin(a) * m * 1.5); o.body.applyCentralImpulse(impVec)
+  const s = rng() * Math.PI * 2; velVec.setValue(Math.cos(s) * 2, 0, Math.sin(s) * 2); o.body.setAngularVelocity(velVec)
+  // a wreck draws no wheels: its body is the bare hull, the one a guest builds for it
+  world.removeRigidBody(o.body); o.body.setCollisionShape(o.shape); o.shape.calculateLocalInertia(m, impVec)
+  o.body.setMassProps(m, impVec); o.body.updateInertiaTensor(); world.addRigidBody(o.body, ...COLLIDE.object)
+}
+
+function strikeObjects(list, dt, touch, credit) {
+  for (const o of objs) if (o.thrownBy !== undefined && ((o.thrownT += dt) > 0.3 && !o.body.isActive() || o.thrownT > 8)) o.thrownBy = undefined
+  for (const [o, c, , hit] of touch) if (hit && o.thrownBy !== undefined && list.includes(c) && !o.struck.has(c.id) && c.dead <= 0) { o.struck.add(c.id); objectStrikes(o, c, credit) }
+}
+
+// host, after the step: Bullet sweeps a dasher's capsule over this tick's run; each person it passes is struck once a hold
+function dashStrikes(list, credit) {
+  for (const c of list) {
+    if (!c.dashing || !c.dashFrom || c.dead > 0 || seatOf(c)) continue
+    const [x, y, z] = c.dashFrom, d = Math.hypot(c.x - x, c.z - z)
+    if (d < 1e-3) continue
+    const at = new Map(list.map(v => [A.getPointer(v.body), v]))
+    const hits = sweepHits(c, x, y, z, c.x, c.y, c.z, G_CAPSULE).get_m_hitCollisionObjects(), G = GUNS[c.dashing], ux = (c.x - x) / d, uz = (c.z - z) / d
+    for (let i = 0; i < hits.size(); i++) {
+      const v = at.get(A.getPointer(hits.at(i)))
+      if (!v || v === c || v.dead > 0 || v.prot > 0 || seatOf(v) || (c.dashHit ??= new Set()).has(v.id)) continue
+      c.dashHit.add(v.id); strike(c, v, G, ux, 0.3, uz)
+      if (downed(v)) credit(c.id, c)(v, G)
+    }
+  }
+}
+
+// effect held for `struck` s
+function objectStrikes(o, c, credit) {
+  const W = o.K.weakens, e = W && weakFx(c, o.K)
+  if (e) { c.mark = e; c.markT = Math.max(c.markT, W.struck) }
+  const by = players.get(o.thrownBy), D = by && hurlOf(by)?.dmg
+  if (D && !(c.prot > 0) && (c.hp -= stat(c, 'take', stat(by, 'give', D))) <= 0 && downed(c) && credit) credit(by.id, by)(c, { name: 'Hurl' })
 }
 
 // ---------------------------------------------------------------- loop
