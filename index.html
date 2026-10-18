@@ -14136,113 +14136,7 @@ function draw(dt, t) {
   drawHeld(myId, !sits.has(myId) && me, t, firstPerson ? camera : null, cam.fade)
   drawTracers(t, me, others, firstPerson ? myId : undefined)
 
-  const G = GUNS[me.gun]
-  const FC = CHARS[me.cid]
-  const frac = clamp(me.hp / CHARS[me.cid].hp, 0, 1)
-  const hage = t - hitFlash
-  const ff = FC.jet ? clamp((me.fuel || 0) / FC.jet.fuel, 0, 1) : 0
-  const nm = (roster.get(myId) || {}).name || myName
-  drawPoll()
-
-  const seat = !(me.dead > 0) && seatOf(me), car = seat && seat[0]
-  const P = primaryOf(me)
-  hud('spShow', el('#gun .sp'), 'display', P && !seat ? 'block' : 'none')
-  if (P) {
-    const left = me.sp === Infinity || me.sp === -1 ? '∞' : String(me.sp | 0)
-    const ready = (me.spCool || 0) <= 0 && (me.sp === Infinity || me.sp > 0)
-    hud('spName', el('#gun .sp .n'), 'textContent', P.name)
-    hud('spCol', el('#gun .sp .n'), 'color', css(P.color))
-    hud('spLeft', el('#gun .sp .c'), 'textContent', left)
-    const cls = 'sp' + (me.sp === 0 ? ' spent' : ready ? ' ready' : '')
-    hud('spCls', el('#gun .sp'), 'className', cls)
-  }
-
-  const pills = []
-  const PW = powerOf(me)
-  if (PW) pills.push([css(PW.color),
-                      PW.name + ' ' + Math.ceil(me.powT || 0) + 's'])
-  const MK = (me.markT || 0) > 0 && POWERS[me.mark - 1]
-  if (MK) pills.push([css(MK.color), MK.name.toUpperCase()])
-  if (me.prot > 0) pills.push(['#58a6ff', 'SAFE ' + Math.ceil(me.prot) + 's'])
-  const key = pills.map(p => p.join()).join('|')
-  if (lastHud.pills !== key) {
-    lastHud.pills = key
-    el('#pills').innerHTML = pills
-      .map(([c, txt]) => '<span style="color:' + c + '">' + esc(txt) + '</span>').join('')
-  }
-
-  const carry = []
-  if (FC.manyGuns) {
-    for (let g = 0; g < GUNS.length; g++) {
-      if (g !== 0 && !(me.bag & (1 << g))) continue
-      if (GUNS[g].special) continue
-      carry.push([g, GUNS[g].name, g === me.gun])
-    }
-  }
-  const bagKey = carry.map(v => v.join()).join('|')
-  if (lastHud.bag !== bagKey) {
-    lastHud.bag = bagKey
-    el('#bag').innerHTML = carry.map(([g, n, on]) =>
-      '<span class="' + (on ? 'on' : '') + '"' +
-      (on ? ' style="color:' + css(GUNS[g].color) + '"' : '') +
-      '>' + esc(n) + '</span>').join('')
-  }
-
-  hud('gunName', el('#gun .g'), 'textContent', G.name)
-  hud('gunCol', el('#gun .g'), 'color', css(G.color))
-  hud('ammo', el('#gun .a'), 'textContent', !gunsOf(me) ? '' :
-      (me.ammo === Infinity || me.ammo === -1) ? '∞' : String(me.ammo))
-  hud('hpW', el('#hpfill'), 'width', (frac * 100).toFixed(1) + '%')
-  hud('hpC', el('#hpfill'), 'background',
-      frac > 0.5 ? '#3fb950' : frac > 0.22 ? '#d29922' : '#f85149')
-  for (const [k, s] of [['fireD', '#btn-fire'], ['altD', '#btn-alt'], ['gunD', '#gun .g'], ['ammoD', '#gun .a'], ['bagD', '#bag']])
-    hud(k, el(s), 'display', seat ? 'none' : '')
-  hud('vehD', el('#veh'), 'display', seat ? 'block' : 'none')
-  hud('useTxt', el('#btn-use'), 'textContent', seat ? 'EXIT' : 'USE'); hud('jumpTxt', el('#btn-jump'), 'textContent', seat ? 'H-BRAKE' : 'JUMP')
-  if (car) {
-    const hp = isHost ? car.hp : vehHp ?? car.V.hp, v = car.body?.getLinearVelocity()
-    hud('vhpW', el('#vhpfill'), 'width', (clamp(hp / car.V.hp, 0, 1) * 100).toFixed(1) + '%')
-    hud('vhpC', el('#vhpfill'), 'background', hp <= car.V.hp * car.V.boom.burn ? '#ff6a14' : '#d29922')
-    hud('vspd', el('#vspd'), 'textContent', String(Math.round((v ? Math.hypot(v.x(), v.z()) : 0) * SPEED_UNIT.per)))
-    hud('vunit', el('#veh .u'), 'textContent', SPEED_UNIT.name)
-    hud('vname', el('#vname'), 'textContent', car.V.name)
-  }
-  if (FC.jet) {
-    hud('fuelW', el('#fuelfill'), 'width', (ff * 100).toFixed(1) + '%')
-    hud('fuelC', el('#fuelfill'), 'background', ff > 0.25 ? '#58a6ff' : '#f85149')
-  }
-  hud('flying', document.body, '.flying', !!FC.jet && !FC.jet.flier)
-  hud('flier', document.body, '.flier', !!FC.jet?.flier)
-  hud('zipper', document.body, '.zipper', !!FC.swing)
-  hud('descendL', el('#btn-descend'), 'textContent', FC.swing ? 'ZIP' : 'DOWN')
-  const cycles = !!FC.manyGuns || !gunsOf(me) && [].concat(FC.atk ?? []).length > 1
-  hud('many', document.body, '.manyguns', cycles)
-  teamSeen = teamNow(me, others)
-  hud('onteam', document.body, '.onteam', teamSeen.length > 0)
-  const strip = teamSeen.map(([cid, c], k) => '<span class="' + (!c || c.dead > 0 ? 'down' : '') + (cid === me.cid ? ' on' : '') +
-    '" style="background:' + css(CHARS[cid].color) + '" title="' + CHARS[cid].name + '">' + (k + 1) + '</span>').join('')
-  hud('strip', el('#teamstrip'), 'innerHTML', strip)
-  hud('shift', document.body, '.canshift', FC.shift !== undefined)
-  hud('alt', document.body, '.canalt', !!P)
-  hud('canuse', document.body, '.canuse', OBJECTS.some(K => K.carry || K.drive))
-  hud('retic', el('#reticle'), 'display', me.dead > 0 ? 'none' : 'block')
-  hud('hitD', el('#hitmark'), 'display', hage < 260 ? 'block' : 'none')
-  if (hage < 260) el('#hitmark').style.opacity = String(1 - hage / 260)
-  const clock = matchLeft > 0
-    ? '  ·  ' + mmss(matchLeft)
-    : ''
-  const use = liftOf(me) > 0 ? 'lift' : objs.some(p => takeable(me, p)) ? 'use' : ''
-  hud('hud', el('#hud'), 'textContent', IS_TOUCH
-    ? nm + '  ·  FIRE ' + G.name + dives(G) + (cycles ? '  ·  WPN next' : '') + (P ? '  ·  ATK ' + P.name + dives(P) : '') + (use ? '  ·  USE ' + use : '') + clock
-    : nm + '  ·  WASD move  ·  Shift sprint  ·  Space ' + (FC.jet?.flier ? 'fly/rise  ·  Q down' : 'jump' + (FC.swing ? '  ·  Q zip' : '')) + '  ·  click ' + G.name +
-      dives(G) +
-      (cycles ? '  ·  R next' : '') +
-      (P ? '  ·  right-click ' + P.name : '') +
-      dives(P) +
-      (use ? '  ·  E ' + use : '') +
-      (FC.shift !== undefined ? '  ·  F shift form' : '') +
-      '  ·  T chat  ·  Tab scores' +
-      (locked || chatOpen ? '' : '  ·  click to capture mouse') + clock)
+  GAME.view.hud(me, others, t)
 
   GAME.view.tab(others)
   GAME.view.results(others)
@@ -14385,7 +14279,118 @@ function initServerPanel() {
   el('#srv-time-more').onclick = mins(1)
 }
 
-GAME.view = { tab: drawTab, results: drawResults, server: drawServer, serverInit: initServerPanel }
+// the HUD: weapon, health, powers, vehicle, fuel, the team strip and the status line, for the player drawn as me
+function drawHud(me, others, t) {
+  const G = GUNS[me.gun]
+  const FC = CHARS[me.cid]
+  const frac = clamp(me.hp / CHARS[me.cid].hp, 0, 1)
+  const hage = t - hitFlash
+  const ff = FC.jet ? clamp((me.fuel || 0) / FC.jet.fuel, 0, 1) : 0
+  const nm = (roster.get(myId) || {}).name || myName
+  drawPoll()
+
+  const seat = !(me.dead > 0) && seatOf(me), car = seat && seat[0]
+  const P = primaryOf(me)
+  hud('spShow', el('#gun .sp'), 'display', P && !seat ? 'block' : 'none')
+  if (P) {
+    const left = me.sp === Infinity || me.sp === -1 ? '∞' : String(me.sp | 0)
+    const ready = (me.spCool || 0) <= 0 && (me.sp === Infinity || me.sp > 0)
+    hud('spName', el('#gun .sp .n'), 'textContent', P.name)
+    hud('spCol', el('#gun .sp .n'), 'color', css(P.color))
+    hud('spLeft', el('#gun .sp .c'), 'textContent', left)
+    const cls = 'sp' + (me.sp === 0 ? ' spent' : ready ? ' ready' : '')
+    hud('spCls', el('#gun .sp'), 'className', cls)
+  }
+
+  const pills = []
+  const PW = powerOf(me)
+  if (PW) pills.push([css(PW.color),
+                      PW.name + ' ' + Math.ceil(me.powT || 0) + 's'])
+  const MK = (me.markT || 0) > 0 && POWERS[me.mark - 1]
+  if (MK) pills.push([css(MK.color), MK.name.toUpperCase()])
+  if (me.prot > 0) pills.push(['#58a6ff', 'SAFE ' + Math.ceil(me.prot) + 's'])
+  const key = pills.map(p => p.join()).join('|')
+  if (lastHud.pills !== key) {
+    lastHud.pills = key
+    el('#pills').innerHTML = pills
+      .map(([c, txt]) => '<span style="color:' + c + '">' + esc(txt) + '</span>').join('')
+  }
+
+  const carry = []
+  if (FC.manyGuns) {
+    for (let g = 0; g < GUNS.length; g++) {
+      if (g !== 0 && !(me.bag & (1 << g))) continue
+      if (GUNS[g].special) continue
+      carry.push([g, GUNS[g].name, g === me.gun])
+    }
+  }
+  const bagKey = carry.map(v => v.join()).join('|')
+  if (lastHud.bag !== bagKey) {
+    lastHud.bag = bagKey
+    el('#bag').innerHTML = carry.map(([g, n, on]) =>
+      '<span class="' + (on ? 'on' : '') + '"' +
+      (on ? ' style="color:' + css(GUNS[g].color) + '"' : '') +
+      '>' + esc(n) + '</span>').join('')
+  }
+
+  hud('gunName', el('#gun .g'), 'textContent', G.name)
+  hud('gunCol', el('#gun .g'), 'color', css(G.color))
+  hud('ammo', el('#gun .a'), 'textContent', !gunsOf(me) ? '' :
+      (me.ammo === Infinity || me.ammo === -1) ? '∞' : String(me.ammo))
+  hud('hpW', el('#hpfill'), 'width', (frac * 100).toFixed(1) + '%')
+  hud('hpC', el('#hpfill'), 'background',
+      frac > 0.5 ? '#3fb950' : frac > 0.22 ? '#d29922' : '#f85149')
+  for (const [k, s] of [['fireD', '#btn-fire'], ['altD', '#btn-alt'], ['gunD', '#gun .g'], ['ammoD', '#gun .a'], ['bagD', '#bag']])
+    hud(k, el(s), 'display', seat ? 'none' : '')
+  hud('vehD', el('#veh'), 'display', seat ? 'block' : 'none')
+  hud('useTxt', el('#btn-use'), 'textContent', seat ? 'EXIT' : 'USE'); hud('jumpTxt', el('#btn-jump'), 'textContent', seat ? 'H-BRAKE' : 'JUMP')
+  if (car) {
+    const hp = isHost ? car.hp : vehHp ?? car.V.hp, v = car.body?.getLinearVelocity()
+    hud('vhpW', el('#vhpfill'), 'width', (clamp(hp / car.V.hp, 0, 1) * 100).toFixed(1) + '%')
+    hud('vhpC', el('#vhpfill'), 'background', hp <= car.V.hp * car.V.boom.burn ? '#ff6a14' : '#d29922')
+    hud('vspd', el('#vspd'), 'textContent', String(Math.round((v ? Math.hypot(v.x(), v.z()) : 0) * SPEED_UNIT.per)))
+    hud('vunit', el('#veh .u'), 'textContent', SPEED_UNIT.name)
+    hud('vname', el('#vname'), 'textContent', car.V.name)
+  }
+  if (FC.jet) {
+    hud('fuelW', el('#fuelfill'), 'width', (ff * 100).toFixed(1) + '%')
+    hud('fuelC', el('#fuelfill'), 'background', ff > 0.25 ? '#58a6ff' : '#f85149')
+  }
+  hud('flying', document.body, '.flying', !!FC.jet && !FC.jet.flier)
+  hud('flier', document.body, '.flier', !!FC.jet?.flier)
+  hud('zipper', document.body, '.zipper', !!FC.swing)
+  hud('descendL', el('#btn-descend'), 'textContent', FC.swing ? 'ZIP' : 'DOWN')
+  const cycles = !!FC.manyGuns || !gunsOf(me) && [].concat(FC.atk ?? []).length > 1
+  hud('many', document.body, '.manyguns', cycles)
+  teamSeen = teamNow(me, others)
+  hud('onteam', document.body, '.onteam', teamSeen.length > 0)
+  const strip = teamSeen.map(([cid, c], k) => '<span class="' + (!c || c.dead > 0 ? 'down' : '') + (cid === me.cid ? ' on' : '') +
+    '" style="background:' + css(CHARS[cid].color) + '" title="' + CHARS[cid].name + '">' + (k + 1) + '</span>').join('')
+  hud('strip', el('#teamstrip'), 'innerHTML', strip)
+  hud('shift', document.body, '.canshift', FC.shift !== undefined)
+  hud('alt', document.body, '.canalt', !!P)
+  hud('canuse', document.body, '.canuse', OBJECTS.some(K => K.carry || K.drive))
+  hud('retic', el('#reticle'), 'display', me.dead > 0 ? 'none' : 'block')
+  hud('hitD', el('#hitmark'), 'display', hage < 260 ? 'block' : 'none')
+  if (hage < 260) el('#hitmark').style.opacity = String(1 - hage / 260)
+  const clock = matchLeft > 0
+    ? '  ·  ' + mmss(matchLeft)
+    : ''
+  const use = liftOf(me) > 0 ? 'lift' : objs.some(p => takeable(me, p)) ? 'use' : ''
+  hud('hud', el('#hud'), 'textContent', IS_TOUCH
+    ? nm + '  ·  FIRE ' + G.name + dives(G) + (cycles ? '  ·  WPN next' : '') + (P ? '  ·  ATK ' + P.name + dives(P) : '') + (use ? '  ·  USE ' + use : '') + clock
+    : nm + '  ·  WASD move  ·  Shift sprint  ·  Space ' + (FC.jet?.flier ? 'fly/rise  ·  Q down' : 'jump' + (FC.swing ? '  ·  Q zip' : '')) + '  ·  click ' + G.name +
+      dives(G) +
+      (cycles ? '  ·  R next' : '') +
+      (P ? '  ·  right-click ' + P.name : '') +
+      dives(P) +
+      (use ? '  ·  E ' + use : '') +
+      (FC.shift !== undefined ? '  ·  F shift form' : '') +
+      '  ·  T chat  ·  Tab scores' +
+      (locked || chatOpen ? '' : '  ·  click to capture mouse') + clock)
+}
+
+GAME.view = { tab: drawTab, results: drawResults, server: drawServer, serverInit: initServerPanel, hud: drawHud }
 
 // ---------------------------------------------------------------- boot
 class Arena extends ENABLE3D.Scene3D {
