@@ -7848,7 +7848,6 @@ function prepareStep() {
     if (camera && id >= 0 && !detailCache.has(key)) { (prepAt.far ||= farSteps(id, cid, profOf(id, cid), rowFor(id, cid))).next(); fresh = false; continue }
     if (!(prepAt.far2 ||= warmSteps(prepAt.inst, detailCache.get(key)?.list || [])).next().done) { fresh = false; continue }
     if (!fresh) return
-    prepQueue.shift()
     const had = avatars.get(id), body = prepAt?.inst
     avatars.delete(id); prepAt = null
     try {
@@ -7860,6 +7859,7 @@ function prepareStep() {
       renderer.compileAsync(mesh, camera, scene).then(() => { ghost(mesh, 1); return renderer.compileAsync(mesh, camera, scene) })
         .then(() => { mesh.position.set(0, -30, 0); mesh.traverse(n => { n.frustumCulled = false }); avatarGroup.add(mesh); prepShown.push([mesh, 1]) }).catch(() => {})
     } finally { if (had) avatars.set(id, had); else avatars.delete(id) }
+    prepQueue.shift()      // after the kept copy: a row that throws is still the head the frame's catch drops
     return
   }
 }
