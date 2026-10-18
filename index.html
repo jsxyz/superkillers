@@ -1270,7 +1270,7 @@ const BECK_BODY = { at: [318.75, 80], parts: [
   } }
 const UNIFORM_BODY = { make: humanBody, paint: uniformPaint, trim: true, join: true }
 const COSTUMES = {
-  agent: { part: uniformPart, loft: { make: humanBody, paint: agentPaint, trim: ['head', 'boot'], join: true }, body: 'jacket', blend: true, blood: true },
+  agent: { part: uniformSteps, loft: { make: humanBody, paint: agentPaint, trim: ['head', 'boot'], join: true }, body: 'jacket', blend: true, blood: true },
   waitress: { loft: BECK_BODY },
   ranger: { part: uniformPart, legs: 1.2 },
   speedster: { part: speedsterPart, loft: UNIFORM_BODY, legs: 1.2, plain: true, neck: 'head', shoulder: true },
@@ -5097,8 +5097,15 @@ function animOf(c) {
 }
 
 // SkinnedMesh.computeBoundingBox() includes bones; geometry bounds don't
-function measureBounds(root) {
-  const min = extremeY(root), max = extremeY(root, true)
+function measureBounds(root) { return drain(boundsSteps(root)) }
+function* boundsSteps(root) {
+  for (const n of root.getObjectsByProperty('isSkinnedMesh', true)) {
+    const g = n.geometry
+    if (!g.morphAttributes.position && (!g.index || g.index.count) && !skinRuns.has(g)) { skinRuns.set(g, yield* runSteps(g)); yield }
+  }
+  const min = extremeY(root)
+  yield
+  const max = extremeY(root, true)
   return isFinite(min) && max > min ? { h: max - min, minY: min } : null
 }
 // lowest (up: highest) y of the meshes' world boxes; a skinned mesh skins only the vertex runs whose bound can still move that box corner
@@ -5251,10 +5258,11 @@ function measureLows(L, more = () => true) {
   L.m.stop(); walkLows.set(L.k, L.low)
   return true
 }
-function boundsFor(key, inst, M) {
+function boundsFor(...a) { return drain(boundsForSteps(...a)) }
+function* boundsForSteps(key, inst, M) {
   let b = builtBounds.get(key)
   if (!b) {
-    b = measureBounds(inst) || { h: M.height, minY: M.footY }
+    b = (yield* boundsSteps(inst)) || { h: M.height, minY: M.footY }
     builtBounds.set(key, b)
   }
   return b
@@ -5553,11 +5561,13 @@ function buildProp(kind, id, paint) {
 }
 const GLOW_OP = 0.6
 // paint: a vehicle variant's colour for its accent
-function propModel(kind, id, whole = false, paint) {
+function propModel(...a) { return drain(propSteps(...a)) }
+function* propSteps(kind, id, whole = false, paint) {
   const key = 'prop:' + kind + ':' + id + (whole ? ':whole' : '') + (paint === undefined ? '' : ':' + paint)
   if (!PROP_CACHE.has(key)) {
     const root = buildProp(kind, id, paint)
-    batchMeshes(root, key, whole ? {} : { joints: ['wheel'] })
+    yield
+    yield* batchSteps(root, key, whole ? {} : { joints: ['wheel'] })
     const hid = []; root.traverse(n => n.visible || hid.push(n)); hid.forEach(n => n.removeFromParent())      // hidden parts only feed the hull
     root.traverse(n => { if (n.isMesh) n.castShadow = false; if (n.material && propRow(kind, id).glow !== undefined) ghostMaterial(n.material) })
     PROP_CACHE.set(key, root)
@@ -5706,18 +5716,21 @@ function turtlePart(K, part, side) {
   }
 }
 
-function costumePart(key, part, side, skin, joined = false) {
+function costumePart(...a) { return drain(costumeSteps(...a)) }
+function* costumeSteps(key, part, side, skin, joined = false) {
   const K = meshKit({ ...skin, ivory: 0xf2f1e9, ink: 0x171b29, metal: 0xc7d5df, gold: 0xe6b64e,
     flesh: 0xd9a78b, light: { color: 0xbdeeff, emissive: 0x81cfff, emissiveIntensity: 0.5 } })
   const kind = costumeOf(key)
-  kind.part?.(K, part, side, kind, costumeRow(key).variant)
+  const steps = kind.part?.(K, part, side, kind, costumeRow(key).variant)
+  if (steps?.next) yield* steps
   if (joined) for (const n of K.root.getObjectsByProperty('isMesh', true))
     if (['cuirass', 'neck', 'hips', 'groin', 'sleeve', 'shoulder', 'elbow', 'forearm', 'hand', 'thigh', 'knee'].includes(n.userData.part)) n.removeFromParent()
   return finishKit(K)
 }
 
 const uniformWide = variant => variant === 'heavy' ? 1.2 : 1
-function uniformPart(K, part, side, kind, variant) {
+function uniformPart(...a) { return drain(uniformSteps(...a)) }
+function* uniformSteps(K, part, side, kind, variant) {
   const { add, orb, tube } = K
   const box = (m, s, p = [0, 0, 0], top = 1, tag) =>
     add({ g: ['box', ...s, 0.05, top], m, p, tag })
@@ -5736,6 +5749,7 @@ function uniformPart(K, part, side, kind, variant) {
         m: 'ivory', p: [0.22, 0.10, -0.638], tag: 'eye' })
       add({ mirror: true, g: ['box', 0.035, 0.052, 0.018, 0.005], m: 'ink', p: [0.18, 0.10, -0.654] })
       orb('flesh', [0.12, 0.19, 0.16], [0, -0.12, -0.59], 'nose')
+      yield
       tube('ink', [[-0.12, -0.32, -0.577], [0, -0.29, -0.585], [0.11, -0.30, -0.577]], 0.012, 'mouth')
       add({ g: ['loft', [[0.74, 0.06, 0.08], [0.63, 0.35, 0.35], [0.47, 0.48, 0.46],
         [0.27, 0.45, 0.44], [0.15, 0.34, 0.35]].map(([y, x, z], row) => ring(20, (c, s) => [c * x, y - (row / 4) ** 3 * s * 0.13, 0.04 + s * z]))], m: 'ivory', tag: 'hair' })
@@ -5748,12 +5762,12 @@ function uniformPart(K, part, side, kind, variant) {
         [[[0.25, 0.59, -0.25], [0.10, 0.61, -0.45], [-0.12, 0.20, -0.61]], 0.17],
         [[[-0.30, 0.50, -0.28], [-0.34, 0.42, -0.46], [-0.48, 0.20, -0.55]], 0.15],
         [[[0.34, 0.46, -0.25], [0.34, 0.36, -0.47], [0.23, 0.18, -0.59]], 0.13],
-      ]) lock(pts, r, 'forelock')
+      ]) { lock(pts, r, 'forelock'); yield }
       for (const s of [-1, 1]) for (const [pts, r] of [
         [[[0.13, 0.60, 0.20], [0.35, 0.59, 0.35], [0.60, 0.36, 0.31]], 0.16],
         [[[0.14, 0.48, 0.31], [0.20, 0.29, 0.49], [0.30, 0.03, 0.48]], 0.16],
         [[[0.40, 0.38, 0.06], [0.52, 0.21, -0.10], [0.52, -0.08, -0.16]], 0.12],
-      ]) lock(pts.map(p => [s * p[0], p[1], p[2]]), r)
+      ]) { lock(pts.map(p => [s * p[0], p[1], p[2]]), r); yield }
       lock([[0, 0.51, 0.33], [0.04, 0.29, 0.55], [-0.03, 0.02, 0.57]], 0.18)
     } else {
       orb('head', [1.1, 1.10, 1.12], [0, 0.02, 0], 'helmet')
@@ -6360,7 +6374,7 @@ function* partsSteps(inst, skin, key) {
         for (const [j, b] of boxes) if (partOf(bones[j].name) === 'torso') bounds.union(b)
       }
       const center = bounds.getCenter(new THREE.Vector3()), size = bounds.getSize(new THREE.Vector3())
-      const costume = costumePart(key, part, center.x < 0 ? -1 : 1, skin, kind.loft?.trim === true)
+      const costume = yield* costumeSteps(key, part, center.x < 0 ? -1 : 1, skin, kind.loft?.trim === true)
       if (!costume.children.length) continue
       if (part === 'head') {
         center.y -= size.y * 0.09
@@ -7815,7 +7829,7 @@ function ghost(obj, prot, fade) {
 
 // Rows built while idle: their caches filled and one copy kept, its materials compiled and holding
 // their programs, so a first sight builds and compiles nothing. A frame: bodySteps and far detail steps for PREP_MS, or one kept copy alone.
-const prepQueue = [], prepKept = new Map(), prepShown = [], PREP_MS = 6
+const prepQueue = [], prepKept = new Map(), prepReady = new Map(), prepShown = [], PREP_MS = 6
 let prepAt = null
 // a body's per-geometry caches as steps (its far geometries' with far): extremeY's runs, skinPick, cullSkin's boxes
 function* warmSteps(root, far) {
@@ -7850,13 +7864,13 @@ function bodyStep(B, M, id, cid, key, more) {
 }
 function prepareRows(pairs) {
   if (renderHeadless || serving || !renderer) return
-  for (const p of pairs) {
-    const k = skinKey(...p), at = prepQueue.findIndex(q => !Array.isArray(q))
-    if (!prepKept.has(k) && !prepQueue.some(q => Array.isArray(q) && skinKey(...q) === k)) prepQueue.splice(at < 0 ? prepQueue.length : at, 0, p)
-  }
   prepareLooks(pairs)
+  for (const p of pairs) {
+    const k = skinKey(...p)
+    if (!prepKept.has(k) && !prepQueue.some(q => Array.isArray(q) && skinKey(...q) === k)) prepQueue.push(p)
+  }
 }
-// looks: what play builds on first sight besides bodies, queued behind the rows and built only off play (menu, select, a break)
+// First-sight props precede body rows and build only off play (menu, select, a break).
 const offPlay = () => phase !== 'playing' || pickOpen || isHost && gameMode === 'waves' && ![...players.values()].some(c => c.bot && !c.bot.squad)
 const prepLook = (key, steps) => prepQueue.some(q => q.key === key) || prepQueue.push({ key, steps })
 // every pickup a pad can roll and the rows' held guns
@@ -7865,7 +7879,7 @@ function prepareLooks(pairs) {
   for (const [kind, id] of [...DROPS.map(g => ['gun', g]), ...held.filter(g => GUNS[g] && GUNS[g].held !== false).map(g => ['gun', g]),
     ...dropping(POWERS).map(v => ['power', v - 1]), ...dropping(HEALS).map(v => ['heal', v - 1]),
     ...PADS.filter(p => p[3]).map(([, , , n]) => healNamed(n) > 0 ? ['heal', healNamed(n) - 1] : ['gun', gunNamed(n)])])
-    if (id >= 0 && !PROP_CACHE.has('prop:' + kind + ':' + id)) prepLook('prop:' + kind + ':' + id, function* () { const m = propModel(kind, id); yield; renderer.compileAsync(m, camera, scene).catch(() => {}) })
+    if (id >= 0 && !PROP_CACHE.has('prop:' + kind + ':' + id)) prepLook('prop:' + kind + ':' + id, function* () { const m = yield* propSteps(kind, id); yield; renderer.compileAsync(m, camera, scene).catch(() => {}) })
 }
 // a damageable row's damaged copies, near and far, and their culling boxes, on a body built as play builds one
 function prepareDamage(id, cid) {
@@ -7899,10 +7913,18 @@ function prepareStep() {
     if (!(prepAt.far2 ||= warmSteps(prepAt.inst, detailCache.get(key)?.list || [])).next().done) { fresh = false; continue }
     if (!fresh) return
     const had = avatars.get(id), body = prepAt?.inst
-    avatars.delete(id); prepAt = null
+    avatars.delete(id)
     try {
-      const mesh = avatarFor(id, cid, 0, body)
+      const r = (prepAt.avatar ||= avatarSteps(id, cid, 0, body)).next()
+      if (!r.done) return
+      let mesh = r.value
+      prepAt = null
       avatarGroup.remove(mesh)
+      if (offPlay()) {
+        prepReady.set(key, { id, proto: M.proto, a: avatars.get(id) })
+        mesh = cloneSkinned(mesh)
+        ownMaterials(mesh)
+      }
       prepKept.set(key, mesh)
       if (damagePartsOf(avatars.get(id), id).length) prepareDamage(id, cid)
       // the spawn-protection ghost too; then one frame under the floor, never culled, for its shadow's depth programs
@@ -7914,7 +7936,12 @@ function prepareStep() {
   }
 }
 
+function clearPrepared() {
+  for (const { a } of prepReady.values()) { a.mixer?.stopAllAction(); freeMaterials(a.mesh) }
+  prepReady.clear()
+}
 function rebuildAvatars() {
+  clearPrepared()
   for (const id of [...avatars.keys()]) {
     const { cid, cap, mesh } = avatars.get(id), parent = mesh.parent
     mesh.removeFromParent()
@@ -7960,7 +7987,8 @@ function* bodySteps(M, id, cid, key, C) {
 }
 function bodyFor(M, id, cid, key, C) { return drain(bodySteps(M, id, cid, key, C)) }
 
-function avatarFor(id, cid, cap, body) {
+function avatarFor(id, cid, cap, body) { return drain(avatarSteps(id, cid, cap, body)) }
+function* avatarSteps(id, cid, cap, body) {
   const M = modelFor(id, cid)
   const prof = profOf(id, cid)
   const a = avatars.get(id)
@@ -7973,7 +8001,14 @@ function avatarFor(id, cid, cap, body) {
   const tint = colorOf(id, cid)
   let mesh, mixer = null, actions = null, drop = 0, walkDrop = 0, sprintDrop = 0, ankle = 0, turned = new Map()
 
-  const key = skinKey(id, cid), built = M.kind === 'built'
+  const key = skinKey(id, cid), built = M.kind === 'built', ready = prepReady.get(key)
+  if (id >= 0 && !body && ready && !offPlay() && ready.id === id && ready.a.cid === cid && ready.proto === M.proto) {
+    prepReady.delete(key)
+    avatars.set(id, ready.a)
+    avatarGroup.add(ready.a.mesh)
+    updateCap(ready.a, cap, id)
+    return ready.a.mesh
+  }
   if (built) {
     let proto = BUILT_CACHE.get(key)
     if (!proto) BUILT_CACHE.set(key, proto = bodyFor(M, id, cid, key, C))
@@ -7997,9 +8032,9 @@ function avatarFor(id, cid, cap, body) {
     const S = standOf(C)
     for (const [bone] of turnsOf(inst, [...C.turns || [], ...S || []])) turned.set(bone, bone.quaternion.clone())
     turn(inst, C.turns)
-    const low = S && measureBounds(inst).minY
+    const low = S && (yield* boundsSteps(inst)).minY
     turn(inst, S)
-    const b = boundsFor(key, inst, M)
+    const b = yield* boundsForSteps(key, inst, M)
     fitToCapsule(inst, C.h * 2 + C.r * 2, b.h, b.minY, M.yaw)
     inst.userData.y = inst.position.y
     drop = (low - b.minY) * (C.h * 2 + C.r * 2) / b.h || 0
@@ -8014,6 +8049,7 @@ function avatarFor(id, cid, cap, body) {
       new THREE.MeshStandardMaterial({ color: tint, roughness: 0.5 }))
     mesh.castShadow = true
   }
+  yield
   avatarGroup.add(mesh)
   mesh.traverse(cullSkin)
   avatars.set(id, { mesh, cid, spec: C, stand: standOf(C), mixer, actions, prof, drop, walkDrop, sprintDrop, ankle, turned, anim: -1, fast: false, v: 0, model: built || !!M.proto,
@@ -8045,7 +8081,7 @@ function* farSteps(id, cid, prof, C) {
       const mixer = new THREE.AnimationMixer(root), clip = M.anims.find(c => c.name === prof[0].clip)
       if (clip) { mixer.clipAction(clip).play(); mixer.update(0) }
       turn(root, C.turns); turn(root, standOf(C))
-      const b = measureBounds(root)
+      const b = yield* boundsSteps(root)
       fitToCapsule(root, 2 * (C.h + C.r), b.h, b.minY, M.yaw)
       mixer.stopAllAction()
       fit = root
@@ -14313,6 +14349,7 @@ function draw(dt, t) {
     drawHeld(o.id, (!sits.has(o.id) || armed) && o, t)        // cosmetic, never a capsule
   }
   for (const id of [...avatars.keys()]) if (id >= 0 && !live.has(id)) dropAvatar(id)
+  if (!offPlay()) clearPrepared()
 
   drawPickups(pkl, t)
   drawObjects(obl, d => wheelsOf(d, isHost ? now() : renderT, camera.position))      // null: its own stand
