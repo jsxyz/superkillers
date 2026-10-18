@@ -2999,6 +2999,8 @@ function skinOf(id, cid) {
 }
 const shapeOf = (id, cid) => rowFor(id, cid).shape
 const skinKey = (id, cid) => botOf(id) && rowFor(id, cid) === botOf(id) ? 'b' + (botOf(id).copyOf ?? id - BOT_ID0) : 'c' + cid
+// a row's looks, as the avatars and render sections read them
+GAME.looks = { key: skinKey, skin: skinOf, shape: shapeOf, color: colorOf, bot: botOf }
 
 const freshAI = () => ({ t: 9, strafe: 1, strafeFor: 1, wander: Math.random() * 6.28,
            aimX: 0, aimY: 0, driftX: 0, driftY: 0, driftT: 0,
@@ -3549,6 +3551,7 @@ const torFade = t => Math.min(1, t.life / t.k.fade)
 const torR = t => (t.k.r0 + torLaps(t) * t.k.rLap) * torFade(t)
 const tornadoNow = () => isHost
   ? (TORS.length ? TORS.flatMap(t => [t.x, t.z, torR(t)]) : null) : snapTw
+GAME.tornado = tornadoNow
 function clearTornado() { TORS.length = 0 }
 
 // winding angle = signed bearing sum (a weave cancels); not reset on reversal: tick noise flips the sign
@@ -5185,7 +5188,7 @@ function animProfile(spec) {
 }
 const PROFILES = CHARS.map(animProfile)
 const BOT_PROFILES = BOTS.map(B => animProfile({ ...B, speed: B.speed ?? CHARS[B.cid].speed }))
-const profOf = (id, cid) => botOf(id) ? BOT_PROFILES[id - BOT_ID0] : PROFILES[cid]
+const profOf = (id, cid) => GAME.looks.bot(id) ? BOT_PROFILES[id - BOT_ID0] : PROFILES[cid]
 
 // jl: jump latch (wire column 17 for remote players)
 const crouchOf = (id, cid, anim, jl, hold) => !hold && anim < 2 && jl && GAME.participant(id, cid).spring ? anim ? 'crouchRun' : 'crouch' : anim
@@ -7970,8 +7973,8 @@ function prepareRows(pairs) {
   if (renderHeadless || serving || !renderer) return
   prepareLooks(pairs)
   for (const p of pairs) {
-    const k = skinKey(...p)
-    if (!prepKept.has(k) && !prepQueue.some(q => Array.isArray(q) && skinKey(...q) === k)) prepQueue.push(p)
+    const k = GAME.looks.key(...p)
+    if (!prepKept.has(k) && !prepQueue.some(q => Array.isArray(q) && GAME.looks.key(...q) === k)) prepQueue.push(p)
   }
 }
 // First-sight props precede body rows and build only off play (menu, select, a break).
@@ -7987,7 +7990,7 @@ function prepareLooks(pairs) {
 }
 // a damageable row's damaged copies, near and far, and their culling boxes, on a body built as play builds one
 function prepareDamage(id, cid) {
-  prepLook('damage:' + skinKey(id, cid), function* () {
+  prepLook('damage:' + GAME.looks.key(id, cid), function* () {
     const had = avatars.get(id), meshes = []
     let parts
     avatars.delete(id)
@@ -8010,7 +8013,7 @@ function prepareStep() {
   let fresh = true
   while (prepQueue.length && more()) {
     if (!Array.isArray(prepQueue[0])) { if (!offPlay()) return; const E = prepQueue[0]; if ((E.gen ||= E.steps()).next().done) prepQueue.shift(); fresh = false; continue }
-    const [id, cid] = prepQueue[0], M = modelFor(id, cid), key = skinKey(id, cid)
+    const [id, cid] = prepQueue[0], M = modelFor(id, cid), key = GAME.looks.key(id, cid)
     if (M.kind !== 'built' && !M.proto) return
     if (!bodyStep(prepAt ||= {}, M, id, cid, key, more)) { fresh = false; continue }
     if (camera && id >= 0 && !detailCache.has(key)) { (prepAt.far ||= farSteps(id, cid, profOf(id, cid), GAME.participant(id, cid))).next(); fresh = false; continue }
@@ -8077,14 +8080,14 @@ function updateCap(a, cap, id) {
 function* bodySteps(M, id, cid, key, C) {
   let root, rig
   if (M.kind === 'built') {
-    root = M.steps ? yield* M.steps(2 * (C.h + C.r), skinOf(id, cid)) : M.build(2 * (C.h + C.r), skinOf(id, cid))
+    root = M.steps ? yield* M.steps(2 * (C.h + C.r), GAME.looks.skin(id, cid)) : M.build(2 * (C.h + C.r), GAME.looks.skin(id, cid))
     yield
     yield* batchSteps(builtParts(root).tilt.children[0], key, { ...M, shadowEmissive: false })
     return root
   }
   root = cloneSkinned(M.proto)
   // Measure after dressing: bind-pose rotations can turn added girth into height.
-  yield* dressSteps(root, skinOf(id, cid), shapeOf(id, cid), key)
+  yield* dressSteps(root, GAME.looks.skin(id, cid), GAME.looks.shape(id, cid), key)
   root.traverse(n => { if (n.isSkinnedMesh && !rig) rig = n })
   if (rig) { yield; yield* batchSteps(root, key, { rig, shadowEmissive: false }) }
   return root
@@ -8102,10 +8105,10 @@ function* avatarSteps(id, cid, cap, body) {
   }
   if (a) dropAvatar(id)
   const C = GAME.participant(id, cid)
-  const tint = colorOf(id, cid)
+  const tint = GAME.looks.color(id, cid)
   let mesh, mixer = null, actions = null, drop = 0, walkDrop = 0, sprintDrop = 0, ankle = 0, turned = new Map()
 
-  const key = skinKey(id, cid), built = M.kind === 'built', ready = prepReady.get(key)
+  const key = GAME.looks.key(id, cid), built = M.kind === 'built', ready = prepReady.get(key)
   if (id >= 0 && !body && ready && !offPlay() && ready.id === id && ready.a.cid === cid && ready.proto === M.proto) {
     prepReady.delete(key)
     avatars.set(id, ready.a)
@@ -8173,7 +8176,7 @@ const detailCache = new Map()
 function farDetail(...a) { return drain(farSteps(...a)) }
 // its bodySteps, each run at far detail, then the fit
 function* farSteps(id, cid, prof, C) {
-  const M = modelFor(id, cid), key = skinKey(id, cid)
+  const M = modelFor(id, cid), key = GAME.looks.key(id, cid)
   let geometries = detailCache.get(key)
   if (!geometries) {
     const steps = bodySteps(M, id, cid, key, C), far = () => { const saved = builtGeo; try { builtGeo = farGeo; meshDetail = 1; return steps.next() } finally { builtGeo = saved; meshDetail = 0 } }
@@ -8424,7 +8427,7 @@ function drawLooks() {
 
 // the meshes drawHealth swaps for damaged copies
 function damagePartsOf(a, id) {
-  const artie = a.animate === animateArtie, sam = costumeOf(skinKey(id, a.cid)).blood, parts = []
+  const artie = a.animate === animateArtie, sam = costumeOf(GAME.looks.key(id, a.cid)).blood, parts = []
   if (!artie && !sam) return parts
   const ear = artie && a.built.tagged.ear[1]
   a.mesh.traverse(n => {
@@ -8442,7 +8445,7 @@ function drawHealth(id, hp) {
   a.healthHp = hp
   const fraction = Number.isFinite(hp) ? Math.max(0, Math.min(1, hp / (a.spec.hp || CHARS[a.cid].hp))) : 1
   const level = fraction > 0.8 ? 0 : fraction > 0.5 ? 1 : fraction > 0.25 ? 2 : 3
-  const artie = a.animate === animateArtie, screen = a.animate === animateVitoScreen, sam = costumeOf(skinKey(id, a.cid)).blood
+  const artie = a.animate === animateArtie, screen = a.animate === animateVitoScreen, sam = costumeOf(GAME.looks.key(id, a.cid)).blood
   if (artie || sam) {
     a.damageParts ||= damagePartsOf(a, id)
     for (const d of a.damageParts) {
@@ -8472,7 +8475,7 @@ function drawHealth(id, hp) {
   a.healthFace = face
   for (const n of display) {
     n.material.map = n.material.emissiveMap = artieFaceTexture(face)
-    n.material.color.setHex(face === 2 ? 0xff6a63 : face === 1 ? 0xffcf69 : skinOf(id, a.cid).eye)
+    n.material.color.setHex(face === 2 ? 0xff6a63 : face === 1 ? 0xffcf69 : GAME.looks.skin(id, a.cid).eye)
     n.material.emissive.copy(n.material.color)
   }
 }
@@ -10031,7 +10034,7 @@ function tornadoBoundary(v, x, z, radius) {
 }
 
 function drawTornado(t) {
-  const state = tornadoNow()
+  const state = GAME.tornado()
   let count = 0
   for (let i = 0; state && i < state.length; i += 3) {
     const x = state[i], z = state[i + 1], radius = state[i + 2]
@@ -10232,7 +10235,7 @@ const pickBodies = new Map()
 function pickStep(id, cid) {
   if (avatars.get(id)?.cid === cid) return true
   const t0 = now(), B = pickBodies.get(id)?.cid === cid ? pickBodies.get(id) : pickBodies.set(id, { cid }).get(id)
-  if (!B.done) B.done = bodyStep(B, modelFor(id, cid), id, cid, skinKey(id, cid), () => now() - t0 < PREP_MS)
+  if (!B.done) B.done = bodyStep(B, modelFor(id, cid), id, cid, GAME.looks.key(id, cid), () => now() - t0 < PREP_MS)
   else { avatarFor(id, cid, undefined, B.inst).removeFromParent(); pickBodies.delete(id) }
   return false
 }
