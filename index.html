@@ -4155,9 +4155,9 @@ function putObject(o, s) {
 // seated per the host (mine: me; else: another)
 const seated = (id, mine) => [...objSeats].some(([s, p]) => s >> 3 === id && (p === myId) === mine)
 function predictObjects(c, lead = 0) {
-  const V = seatOf(c)?.[0], vv = V?.body.getLinearVelocity(), reach = V ? Math.hypot(vv.x(), vv.z()) * lead : 0
-  // near the player, or near its own vehicle by as far as it goes in `lead` s
-  const near = (x, y, z, R, pad) => Math.hypot(x - c.x, y - c.y, z - c.z) < c.r + R + pad || V && Math.hypot(x - V.x, y - V.y, z - V.z) < V.R + R + pad + reach
+  const B = seatOf(c)?.[0] || c, v = B.body?.getLinearVelocity(), reach = v ? Math.hypot(v.x(), v.z()) * lead : 0, Br = B === c ? c.r : B.R
+  // near what the player rides, else the player, by as far as that goes in `lead` s
+  const near = (x, y, z, R, pad) => Math.hypot(x - B.x, y - B.y, z - B.z) < Br + R + pad + reach
   for (const o of objs) {
     const m = Math.hypot(...o.off)
     o.off = o.off.map(v => v * (1 - Math.min(0.2, 0.15 / m)))
@@ -13902,10 +13902,11 @@ function sendSnapshot(s) {
       ob.push(o.row)
     }
     const oh = ['oh', 'od'].map((key, i) => repeatField(sent, key, i ? seats : held)).join('')
-    // the rider's vehicle and the awake objects near it, exactly (Bullet's float32 in 9 digits), every snapshot, for its replay
-    const sat = objs.find(o => o.V && o.riders.includes(gid)), far = o => Math.hypot(o.x - sat.x, o.z - sat.z)
-    const ov = sat ? ',"ov":' + JSON.stringify([sat, ...objs.filter(o => o !== sat && o.body.isActive() && far(o) < 15).sort((a, b) => far(a) - far(b)).slice(0, 6)]
-      .map(o => [o.id, ...objState(o).map(v => +v.toPrecision(9))])) : ''
+    // the guest's vehicle and the awake objects near it (on foot, near the guest), exactly (Bullet's float32 in 9 digits), every
+    // snapshot, for its replay
+    const sat = objs.find(o => o.V && o.riders.includes(gid)), at = sat || players.get(gid), far = o => Math.hypot(o.x - at.x, o.z - at.z)
+    const exact = at ? [...sat ? [sat] : [], ...objs.filter(o => o !== sat && o.body.isActive() && far(o) < 15).sort((a, b) => far(a) - far(b)).slice(0, 6)] : []
+    const ov = exact.length ? ',"ov":' + JSON.stringify(exact.map(o => [o.id, ...objState(o).map(v => +v.toPrecision(9))])) : ''
     const vh = sat ? Math.round(Math.max(0, sat.hp)) : null
     const vhs = vh === null ? '' : repeatField(sent, 'vh', vh)
     const ot = repeatField(sent, 'or', tuned)
