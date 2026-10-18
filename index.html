@@ -12796,27 +12796,7 @@ function dropBot(c) { detachBody(c); players.delete(c.id); inputs.delete(c.id); 
 
 
 
-function startWave(i) {
-  waveAt = i
-  const w = WAVES[i]
-  spawnList(picked(w.pick))
-  for (const c of players.values())
-    if (!c.bot) { c.spLeft = {}; restoreSpecial(c) }
-  waveGap = WAVE_GAP_S
-  announce('§e' + w.name)
-  speak('announcer', i)
-}
 
-// every wave's rows, the one on the field (as the roster shows) first
-const waveOrder = (on = Math.max(0, WAVES.findIndex(w => picked(w.pick).some(i => roster.has(BOT_ID0 + i))))) =>
-  WAVES.flatMap((_, j) => picked(WAVES[(on + j) % WAVES.length].pick))
-function stepWaves(dt) {
-  if (gameMode !== 'waves') return
-  if ([...players.values()].some(c => c.bot && !c.bot.squad)) return
-  if (waveGap > 0) { if (waveGap === WAVE_GAP_S) prepareRows(botPairs(picked(WAVES[(waveAt + 1) % WAVES.length].pick))); waveGap -= dt; return }
-  if (waveGap > -WAVE_HOLD_S && prepQueue.some(q => !Array.isArray(q) || botPairs(picked(WAVES[(waveAt + 1) % WAVES.length].pick)).some(p => skinKey(...p) === skinKey(...q)))) { waveGap -= dt; return }
-  startWave((waveAt + 1) % WAVES.length)
-}
 
 
 // a guest's message k, as the host takes it from connection id: validate (optional, no side effects) returns the packet or null;
@@ -13350,6 +13330,29 @@ function setMode(m) {
   if (m === 'ffa') spawnBots(BOT_COUNT)
   else spawnList([]), stepSquad()
   return true
+}
+
+function startWave(i) {
+  waveAt = i
+  const w = WAVES[i]
+  spawnList(picked(w.pick))
+  for (const c of players.values())
+    if (!c.bot) { c.spLeft = {}; restoreSpecial(c) }
+  waveGap = WAVE_GAP_S
+  announce('§e' + w.name)
+  speak('announcer', i)
+}
+
+// every wave's rows, the one on the field (as the roster shows) first
+const waveOrder = (on = Math.max(0, WAVES.findIndex(w => picked(w.pick).some(i => roster.has(BOT_ID0 + i))))) =>
+  WAVES.flatMap((_, j) => picked(WAVES[(on + j) % WAVES.length].pick))
+
+function stepWaves(dt) {
+  if (gameMode !== 'waves') return
+  if ([...players.values()].some(c => c.bot && !c.bot.squad)) return
+  if (waveGap > 0) { if (waveGap === WAVE_GAP_S) prepareRows(botPairs(picked(WAVES[(waveAt + 1) % WAVES.length].pick))); waveGap -= dt; return }
+  if (waveGap > -WAVE_HOLD_S && prepQueue.some(q => !Array.isArray(q) || botPairs(picked(WAVES[(waveAt + 1) % WAVES.length].pick)).some(p => skinKey(...p) === skinKey(...q)))) { waveGap -= dt; return }
+  startWave((waveAt + 1) % WAVES.length)
 }
 
 // ---------------------------------------------------------------- loop
