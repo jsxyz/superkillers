@@ -649,17 +649,30 @@
 (() => {
 'use strict'
 /* CODE MAP — real-time 3D rooms, host authority, guest prediction.
-   Labels describe today's sections; mixed sections still contain game rules.
-   CONTENT: tuning tables (characters, attacks, objects, levels, models, sounds).
-   ENGINE: helpers; raycast; camera; physics; rewind; input; touch; debug F3;
-     settings; pause; code modal; scanning; fullscreen; chat; net; server mode;
-     loop; boot. Character's body/controller, bots' ray/nav helpers, tuning's
-     level compiler/visible faces and textures' QR level M are also engine.
-   RULES: character's inventory, abilities, teams and respawn; bots' decisions;
-     tornado; guns; commands' game handlers. Also mixed into engine: admission,
-     contact damage, hostTick, snapshot fields, reconcile, match/HUD/menu logic.
-   LOOKS: textures; avatars (mesh kit, Artie, Vito, Vito's screen); render;
-     sound, radio, voices; loop's draw/HUD. Their recipes/lines are content.
+   ENGINE, free of game names (engine.js checks): raycast, physics, rewind, net, loop.
+   SHARED, reused as they are by any game: helpers, character, camera, textures,
+     avatars, render, input, touch, debug, settings, pause, code modal,
+     fullscreen, chat, boot, and tuning's level compiler.
+   GAME, this shooter: the CONTENT tables at the top of tuning and the sections
+     bots, tornado, guns, rules, view, sound and voices.
+
+   Engine and shared sections read the CONTENT tables, and reach the game's
+   code only through the GAME parts (`const GAME = {}` in helpers), which the
+   game sections fill:
+     players: rows (admission, joins, side switches, row ids), participant and
+       participantOf (a player's row), schema (the player columns on the wire),
+       msgs (host message handlers), commands (chat commands);
+     simulation: host (the host tick's phases), think (a bot's input), lifecycle
+       (match start, joins, leaves, session end, snapshot fields), death, match
+       (limits, restart, mode, bots), level (loaded, grown tiles), crater,
+       objectBody;
+     presentation: looks and tornado (what avatars and render draw), view (HUD,
+       scoreboard, results, radar, server panel, F3 rows), audio (effects, radio,
+       voices).
+   To make a different game, replace those seven sections and the CONTENT
+   tables that differ. soccer/ is the worked example: build.py makes car-soccer.html from this
+   file plus soccer/parts, and check.js fails when a shared section reads a name
+   only this game declares, or a GAME part the replacement does not provide.
 
    Host: stepSim consumes fixed TICK inputs -> hostTick (intent, carry/drive,
      attacks) -> one Bullet step -> contacts/history -> sendSnapshot per guest.
@@ -678,9 +691,8 @@
    wireRow trims trailing zeros to 16 columns; absent tail fields read as 0.
    ammo/sp use -1 for unlimited; anim is one integer; cid selects the row.
 
-   Reskin: edit CONTENT tables and look recipes. Different rules also require
-   the RULES code and the mixed dependencies above: this file does not yet
-   expose a single game-adapter seam. Keep pack/unpack and wire guards aligned.
+   Reskin: edit the CONTENT tables and look recipes. Keep pack/unpack and the
+   wire guards aligned.
 */
 
 const THREE = ENABLE3D.THREE
