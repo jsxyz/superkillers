@@ -3920,7 +3920,7 @@ function growChunk(ci, cj) {
   const jumps = jumpsFrom(boxes)
   BOXES.push(...boxes); JUMPS.push(...jumps); LV.scenery.push(...scenery)
   addChunk(boxes, [ci, cj], [], trunksOf(scenery), false, crownsOf(scenery, boxes))
-  if (navLevel === levelId) navQueue.push([ci, cj])
+  GAME.level.grown(ci, cj)
   for (const [x, z, yaw, name, seed] of c.spot[3]) {
     parked.set(Math.round(2 * x) + ' ' + Math.round(2 * z), seed)
     const k = OBJECTS.findIndex(K => K.name === name)
@@ -3932,7 +3932,7 @@ function growChunk(ci, cj) {
 }
 // host grows all chunks within 96 m of any player (teleports); then the nearest in reach, one a tick
 function growTick() {
-  for (let n = 0; n < 4 && navQueue.length; n++) navTile(...navQueue.shift())
+  GAME.level.tick()
   const me = isHost ? players.get(0) : predicted, pts = isHost ? [...players.values()].map(c => [c.x, c.z])
     : [...tracks.values()].map(tr => [tr.at(-1).p[GAME.schema.col.x], tr.at(-1).p[GAME.schema.col.z]])
   if (me) growNear([[me.x, me.z]], true, growReach() - 96)
@@ -3990,14 +3990,14 @@ function loadLevel(id, gen) {
   levelGen = g && { seed: g.seed >>> 0, size: clamp(g.size | 0, 1, 32) }
   LV = compileLevel(g ? { ...L, gen: { ...g, ...levelGen } } : L); ARENA = LV.A; lsLeft = 8
   LV.hash = LV.boxes.reduce((h, b) => [b.cx, b.cy, b.cz, b.ex, b.ey, b.ez].reduce((h, v) => Math.imul(h ^ Math.round(v * 1000), 16777619), h), 2166136261) >>> 0
-  BOXES = LV.boxes; PADS = LV.pads; SPAWNS = LV.spawns
+  BOXES = LV.boxes; SPAWNS = LV.spawns
   JUMPS = jumpsFrom(BOXES)
   craterClear()
   if (world) loadStatics()
-  grown = new Set(LV.grow ? LV.grow.ring.map(c => c.join(' ')) : []); parked.clear(); navQueue.length = 0
+  grown = new Set(LV.grow ? LV.grow.ring.map(c => c.join(' ')) : []); parked.clear()
   craterEnsure()
   spawnObjects()
-  initPickups()
+  GAME.level.loaded()
   rebuildWorld()
   return levelId
 }
@@ -4041,13 +4041,13 @@ function craterBuild(list, done) {
     if (d) { R.gone = [R.render]; Object.assign(R, d); out.push(R) } else crb.regions.delete(R.key); ask(k + 1) }) : done({ regions: out, replaces: [...gs.keys()] })
   ask(0)
 }
-function craterEnsure() { const p = smashRow() && CRATER_BUILDER.ensure(); if (p) p.catch(e => console.error(e)) }
+function craterEnsure() { const p = GAME.crater.spec() && CRATER_BUILDER.ensure(); if (p) p.catch(e => console.error(e)) }
 const craterSquare = (x, z, r) => { const g = v => Math.round(v * 2) / 2, e = g(1.25 * r); return { a0: g(x) - e, a1: g(x) + e, b0: g(z) - e, b1: g(z) + e } }
 const over = (p, q) => p.a0 < q.a1 && q.a0 < p.a1 && p.b0 < q.b1 && q.b0 < p.b1
 const craterGround = (q, y, below = 0.3) => BOXES.filter(b => !b.paint && b.cx - b.ex <= q.a0 && b.cx + b.ex >= q.a1 && b.cz - b.ez <= q.b0 && b.cz + b.ez >= q.b1 &&
   b.cy + b.ey - y <= 0.3 && y - b.cy - b.ey <= below).sort((a, b) => b.cy + b.ey - a.cy - a.ey)[0]
 function craterFits(x, z, r, y) {
-  const q = craterSquare(x, z, r), g = craterGround(q, y), top = b => b.cy + b.ey, S = smashRow()?.smash
+  const q = craterSquare(x, z, r), g = craterGround(q, y), top = b => b.cy + b.ey, S = GAME.crater.spec()
   return !!g && 2 * g.ey + 1e-3 >= (S ? S.depth * r / S.r : 0) && !BOXES.some(b => !b.paint && b !== g && b.cx - b.ex < q.a1 && b.cx + b.ex > q.a0 && b.cz - b.ez < q.b1 && b.cz + b.ez > q.b0 &&
     top(b) > top(g) + 0.01 && b.cy - b.ey < top(g) + 3)
 }
@@ -4060,19 +4060,19 @@ function addCrater(x, z, r, y) {
 }
 // append-only: anything but the held list plus more is refused
 const craterOk = cr => Array.isArray(cr) && cr.length <= CRATER_MAX && cr.every(e => Array.isArray(e) && e.length === 5 &&
-  e.every(Number.isFinite) && Math.abs(e[0]) <= ARENA && Math.abs(e[1]) <= ARENA && e[2] >= 0.5 && e[2] <= Math.max(...[...BOTS, ...CHARS].map(R => R.smash?.r || 0)) && e[3] === e[3] >>> 0 &&
+  e.every(Number.isFinite) && Math.abs(e[0]) <= ARENA && Math.abs(e[1]) <= ARENA && e[2] >= 0.5 && e[2] <= GAME.crater.maxR() && e[3] === e[3] >>> 0 &&
   e[4] >= -64 && e[4] <= 192) && craterHeld(cr)       // y: webPoint's range
 const craterHeld = cr => craters.every((e, i) => Array.isArray(cr[i]) && e.every((v, k) => v === cr[i][k]))
 function takeCraters(cr, cv) {
-  if (cr !== undefined && (cv | 0) !== craterV && smashRow()) {
+  if (cr !== undefined && (cv | 0) !== craterV && GAME.crater.spec()) {
     if (craterOk(cr)) { const n = craters.length; craters = cr.map(e => e.slice()); craterV = cv | 0; if (cr.length > n) buildCrater(n) }
     else if (!craterBehind) sysMsg('§cRefused the host\'s craters.')
   }
   craterBehind = cv !== undefined && (cv | 0) !== craterV
 }
 function buildCrater(added) {
-  const R = smashRow(), t = geoToken
-  if (R && world) CRATER_BUILDER.build(craters.map(([x, z, r, seed, y]) => ({ x, z, r, seed, y, depth: R.smash.depth * r / R.smash.r })),
+  const S = GAME.crater.spec(), t = geoToken
+  if (S && world) CRATER_BUILDER.build(craters.map(([x, z, r, seed, y]) => ({ x, z, r, seed, y, depth: S.depth * r / S.r })),
     added, res => t === geoToken && craterTake(res))
 }
 function craterTake({ regions, replaces }) {
@@ -13614,6 +13614,11 @@ GAME.msgs = { host: {
     return
   } },
 } }
+
+// what a level load, a grown chunk and each tick hand the game: its pads, pickups and bot navigation
+GAME.level = { loaded() { PADS = LV.pads; navQueue.length = 0; initPickups() }, grown(ci, cj) { if (navLevel === levelId) navQueue.push([ci, cj]) }, tick() { for (let n = 0; n < 4 && navQueue.length; n++) navTile(...navQueue.shift()) } }
+// the crater a smash leaves: the row's shape, and the widest any row can make
+GAME.crater = { spec: () => smashRow()?.smash, maxR: () => Math.max(...[...BOTS, ...CHARS].map(R => R.smash?.r || 0)) }
 
 // ---------------------------------------------------------------- loop
 let acc = 0, last = now(), snapAcc = 0, tickAt = 0      // ms: when the last tick fell due
