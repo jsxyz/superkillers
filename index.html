@@ -2684,21 +2684,11 @@ function applyIntent(c, inp, dt) {
   if (c.prot > 0) c.prot -= dt
   if (c.dead > 0) {
     if (c.wallRun) turnBody(c, false, c.yaw, c.x, c.y - c.h, c.z)
-    const team = isHost ? onTeam(c) : [], up = team.filter(m => m.dead <= 0)
-    if (up.length) {
-      c.dead = RESPAWN_S
-      if (!c.bot && (c.downT = (c.downT || 0) + dt) >= TEAM_BEAT) { const to = up.filter(free); if (to.length) swapTo(c, nearest(c, to)) }
-    }
+    const team = GAME.death.down(c, dt)
     c.dead -= dt
     untie(c)
     c.body.setLinearVelocity(zeroVec); c.dove = false
-    if (c.dead <= 0) {
-      if (c.bot && c.owner === undefined && !c.bot.squad && (c.bot.rare || gameMode === 'waves')) leaveRare(c)
-      else {      // player last
-        for (const m of team.length ? team.filter(m => m.dead > 0 || m === c).sort((a, b) => !a.bot - !b.bot) : [c]) { m.downT = 0; if (isHost && !m.bot) rebalance(m); respawn(m) }
-        rollRare(c)
-      }
-    }
+    if (c.dead <= 0) GAME.death.up(c, team)
     return
   }
   groundCheck(c)
@@ -2908,16 +2898,6 @@ function rescue(c) {
   c.jLock = false
 }
 
-function rollRare(c) {
-  if (!isHost || gameMode !== 'ffa') return
-  BOTS.forEach((B, i) => {
-    if (!B.visits || players.has(BOT_ID0 + i) || Math.floor(Math.random() * RARE_ONE_IN)) return
-    addBot(i)
-    if (conns.size) pushRoster()
-    announce('§f' + B.name + ' §7turned up.')
-  })
-}
-
 function leaveRare(c) {
   players.delete(c.id); inputs.delete(c.id); roster.delete(c.id)
   detachBody(c)
@@ -2947,47 +2927,6 @@ function respawn(c) {
   c.spLeft = {}                      // only dying reloads a primary
   c.cap = (Math.random() * CAP_TEXT.length) | 0
   restoreSpecial(c)
-}
-
-// not predicted on the guest (rebuilds the body)
-function becomeChar(c, cid) {
-  const frac = c.hp / CHARS[c.cid].hp, guns = gunsOf(c), team = CHARS[c.cid].team
-  applyChar(c, cid)
-  if (isHost && !c.bot && team !== CHARS[cid].team) { const p = roster.get(c.id); if (p) p.cid = cid; dropMates(c.id); if (CHARS[cid].team) fieldTeam(c); teamsChanged() }
-  if (!guns || !gunsOf(c)) armRow(c)
-  if (!CHARS[cid].manyGuns) c.bag = 0
-  c.hp = Math.max(1, Math.round(CHARS[cid].hp * frac))
-  c.shiftCool = SHIFT_CD
-  c.jLock = false; c.dove = false
-  return true
-}
-
-function shiftForm(c) {
-  const to = CHARS[c.cid].shift
-  if (to === undefined || c.dead > 0 || c.shiftCool > 0) return false
-  if (CHARS[to].hidden && c.gun > 0 && !GUNS[c.gun].special) dropWeapon(c)
-  return becomeChar(c, to)
-}
-
-function rebalance(c) {
-  const [mine, rest] = tally(sideOf(c))
-  if (!balanced() || mine - rest < 2) return
-  const to = fallbackRow(c.id)
-  moveTo(c, to); pushRoster()
-  announce('§e' + (roster.get(c.id)?.name || 'A player') + ' §7moves to the §f' + SIDES[CHARS[to].side].name + '§7 to balance the teams.')
-}
-const moveTo = (c, cid) => { becomeChar(c, cid); const p = roster.get(c.id); if (p) p.cid = cid }
-
-function switchChar(c, cid) {
-  const C = CHARS[cid]
-  if (!C || C.hidden || cid === c.cid || c.dead > 0 || c.shiftCool > 0) return false
-  if (!sideOffered(C.side) || !c.bot && sideLocked(C.side, c.id).locked) return false
-  if (!c.bot && C.team && C.team === CHARS[c.cid].team) {
-    const m = onTeam(c).find(m => m.cid === cid && m.dead <= 0)
-    return !!m && free(c) && free(m) && (swapTo(c, m), true)
-  }
-  if (!c.bot && taken(C.team, c.id)) return false
-  return becomeChar(c, cid)
 }
 
 // ---------------------------------------------------------------- bots
@@ -12016,7 +11955,7 @@ function requestChar(idx) {
   const me = selfChar(), swap = !!me && !!CHARS[idx].team && CHARS[idx].team === CHARS[me.cid]?.team
   if (isHost) {
     const c = players.get(0)
-    if (c && !switchChar(c, idx)) return swap ? noSwap(c, idx) : sysMsg('§7Not yet — still changing.')
+    if (c && !GAME.rows.switch(c, idx)) return swap ? noSwap(c, idx) : sysMsg('§7Not yet — still changing.')
     if (!swap) roster.set(0, { cid: idx, name: myName }), pushRoster()
   } else {
     sendHost({ k: 'char', cid: idx })
@@ -13604,6 +13543,75 @@ GAME.lifecycle = {
   },
 }
 
+function rollRare(c) {
+  if (!isHost || gameMode !== 'ffa') return
+  BOTS.forEach((B, i) => {
+    if (!B.visits || players.has(BOT_ID0 + i) || Math.floor(Math.random() * RARE_ONE_IN)) return
+    addBot(i)
+    if (conns.size) pushRoster()
+    announce('§f' + B.name + ' §7turned up.')
+  })
+}
+
+// not predicted on the guest (rebuilds the body)
+function becomeChar(c, cid) {
+  const frac = c.hp / CHARS[c.cid].hp, guns = gunsOf(c), team = CHARS[c.cid].team
+  applyChar(c, cid)
+  if (isHost && !c.bot && team !== CHARS[cid].team) { const p = roster.get(c.id); if (p) p.cid = cid; dropMates(c.id); if (CHARS[cid].team) fieldTeam(c); teamsChanged() }
+  if (!guns || !gunsOf(c)) armRow(c)
+  if (!CHARS[cid].manyGuns) c.bag = 0
+  c.hp = Math.max(1, Math.round(CHARS[cid].hp * frac))
+  c.shiftCool = SHIFT_CD
+  c.jLock = false; c.dove = false
+  return true
+}
+
+function shiftForm(c) {
+  const to = CHARS[c.cid].shift
+  if (to === undefined || c.dead > 0 || c.shiftCool > 0) return false
+  if (CHARS[to].hidden && c.gun > 0 && !GUNS[c.gun].special) dropWeapon(c)
+  return becomeChar(c, to)
+}
+
+function rebalance(c) {
+  const [mine, rest] = tally(sideOf(c))
+  if (!balanced() || mine - rest < 2) return
+  const to = fallbackRow(c.id)
+  moveTo(c, to); pushRoster()
+  announce('§e' + (roster.get(c.id)?.name || 'A player') + ' §7moves to the §f' + SIDES[CHARS[to].side].name + '§7 to balance the teams.')
+}
+const moveTo = (c, cid) => { becomeChar(c, cid); const p = roster.get(c.id); if (p) p.cid = cid }
+
+function switchChar(c, cid) {
+  const C = CHARS[cid]
+  if (!C || C.hidden || cid === c.cid || c.dead > 0 || c.shiftCool > 0) return false
+  if (!sideOffered(C.side) || !c.bot && sideLocked(C.side, c.id).locked) return false
+  if (!c.bot && C.team && C.team === CHARS[c.cid].team) {
+    const m = onTeam(c).find(m => m.cid === cid && m.dead <= 0)
+    return !!m && free(c) && free(m) && (swapTo(c, m), true)
+  }
+  if (!c.bot && taken(C.team, c.id)) return false
+  return becomeChar(c, cid)
+}
+
+// a downed player's team: those still up hold its respawn, and after TEAM_BEAT it swaps into the nearest free one
+function teamDown(c, dt) {
+  const team = isHost ? onTeam(c) : [], up = team.filter(m => m.dead <= 0)
+  if (up.length) {
+    c.dead = RESPAWN_S
+    if (!c.bot && (c.downT = (c.downT || 0) + dt) >= TEAM_BEAT) { const to = up.filter(free); if (to.length) swapTo(c, nearest(c, to)) }
+  }
+  return team
+}
+// back up: a visitor leaves, else its team respawns together (the player last), rebalanced, and a rare bot may turn up
+function teamUp(c, team) {
+  if (c.bot && c.owner === undefined && !c.bot.squad && (c.bot.rare || gameMode === 'waves')) leaveRare(c)
+  else {      // player last
+    for (const m of team.length ? team.filter(m => m.dead > 0 || m === c).sort((a, b) => !a.bot - !b.bot) : [c]) { m.downT = 0; if (isHost && !m.bot) rebalance(m); respawn(m) }
+    rollRare(c)
+  }
+}
+GAME.death = { down: teamDown, up: teamUp }
 // a joining player's row: the one it asked for, unless this room cannot take it (told why), and its team fielded once it stands
 GAME.rows = {
   admit(id, asked) {
@@ -13619,6 +13627,7 @@ GAME.rows = {
     return cid
   },
   joined(c, cid) { if (CHARS[cid].team) fieldTeam(c), teamsChanged() },
+  switch: switchChar,
   cid: v => clamp(v | 0, 0, CHARS.length - 1),
   of: cid => CHARS[cid],
 }
