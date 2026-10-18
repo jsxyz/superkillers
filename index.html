@@ -13389,127 +13389,6 @@ function objectStrikes(o, c, credit) {
   if (D && !(c.prot > 0) && (c.hp -= stat(c, 'take', stat(by, 'give', D))) <= 0 && downed(c) && credit) credit(by.id, by)(c, { name: 'Hurl' })
 }
 
-// ---------------------------------------------------------------- loop
-let acc = 0, last = now(), snapAcc = 0, tickAt = 0      // ms: when the last tick fell due
-// this frame's ticks of each player simulated here, for the drawn side to step through; fresh: moved by a reconcile, not a tick
-const tickSamples = new Map()
-// each tick's start pose of what is simulated here; drawn between it and the tick's end at drawAlpha
-const prevPose = new WeakMap(), accRing = [], objDrawn = new Map()
-let drawD = 0, drawAt = 0, drawAlpha = 1
-function keepPose(e, q) {
-  let p = prevPose.get(e)
-  if (!p) prevPose.set(e, p = [0, 0, 0, 0, 0, 0, 1, 0])
-  p[0] = e.x; p[1] = e.y; p[2] = e.z; p[7] = e.warp || 0
-  if (q) { p[3] = q[0]; p[4] = q[1]; p[5] = q[2]; p[6] = q[3] }
-}
-function keepPoses() {
-  if (isHost) for (const c of players.values()) keepPose(c)
-  else if (predicted) keepPose(predicted)
-  for (const o of objs) keepPose(o, o.q)
-}
-// D: the largest leftover (to a tick) of the last 250 ms of frames; it falls at 0.05 ms a ms, so drawn time never skips ahead
-function drawDelay(t) {
-  accRing.push(t, Math.min(acc, TICK) * 1000)
-  while (accRing[0] < t - 250) accRing.splice(0, 2)
-  let want = 0
-  for (let i = 1; i < accRing.length; i += 2) want = Math.max(want, accRing[i])
-  const step = 0.05 * Math.max(0, t - drawAt)
-  drawD = Math.max(want, drawD - step); drawAt = t
-  drawAlpha = acc >= TICK ? 1 : clamp(1 + (acc * 1000 - drawD) / (TICK * 1000), 0, 1)
-}
-const drawnT = () => tickAt - (1 - drawAlpha) * TICK * 1000
-// where e is drawn: between its last two ticks (null: at its tick, or it jumped or was put somewhere)
-function drawnPose(e) {
-  const p = drawAlpha < 1 && prevPose.get(e)
-  if (!p || p[7] !== (e.warp || 0) || p[0] === e.x && p[1] === e.y && p[2] === e.z || (e.x - p[0]) ** 2 + (e.y - p[1]) ** 2 + (e.z - p[2]) ** 2 > 25) return null
-  const k = 1 - drawAlpha
-  return [e.x + (p[0] - e.x) * k, e.y + (p[1] - e.y) * k, e.z + (p[2] - e.z) * k]
-}
-// a drawn copy of an object `of` its simulated self
-function drawnObj(o) {
-  const P = drawnPose(o)
-  if (!P) return o
-  const d = { ...o, x: P[0], y: P[1], z: P[2], q: nlerp(prevPose.get(o).slice(3, 7), o.q, drawAlpha), of: o }
-  objDrawn.set(o, d)
-  return d
-}
-// a tick's aim: the angles (and reticle distance) that take this tick's sim camera ray, or eye, to what the crosshair
-// is on as drawn at the last frame's drawn pose; as input on a frame's first tick when the view was drawn at it
-function aimed(inp) {
-  const v = inp.view, me = isHost ? players.get(0) : predicted
-  if (!(inp.fire || inp.alt || inp.descend) || !v || !v.moved && !tickSamples.get(myId)?.length || !me || (v.at[0] - me.x) ** 2 + (v.at[1] - me.y) ** 2 + (v.at[2] - me.z) ** 2 > 25) return inp
-  if (inp.aimAt === tickAt) return inp.aimed
-  const viaCam = v.cam, from = { ...me, x: v.at[0], y: v.at[1], z: v.at[2] }
-  const [fx, fy, fz] = aimDir(inp.yaw, inp.pitch), f = viaCam ? camRay(from, inp.yaw, inp.pitch) : { x: from.x, y: eyeOf(from), z: from.z, dx: fx, dy: fy, dz: fz }
-  const P = [f.x + f.dx * v.d, f.y + f.dy * v.d, f.z + f.dz * v.d]
-  let yaw = inp.yaw, pitch = inp.pitch, r = null
-  for (let i = 0, e = 1; i < 12 && e > 1e-7; i++) {
-    const [ex, ey, ez] = aimDir(yaw, pitch)
-    r = viaCam ? camRay(me, yaw, pitch) : { x: me.x, y: eyeOf(me), z: me.z, dx: ex, dy: ey, dz: ez }
-    const dx = P[0] - r.x, dy = P[1] - r.y, dz = P[2] - r.z, n = Math.hypot(dx, dy, dz) || 1
-    const turn = wrapPi(Math.atan2(-dx, -dz) - Math.atan2(-r.dx, -r.dz)), tilt = Math.asin(dy / n) - Math.asin(r.dy)
-    yaw += turn; pitch += tilt; e = Math.abs(turn) + Math.abs(tilt)
-  }
-  inp.aimAt = tickAt
-  return inp.aimed = { ...inp, yaw, pitch, d: viaCam ? (P[0] - r.x) * r.dx + (P[1] - r.y) * r.dy + (P[2] - r.z) * r.dz : 0 }
-}
-let predJump = false
-// a reconcile's turn drawn away: 20% a tick, at most 1.5° a tick
-function easeOffsets() {
-  for (const o of objs) if (o.offQ) { const a = 2 * Math.acos(Math.min(1, Math.abs(o.offQ[3]))); o.offQ = a < 1e-4 ? null : nlerp(o.offQ, [0, 0, 0, 1], Math.min(0.2, 0.026 / a)) }
-}
-function sampleTick(id, c, fresh, fire) {
-  let list = tickSamples.get(id)
-  if (!list) tickSamples.set(id, list = [])
-  const anim = animOf(c)
-  list.push({ x: c.x, y: c.y, z: c.z, yaw: c.yaw, wy: c.wy, vx: c.vx, vy: c.vy, vz: c.vz, anim, turned: anim === 4 && !!GAME.participant(id, c.cid).wallRun, ceil: !!c.ceil, fresh, fire })
-}
-// server panel: rates per second, bytes per session
-let ticksRun = 0, tickRate = 0, snapsOut = 0, snapOutRate = 0, bytesUpAll = 0, bytesDownAll = 0
-
-const IDLE_INPUT = INPUT_SCHEMA.empty()
-
-// ack = last input TAKEN (empty queue repeats the last, no ack); excess over the buffer drained but acked
-function takeInput(id) {
-  const q = inQ.get(id)
-  if (!q) return inputs.get(id) || IDLE_INPUT
-  // head hole = input in flight: wait only below MAX_INQ, or one lost input stalls the player for good
-  if (q.length && q[0].s !== (inAck.get(id) || 0) + 1 && q.length < MAX_INQ)
-    return inputs.get(id) || IDLE_INPUT
-  let got = null
-  // skip at most ONE per tick: more acks inputs never run and the guest jerks back
-  for (let n = 1 + (q.length > MAX_INQ ? 1 : 0); n > 0 && q.length; n--) got = q.shift()
-  if (!got) return inputs.get(id) || IDLE_INPUT
-  inAck.set(id, got.s)
-  inputs.set(id, got)
-  return got
-}
-
-function hostTick(dt) {
-  const t = { dt }
-  HOST_PHASES.beforeTick(t)
-  const me = players.get(0)
-  if (me) me.pitch = aimed(input).pitch
-  const all = [...players.values()]
-  spawnAvoid = all
-
-  // one take per player per tick: reading the queue again would consume a second input
-  const cur = new Map()
-  for (const [id, c] of players)
-    cur.set(id, id === 0 ? aimed(input)
-                : c.bot ? (inputs.set(id, botThink(c, all, dt)), inputs.get(id))
-                : takeInput(id))
-
-  // sampled after this tick's takes: the depth left standing
-  for (const [id, q] of inQ) {
-    const seen = inqFloor.get(id)
-    if (seen === undefined || q.length < seen) inqFloor.set(id, q.length)
-  }
-
-  t.all = all; t.cur = cur
-  msPhys = msPhys * 0.9 + tickChars(all, c => cur.get(c.id) || IDLE_INPUT, dt, HOST_PHASES, t) * 0.1      // the one step
-  recordHistory(tickAt, all)
-}
 // a host tick's rules, in its order around the engine's own steps (see hostTick); t: the tick's dt, all (players), cur (their
 // inputs), and what one phase hands the next
 const HOST_PHASES = {
@@ -13627,6 +13506,131 @@ const HOST_PHASES = {
   vehicleTick(all, credit, touch, dt)
   },
 }
+GAME.host = HOST_PHASES
+// a bot's input for this tick, from what it sees
+GAME.think = botThink
+
+// ---------------------------------------------------------------- loop
+let acc = 0, last = now(), snapAcc = 0, tickAt = 0      // ms: when the last tick fell due
+// this frame's ticks of each player simulated here, for the drawn side to step through; fresh: moved by a reconcile, not a tick
+const tickSamples = new Map()
+// each tick's start pose of what is simulated here; drawn between it and the tick's end at drawAlpha
+const prevPose = new WeakMap(), accRing = [], objDrawn = new Map()
+let drawD = 0, drawAt = 0, drawAlpha = 1
+function keepPose(e, q) {
+  let p = prevPose.get(e)
+  if (!p) prevPose.set(e, p = [0, 0, 0, 0, 0, 0, 1, 0])
+  p[0] = e.x; p[1] = e.y; p[2] = e.z; p[7] = e.warp || 0
+  if (q) { p[3] = q[0]; p[4] = q[1]; p[5] = q[2]; p[6] = q[3] }
+}
+function keepPoses() {
+  if (isHost) for (const c of players.values()) keepPose(c)
+  else if (predicted) keepPose(predicted)
+  for (const o of objs) keepPose(o, o.q)
+}
+// D: the largest leftover (to a tick) of the last 250 ms of frames; it falls at 0.05 ms a ms, so drawn time never skips ahead
+function drawDelay(t) {
+  accRing.push(t, Math.min(acc, TICK) * 1000)
+  while (accRing[0] < t - 250) accRing.splice(0, 2)
+  let want = 0
+  for (let i = 1; i < accRing.length; i += 2) want = Math.max(want, accRing[i])
+  const step = 0.05 * Math.max(0, t - drawAt)
+  drawD = Math.max(want, drawD - step); drawAt = t
+  drawAlpha = acc >= TICK ? 1 : clamp(1 + (acc * 1000 - drawD) / (TICK * 1000), 0, 1)
+}
+const drawnT = () => tickAt - (1 - drawAlpha) * TICK * 1000
+// where e is drawn: between its last two ticks (null: at its tick, or it jumped or was put somewhere)
+function drawnPose(e) {
+  const p = drawAlpha < 1 && prevPose.get(e)
+  if (!p || p[7] !== (e.warp || 0) || p[0] === e.x && p[1] === e.y && p[2] === e.z || (e.x - p[0]) ** 2 + (e.y - p[1]) ** 2 + (e.z - p[2]) ** 2 > 25) return null
+  const k = 1 - drawAlpha
+  return [e.x + (p[0] - e.x) * k, e.y + (p[1] - e.y) * k, e.z + (p[2] - e.z) * k]
+}
+// a drawn copy of an object `of` its simulated self
+function drawnObj(o) {
+  const P = drawnPose(o)
+  if (!P) return o
+  const d = { ...o, x: P[0], y: P[1], z: P[2], q: nlerp(prevPose.get(o).slice(3, 7), o.q, drawAlpha), of: o }
+  objDrawn.set(o, d)
+  return d
+}
+// a tick's aim: the angles (and reticle distance) that take this tick's sim camera ray, or eye, to what the crosshair
+// is on as drawn at the last frame's drawn pose; as input on a frame's first tick when the view was drawn at it
+function aimed(inp) {
+  const v = inp.view, me = isHost ? players.get(0) : predicted
+  if (!(inp.fire || inp.alt || inp.descend) || !v || !v.moved && !tickSamples.get(myId)?.length || !me || (v.at[0] - me.x) ** 2 + (v.at[1] - me.y) ** 2 + (v.at[2] - me.z) ** 2 > 25) return inp
+  if (inp.aimAt === tickAt) return inp.aimed
+  const viaCam = v.cam, from = { ...me, x: v.at[0], y: v.at[1], z: v.at[2] }
+  const [fx, fy, fz] = aimDir(inp.yaw, inp.pitch), f = viaCam ? camRay(from, inp.yaw, inp.pitch) : { x: from.x, y: eyeOf(from), z: from.z, dx: fx, dy: fy, dz: fz }
+  const P = [f.x + f.dx * v.d, f.y + f.dy * v.d, f.z + f.dz * v.d]
+  let yaw = inp.yaw, pitch = inp.pitch, r = null
+  for (let i = 0, e = 1; i < 12 && e > 1e-7; i++) {
+    const [ex, ey, ez] = aimDir(yaw, pitch)
+    r = viaCam ? camRay(me, yaw, pitch) : { x: me.x, y: eyeOf(me), z: me.z, dx: ex, dy: ey, dz: ez }
+    const dx = P[0] - r.x, dy = P[1] - r.y, dz = P[2] - r.z, n = Math.hypot(dx, dy, dz) || 1
+    const turn = wrapPi(Math.atan2(-dx, -dz) - Math.atan2(-r.dx, -r.dz)), tilt = Math.asin(dy / n) - Math.asin(r.dy)
+    yaw += turn; pitch += tilt; e = Math.abs(turn) + Math.abs(tilt)
+  }
+  inp.aimAt = tickAt
+  return inp.aimed = { ...inp, yaw, pitch, d: viaCam ? (P[0] - r.x) * r.dx + (P[1] - r.y) * r.dy + (P[2] - r.z) * r.dz : 0 }
+}
+let predJump = false
+// a reconcile's turn drawn away: 20% a tick, at most 1.5° a tick
+function easeOffsets() {
+  for (const o of objs) if (o.offQ) { const a = 2 * Math.acos(Math.min(1, Math.abs(o.offQ[3]))); o.offQ = a < 1e-4 ? null : nlerp(o.offQ, [0, 0, 0, 1], Math.min(0.2, 0.026 / a)) }
+}
+function sampleTick(id, c, fresh, fire) {
+  let list = tickSamples.get(id)
+  if (!list) tickSamples.set(id, list = [])
+  const anim = animOf(c)
+  list.push({ x: c.x, y: c.y, z: c.z, yaw: c.yaw, wy: c.wy, vx: c.vx, vy: c.vy, vz: c.vz, anim, turned: anim === 4 && !!GAME.participant(id, c.cid).wallRun, ceil: !!c.ceil, fresh, fire })
+}
+// server panel: rates per second, bytes per session
+let ticksRun = 0, tickRate = 0, snapsOut = 0, snapOutRate = 0, bytesUpAll = 0, bytesDownAll = 0
+
+const IDLE_INPUT = INPUT_SCHEMA.empty()
+
+// ack = last input TAKEN (empty queue repeats the last, no ack); excess over the buffer drained but acked
+function takeInput(id) {
+  const q = inQ.get(id)
+  if (!q) return inputs.get(id) || IDLE_INPUT
+  // head hole = input in flight: wait only below MAX_INQ, or one lost input stalls the player for good
+  if (q.length && q[0].s !== (inAck.get(id) || 0) + 1 && q.length < MAX_INQ)
+    return inputs.get(id) || IDLE_INPUT
+  let got = null
+  // skip at most ONE per tick: more acks inputs never run and the guest jerks back
+  for (let n = 1 + (q.length > MAX_INQ ? 1 : 0); n > 0 && q.length; n--) got = q.shift()
+  if (!got) return inputs.get(id) || IDLE_INPUT
+  inAck.set(id, got.s)
+  inputs.set(id, got)
+  return got
+}
+
+function hostTick(dt) {
+  const t = { dt }
+  GAME.host.beforeTick(t)
+  const me = players.get(0)
+  if (me) me.pitch = aimed(input).pitch
+  const all = [...players.values()]
+  spawnAvoid = all
+
+  // one take per player per tick: reading the queue again would consume a second input
+  const cur = new Map()
+  for (const [id, c] of players)
+    cur.set(id, id === 0 ? aimed(input)
+                : c.bot ? (inputs.set(id, GAME.think(c, all, dt)), inputs.get(id))
+                : takeInput(id))
+
+  // sampled after this tick's takes: the depth left standing
+  for (const [id, q] of inQ) {
+    const seen = inqFloor.get(id)
+    if (seen === undefined || q.length < seen) inqFloor.set(id, q.length)
+  }
+
+  t.all = all; t.cur = cur
+  msPhys = msPhys * 0.9 + tickChars(all, c => cur.get(c.id) || IDLE_INPUT, dt, GAME.host, t) * 0.1      // the one step
+  recordHistory(tickAt, all)
+}
 
 
 // Ordered fields define wire columns; readers keep their context's coercions and defaults. A field's third element is
@@ -13693,7 +13697,7 @@ const OWN_PREDICTION = (F => {
   }
 })(PLAYER_STATE.col)
 // the game this engine runs: its messages, state schema, input, host tick rules and own predicted component
-Object.assign(GAME, { msgs: { host: HOST_MSGS, guest: GUEST_MSGS }, schema: PLAYER_STATE, input: INPUT_SCHEMA, host: HOST_PHASES, predict: OWN_PREDICTION })
+Object.assign(GAME, { msgs: { host: HOST_MSGS, guest: GUEST_MSGS }, schema: PLAYER_STATE, input: INPUT_SCHEMA, predict: OWN_PREDICTION })
 
 // background tabs throttle rAF to ~0 Hz, freezing a host: a worker is its clock
 const BG_SRC = 'var h;onmessage=function(e){clearInterval(h);' +
