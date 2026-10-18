@@ -12790,51 +12790,11 @@ function stopServing() {
   setTimeout(resetToMenu, 120)       // let the goodbye flush
 }
 
-function spawnList(rows) {
-  for (const [id, c] of [...players]) if (c.bot && !c.bot.squad && c.owner === undefined) dropBot(c)
-  rows.forEach(addBot)
-  if (conns.size) pushRoster()
-}
 
 function dropBot(c) { detachBody(c); players.delete(c.id); inputs.delete(c.id); roster.delete(c.id) }
 
-const SQUAD = (r => [...r.filter(i => BOTS[i].always).sort((a, b) => BOTS[a].always - BOTS[b].always), ...r.filter(i => !BOTS[i].always)])(BOTS.flatMap((B, i) => B.squad ? [i] : []))
-const squadWant = () => gameMode === 'ffa' && BOT_COUNT ? [...fieldedTeams()].reduce((n, t) => n + (TEAMS[t].foes | 0), BOT_COUNT) : 0
-function stepSquad() {
-  let want = Math.min(SQUAD.length, squadWant()), moved = false
-  for (const i of SQUAD) {
-    const c = players.get(BOT_ID0 + i)
-    if (want-- > 0) moved = !c && addBot(i) || moved
-    else if (c) dropBot(c), moved = true
-  }
-  if (moved && conns.size) pushRoster()
-}
 
-function addBot(i) {
-  const id = BOT_ID0 + i
-  if (!BOTS[i] || players.has(id)) return false
-  const b = newBot(i)
-  b.id = id
-  players.set(id, b)
-  roster.set(id, { cid: b.cid, name: b.bot.name })
-  return true
-}
 
-function spawnBots(n) {
-  BOT_COUNT = clamp(n | 0, 0, regulars())
-  spawnList(heroWant())
-}
-function heroWant() {
-  const on = fieldedTeams()
-  return BOTS.flatMap((B, i) => !B.squad && !on.has(B.team) ? [i] : []).sort((a, b) => !!BOTS[a].rare - !!BOTS[b].rare).slice(0, BOT_COUNT)
-}
-function teamsChanged() {
-  if (gameMode !== 'ffa') return
-  const want = heroWant()
-  for (const c of [...players.values()]) if (c.id >= BOT_ID0 && !c.bot.squad && !want.includes(c.id - BOT_ID0)) dropBot(c)
-  want.forEach(addBot)
-  if (conns.size) pushRoster()
-}
 
 function startWave(i) {
   waveAt = i
@@ -12858,18 +12818,6 @@ function stepWaves(dt) {
   startWave((waveAt + 1) % WAVES.length)
 }
 
-function setMode(m) {
-  if (!MODES.includes(m)) return false
-  const humans = conns.size + (serving ? 0 : 1)
-  if (m === 'waves' && humans > WAVES_PLAYERS) { sysMsg('§cWaves takes ' + WAVES_PLAYERS + ' players; ' + humans + ' are here.'); return false }
-  gameMode = m
-  for (const c of players.values()) if (!c.bot && !sideOffered(sideOf(c))) moveTo(c, START)
-  pushRoster()
-  waveAt = -1; waveGap = 0
-  if (m === 'ffa') spawnBots(BOT_COUNT)
-  else spawnList([]), stepSquad()
-  return true
-}
 
 // a guest's message k, as the host takes it from connection id: validate (optional, no side effects) returns the packet or null;
 // apply acts on it, and what it returns is onHostData's
@@ -13341,6 +13289,69 @@ function remoteAt(t) {
   }
   return out
 }
+// ---------------------------------------------------------------- rules
+// this game's rules: modes, bots, waves, combat; the engine reaches them through GAME and the phases
+function spawnList(rows) {
+  for (const [id, c] of [...players]) if (c.bot && !c.bot.squad && c.owner === undefined) dropBot(c)
+  rows.forEach(addBot)
+  if (conns.size) pushRoster()
+}
+
+const SQUAD = (r => [...r.filter(i => BOTS[i].always).sort((a, b) => BOTS[a].always - BOTS[b].always), ...r.filter(i => !BOTS[i].always)])(BOTS.flatMap((B, i) => B.squad ? [i] : []))
+
+const squadWant = () => gameMode === 'ffa' && BOT_COUNT ? [...fieldedTeams()].reduce((n, t) => n + (TEAMS[t].foes | 0), BOT_COUNT) : 0
+
+function stepSquad() {
+  let want = Math.min(SQUAD.length, squadWant()), moved = false
+  for (const i of SQUAD) {
+    const c = players.get(BOT_ID0 + i)
+    if (want-- > 0) moved = !c && addBot(i) || moved
+    else if (c) dropBot(c), moved = true
+  }
+  if (moved && conns.size) pushRoster()
+}
+
+function addBot(i) {
+  const id = BOT_ID0 + i
+  if (!BOTS[i] || players.has(id)) return false
+  const b = newBot(i)
+  b.id = id
+  players.set(id, b)
+  roster.set(id, { cid: b.cid, name: b.bot.name })
+  return true
+}
+
+function spawnBots(n) {
+  BOT_COUNT = clamp(n | 0, 0, regulars())
+  spawnList(heroWant())
+}
+
+function heroWant() {
+  const on = fieldedTeams()
+  return BOTS.flatMap((B, i) => !B.squad && !on.has(B.team) ? [i] : []).sort((a, b) => !!BOTS[a].rare - !!BOTS[b].rare).slice(0, BOT_COUNT)
+}
+
+function teamsChanged() {
+  if (gameMode !== 'ffa') return
+  const want = heroWant()
+  for (const c of [...players.values()]) if (c.id >= BOT_ID0 && !c.bot.squad && !want.includes(c.id - BOT_ID0)) dropBot(c)
+  want.forEach(addBot)
+  if (conns.size) pushRoster()
+}
+
+function setMode(m) {
+  if (!MODES.includes(m)) return false
+  const humans = conns.size + (serving ? 0 : 1)
+  if (m === 'waves' && humans > WAVES_PLAYERS) { sysMsg('§cWaves takes ' + WAVES_PLAYERS + ' players; ' + humans + ' are here.'); return false }
+  gameMode = m
+  for (const c of players.values()) if (!c.bot && !sideOffered(sideOf(c))) moveTo(c, START)
+  pushRoster()
+  waveAt = -1; waveGap = 0
+  if (m === 'ffa') spawnBots(BOT_COUNT)
+  else spawnList([]), stepSquad()
+  return true
+}
+
 // ---------------------------------------------------------------- loop
 let acc = 0, last = now(), snapAcc = 0, tickAt = 0      // ms: when the last tick fell due
 // this frame's ticks of each player simulated here, for the drawn side to step through; fresh: moved by a reconcile, not a tick
