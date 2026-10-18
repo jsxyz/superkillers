@@ -13799,11 +13799,12 @@ const OWN_PREDICTION = (F => {
   const S = GAME.schema.step, fuelEps = S.fuel + S.fuel / 10
   if (REWIND_EPS < Math.hypot(S.x, S.y, S.z)) throw Error('REWIND_EPS is under the wire step')
   return {
-    take: (c, e = {}) => { e.x = c.x; e.y = c.y; e.z = c.z; e.fuel = c.fuel; e.jl = !!c.jLock; e.fl = !!c.flying; e.sp = c.springT || 0; e.ft = !!c.flyTurn; e.kn = [c.knT || 0, c.knx || 0, c.knz || 0, c.knUp || 0]; e.wh = !!c.wallHeld; e.sl = !!c.slide; e.web = c.web || 0; return e },
+    take: (c, e = {}) => { e.x = c.x; e.y = c.y; e.z = c.z; e.fuel = c.fuel; e.jl = !!c.jLock; e.fl = !!c.flying; e.sp = c.springT || 0; e.ft = !!c.flyTurn; e.kn = [c.knT || 0, c.knx || 0, c.knz || 0, c.knUp || 0]; e.wh = !!c.wallHeld; e.sl = !!c.slide; e.web = c.web || 0; e.rope = c.tie && [c.web, c.tie.want]; return e },
     err: (e, a) => Math.hypot(e.x - a[F.x], e.y - a[F.y], e.z - a[F.z]),
     agrees: (e, a, web) => (e.web || 0) === web && Math.abs(e.fuel - a[F.fuel]) <= fuelEps && e.jl === !!a[F.jLock],
-    carry: (e, c) => { c.flying = e.fl; c.springT = e.sp; c.flyTurn = e.ft; [c.knT, c.knx, c.knz, c.knUp] = e.kn; c.wallHeld = e.wh; c.slide = e.sl },
-    restore: (c, a, web) => { restoreChar(c, a[F.x], a[F.y], a[F.z], a[F.vx], a[F.vy], a[F.vz], a[F.fuel]); tie(c, web); c.jLock = !!a[F.jLock] },
+    carry: (e, c) => { c.flying = e.fl; c.springT = e.sp; c.flyTurn = e.ft; [c.knT, c.knx, c.knz, c.knUp] = e.kn; c.wallHeld = e.wh; c.slide = e.sl; c.rope = e.rope },
+    // re-tying the web its own prediction had, it keeps that prediction's reel target (off the wire); the length is the restored distance
+    restore: (c, a, web) => { restoreChar(c, a[F.x], a[F.y], a[F.z], a[F.vx], a[F.vy], a[F.vz], a[F.fuel]); tie(c, web); if (c.tie && c.rope?.[0] === web) c.tie.want = Math.min(c.tie.len, c.rope[1]); c.rope = null; c.jLock = !!a[F.jLock] },
   }
 })(GAME.schema.col)
 // the engine's input and own predicted component join the game's parts; a game message never reuses an engine kind
