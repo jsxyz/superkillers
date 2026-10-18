@@ -3084,6 +3084,10 @@ const navTile = (ci, cj) => navWorker.postMessage({ level: levelId, tile: [ci, c
 function navWorkerMain() {
   let R = null, G = null
   const levels = new Map(), meshes = new Map(), near = { x: 1.5, y: 2, z: 1.5 }
+  // tiles still to add, one a turn so asks are answered between them
+  const todo = []
+  let stepping = 0
+  const later = items => { todo.push(...items); stepping ||= setInterval(() => { const t = todo.shift(); if (t) t[0].add(t[1]); else { clearInterval(stepping); stepping = 0 } }, 0) }
   // one mesh over the map, a tile per chunk as it grows (never rebuilt)
   const tiled = (A, top, cfg) => {
     const { config, tcs, orig, maxTiles, maxPolysPerTile } = G.buildTiledNavMeshRcConfig({
@@ -3112,10 +3116,10 @@ function navWorkerMain() {
                                                                   "from '" + coreUrl + "'")], { type: 'text/javascript' })))
         return self.postMessage({ up: true })
       }
-      if (data.tile) {                       // kept; added to the level's meshes built so far
+      if (data.tile) {                       // kept; queued for the level's meshes built so far
         const L = levels.get(data.level) || levels.set(data.level, { A: data.A, top: data.top, tiles: [] }).get(data.level)
         L.tiles.push(data)
-        for (const [key, q] of meshes) if (q && q.add && key.startsWith(data.level + ' ')) q.add(data)
+        later([...meshes].filter(([key, q]) => q && q.add && key.startsWith(data.level + ' ')).map(([, q]) => [q, data]))
         return
       }
       if (data.pos) return levels.set(data.level, data)
@@ -3125,7 +3129,8 @@ function navWorkerMain() {
         // cs 50 cm, ch 5 cm: headroom 2 m; 1 m off walls (2x widest enemy) so early corners clear; an agent: [radius, height]
         const [rad, tall] = data.agent || [1, 2], L = levels.get(data.level), cfg = { cs: 0.5, ch: 0.05, walkableHeight: Math.round(tall / 0.05), walkableRadius: Math.ceil(rad / 0.5),
           maxSimplificationError: 0.5, walkableClimb: Math.round(data.climb / 0.05), maxEdgeLen: 0 }
-        if (L.tiles) { const q = tiled(L.A, L.top, cfg); L.tiles.forEach(q.add); meshes.set(key, q) }
+        if (L.tiles) { const q = tiled(L.A, L.top, cfg), off = t => Math.hypot(t.tile[0] * 96 - L.A + 48 - data.from.x, t.tile[1] * 96 - L.A + 48 - data.from.z)
+          meshes.set(key, q); later([...L.tiles].sort((a, b) => off(a) - off(b)).map(t => [q, t])) }
         else { const r = G.generateSoloNavMesh(L.pos, L.idx, cfg); meshes.set(key, r.success ? new R.NavMeshQuery(r.navMesh) : null) }
       }
       const q = meshes.get(key)
