@@ -7215,9 +7215,10 @@ function drawSeat(m, c, seat, list) {
   seatAims.delete(m)
   const o = seat && list.find(o => o.id === seat[0]), V = o && vehicleOf(o.K)
   if (!V?.seats[seat[1]]) return false
-  m.position.set(...seatAt({ ...o, at0: hullAt(o.K) }, seatFit(V.seats[seat[1]], GAME.participant(c.id, c.cid))))
+  const frame = { ...o, at0: hullAt(o.K) }
+  m.position.set(...seatAt(frame, seatFit(V.seats[seat[1]], GAME.participant(c.id, c.cid))))
   m.quaternion.set(...o.q)
-  if (V.aimY?.[seat[1]]) seatAims.set(m, seatAt({ ...o, at0: hullAt(o.K) }, [0, V.aimY[seat[1]], 0]))
+  if (V.aimY?.[seat[1]]) seatAims.set(m, seatAt(frame, [0, V.aimY[seat[1]], 0]))
   wallTurns.delete(m); wallRolls.delete(m); ceilingTurns.delete(m)
   return true
 }
@@ -8592,74 +8593,73 @@ function posePunch(a, t, restore = false, hold) {
   p.applied = true
 }
 
-// The seat carries the legs; aim turns the chest and shoulders about the waist.
 function poseSeatAim(id, state, t) {
   const a = avatars.get(id)
   if (!a) return
   let p = a.seatAim
-  if (!state || state.dead > 0 || a.hold !== 'sit') { if (p) p.at = null; return }
+  if (!state || state.dead > 0 || a.hold !== 'sit') { if (p) p.since = null; return }
   if (!a.mixer) return
-  const aimAt = seatAims.get(a.mesh)
+  const root = a.mesh, aimAt = seatAims.get(root)
   if (!p) {
-    const root = a.mesh, body = root.getObjectByName('body_IK'), names = ['body_lower', 'arm_upperL', 'arm_upperR', 'arm_lowerL', 'arm_lowerR', 'head']
-    if (!body || names.some(n => !root.getObjectByName(n))) return
-    p = a.seatAim = { body, parts: names.map(n => { const b = root.getObjectByName(n); return { b, at: b.position.clone(), q: b.quaternion.clone() } }), v: Array.from({ length: 9 }, () => new THREE.Vector3()), q: new THREE.Quaternion(), by: new THREE.Quaternion(), inverse: new THREE.Quaternion(), at: null }
+    const bones = ['body_IK', 'body_lower', 'arm_upperL', 'arm_upperR', 'arm_lowerL', 'arm_lowerR', 'head'].map(n => root.getObjectByName(n))
+    if (bones.some(b => !b)) return
+    p = a.seatAim = { body: bones.shift(), parts: bones.map(b => ({ b, at: b.position.clone(), q: b.quaternion.clone() })),
+      v: Array.from({ length: 8 }, () => new THREE.Vector3()), q: [0, 1, 2].map(() => new THREE.Quaternion()), since: null }
   }
-  if (p.at === null) p.since = t
-  p.at = t; p.active = true
-  for (const r of p.parts) { r.at.copy(r.b.position); r.q.copy(r.b.quaternion) }
-  const [dir, up, local, shoulder, elbow, hand, target, hinge, goal] = p.v, weight = Math.min(1, (t - p.since) / 150)
-  const pitch = state.pitch || 0, yaw = state.yaw || 0
-  dir.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch))
-  a.mesh.updateMatrixWorld(true)
-  a.mesh.getWorldQuaternion(p.q); up.set(0, 1, 0).applyQuaternion(p.q)
-  local.copy(dir).applyQuaternion(p.q.invert())
+  p.since ??= t; p.active = true
+  for (const { b, at, q } of p.parts) { at.copy(b.position); q.copy(b.quaternion) }
+  const [dir, up, local, shoulder, elbow, hand, target, hinge] = p.v, [q, by, inverse] = p.q, weight = Math.min(1, (t - p.since) / 150)
+  dir.set(...aimDir(state.yaw || 0, state.pitch || 0))
+  root.getWorldQuaternion(q); up.set(0, 1, 0).applyQuaternion(q)
+  local.copy(dir).applyQuaternion(q.invert())
   let turn = Math.atan2(-local.x, -local.z)
   if (Math.abs(turn) > 2.5 && p.turn) turn = Math.sign(p.turn) * Math.abs(turn)
-  p.turn = Math.max(-1.55, Math.min(1.55, turn))
-  p.body.getWorldQuaternion(p.q); local.copy(up).applyQuaternion(p.q.invert())
-  p.by.setFromAxisAngle(local, p.turn * weight)
-  for (let i = 0; i < 3; i++) { const r = p.parts[i]; r.b.position.applyQuaternion(p.by); r.b.quaternion.premultiply(p.by) }
+  p.turn = clamp(turn, -1.55, 1.55)
+  const yaw = (bone, angle) => {
+    bone.getWorldQuaternion(q)
+    return by.setFromAxisAngle(local.copy(up).applyQuaternion(q.invert()), angle * weight)
+  }
+  yaw(p.body, p.turn)
+  for (let i = 0; i < 3; i++) { const b = p.parts[i].b; b.position.applyQuaternion(by); b.quaternion.premultiply(by) }
   const head = p.parts[5].b
-  head.parent.getWorldQuaternion(p.q); local.copy(up).applyQuaternion(p.q.invert())
-  head.quaternion.premultiply(p.by.setFromAxisAngle(local, Math.max(-1, Math.min(1, turn - p.turn)) * weight))
-  a.mesh.updateMatrixWorld(true)
-  const aim = (side, goal) => {
-    const upper = p.parts[side > 0 ? 2 : 1].b, lower = p.parts[side > 0 ? 4 : 3].b
-    upper.getWorldPosition(shoulder); lower.getWorldPosition(elbow); handAt(a, hand, side < 0)
+  head.quaternion.premultiply(yaw(head.parent, clamp(turn - p.turn, -1, 1)))
+  const rotate = (bone, from, to) => {
+    bone.parent.getWorldQuaternion(q)
+    by.setFromUnitVectors(from.normalize(), to.normalize())
+    inverse.copy(q).invert().multiply(by).multiply(q).multiply(bone.quaternion)
+    bone.quaternion.slerp(inverse, weight)
+  }
+  for (const off of [false, true]) {
+    if (off) handAt(a, target).addScaledVector(dir, 0.12).addScaledVector(up, -0.025)
+    const upper = p.parts[off ? 1 : 2].b, lower = p.parts[off ? 3 : 4].b
+    upper.getWorldPosition(shoulder); lower.getWorldPosition(elbow); handAt(a, hand, off)
     const u = shoulder.distanceTo(elbow), f = elbow.distanceTo(hand)
-    if (!goal) { head.getWorldPosition(hinge); target.copy(shoulder).addScaledVector(dir, (u + f) * 0.86).addScaledVector(up, hinge.sub(shoulder).dot(up) - 0.025 * (a.spec.h + a.spec.r)) }
-    else target.copy(goal)
-    if (!goal && aimAt) {
-      hinge.set(...aimAt).sub(shoulder)
-      const rise = Math.min((u + f) * 0.95, Math.max(local.copy(target).sub(shoulder).dot(up), hinge.dot(up))), reach = (u + f) * 0.98
-      local.copy(dir).addScaledVector(up, -dir.dot(up)).normalize()
-      target.copy(shoulder).addScaledVector(up, rise).addScaledVector(local, Math.sqrt(Math.max(0, reach * reach - rise * rise)))
+    if (!off) {
+      head.getWorldPosition(hinge)
+      target.copy(shoulder).addScaledVector(dir, (u + f) * 0.86).addScaledVector(up, hinge.sub(shoulder).dot(up) - 0.025 * (a.spec.h + a.spec.r))
+      if (aimAt) {
+        hinge.set(...aimAt).sub(shoulder)
+        const rise = Math.min((u + f) * 0.95, Math.max(local.copy(target).sub(shoulder).dot(up), hinge.dot(up))), reach = (u + f) * 0.98
+        local.copy(dir).addScaledVector(up, -dir.dot(up)).normalize()
+        target.copy(shoulder).addScaledVector(up, rise).addScaledVector(local, Math.sqrt(Math.max(0, reach * reach - rise * rise)))
+      }
     }
-    local.subVectors(target, shoulder); const d = Math.max(1e-4, Math.min(u + f - 1e-4, Math.max(Math.abs(u - f) + 1e-4, local.length())))
+    local.subVectors(target, shoulder); const d = Math.max(1e-4, clamp(local.length(), Math.abs(u - f) + 1e-4, u + f - 1e-4))
     local.normalize(); target.copy(shoulder).addScaledVector(local, d)
     const along = (u * u - f * f + d * d) / (2 * d)
     hinge.copy(up).negate().addScaledVector(local, up.dot(local)).normalize().multiplyScalar(Math.sqrt(Math.max(0, u * u - along * along))).addScaledVector(local, along).add(shoulder)
-    const rotate = (bone, from, to) => {
-      bone.parent.getWorldQuaternion(p.q)
-      p.by.setFromUnitVectors(from.normalize(), to.normalize())
-      p.inverse.copy(p.q).invert().multiply(p.by).multiply(p.q).multiply(bone.quaternion)
-      bone.quaternion.slerp(p.inverse, weight); bone.updateMatrixWorld(true)
-    }
     rotate(upper, elbow.sub(shoulder), hinge.sub(shoulder))
-    lower.getWorldPosition(elbow); handAt(a, hand, side < 0)
+    lower.getWorldPosition(elbow); handAt(a, hand, off)
     rotate(lower, hand.sub(elbow), target.sub(elbow))
   }
-  aim(1)
-  handAt(a, goal); goal.addScaledVector(dir, 0.12).addScaledVector(up, -0.025)
-  aim(-1, goal)
 }
 function restoreSeatAim(a) {
   const p = a.seatAim
   if (!p?.active) return
-  for (const r of p.parts) { r.b.position.copy(r.at); r.b.quaternion.copy(r.q) }
+  for (const { b, at, q } of p.parts) { b.position.copy(at); b.quaternion.copy(q) }
   p.active = false
 }
+
 
 function setAnim(id, want, dt, t, hold, still, ticks, shift) {
   if (hold === 'ceiling') want = 'ceiling'
