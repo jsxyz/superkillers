@@ -4161,7 +4161,7 @@ function addObject(k, at, id, yaw = 0) {
   if (K.damp) body.setDamping(...K.damp)
   if (K.roll) body.setRollingFriction(K.roll)
   world.addRigidBody(body, ...COLLIDE.object)
-  if (K.carry) { body.setCcdMotionThreshold(objR(K)); body.setCcdSweptSphereRadius(0.6 * objR(K)) }   // no tunnelling a thin wall
+  GAME.objectBody(body, K)
   const o = { k, id, K, at, body, shape, row: '', R: objR(K),
               x: at[0], y: at[1], z: at[2], q, off: [0, 0, 0], seed: seedOf(id) }
   if (K.drive) makeCar(o, driveRow(vehicleOf(K), o.seed, id), hullAt(K))
@@ -13638,6 +13638,9 @@ GAME.msgs = { host: {
 GAME.level = { loaded() { PADS = LV.pads; navQueue.length = 0; initPickups() }, grown(ci, cj) { if (navLevel === levelId) navQueue.push([ci, cj]) }, tick() { for (let n = 0; n < 4 && navQueue.length; n++) navTile(...navQueue.shift()) } }
 // the crater a smash leaves: the row's shape, and the widest any row can make
 GAME.crater = { spec: () => smashRow()?.smash, maxR: () => Math.max(...[...BOTS, ...CHARS].map(R => R.smash?.r || 0)) }
+
+// a new object body: carried ones are swept, so a throw cannot tunnel a thin wall
+GAME.objectBody = (body, K) => { if (K.carry) { body.setCcdMotionThreshold(objR(K)); body.setCcdSweptSphereRadius(0.6 * objR(K)) } }
 
 // ---------------------------------------------------------------- loop
 let acc = 0, last = now(), snapAcc = 0, tickAt = 0      // ms: when the last tick fell due
