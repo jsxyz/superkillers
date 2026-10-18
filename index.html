@@ -7696,6 +7696,7 @@ function buildWorld() {
   rebuildWorld()
 
   objGroup = new THREE.Group(); scene.add(objGroup)     // not worldGroup: a level empties that
+  skipStill(worldGroup); skipStill(objGroup)
   avatarGroup = new THREE.Group(); scene.add(avatarGroup)
   pickGroup = new THREE.Group(); scene.add(pickGroup)
   tracerGroup = new THREE.Group(); scene.add(tracerGroup)
@@ -7724,6 +7725,8 @@ function followSun() {
     g.visible = Math.hypot(g.userData.cell[0] * 96 - ARENA + 48 - p.x, g.userData.cell[1] * 96 - ARENA + 48 - p.z) < (g.visible ? R + 96 : R)
 }
 
+// three's per-frame walk, into the children that compose themselves or were marked
+const skipStill = g => { g.updateMatrixWorld = () => { for (const c of g.children) if (c.matrixAutoUpdate || c.matrixWorldNeedsUpdate) c.updateMatrixWorld() } }
 // a chunk grown into the world after the level was built (growChunk): its boxes and scenery, drawn as rebuildWorld draws
 // a level, its faces clipped against its own boxes and the ground's
 // a subtree that never moves: its matrices composed once, from where it was put
@@ -8991,7 +8994,7 @@ function drawObjects(list, wheelsAt = () => null) {
         const mats = new Set()
         m.traverse(n => { if (n.material) mats.add(n.material) })
         mats.forEach(x => x.dispose())
-        m.clear(); m.userData = { k: o.k, paint }
+        m.clear(); m.userData = { k: o.k, paint }; m.matrixWorldNeedsUpdate = true
         for (const whole of K.drive ? [false, true] : [true]) {
           const look = propModel('object', o.k, whole, paint).clone()
           ownMaterials(look)
