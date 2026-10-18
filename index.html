@@ -10234,9 +10234,9 @@ const INPUT_SCHEMA = {
     keys[e.code] = true
     if (e.code === INPUT_SCHEMA.key.jump) e.preventDefault()
     if (e.code === 'KeyV') setView(!firstPerson)
-    if (e.code === 'KeyM') sfxToggle()
+    if (e.code === 'KeyM') GAME.audio.toggle()
     if ((e.code === 'KeyY' || e.code === 'KeyN') && !e.repeat) voteBallot(e.code === 'KeyY')
-    if (e.code === 'KeyB' && !e.repeat) radioCycle()
+    if (e.code === 'KeyB' && !e.repeat) GAME.audio.cycle()
     if (e.code === 'KeyC' && !e.repeat) teamSwitch()
     if (/^Digit[1-9]$/.test(e.code) && !e.repeat && !(isHost && resultsLeft > 0)) teamSwitch(+e.code.slice(5) - 1)
     if (isHost && resultsLeft > 0 && /^Digit[1-9]$/.test(e.code) && +e.code.slice(5) <= LEVELS.length) pickNext(+e.code.slice(5) - 1)
@@ -10284,7 +10284,7 @@ const INPUT_SCHEMA = {
     tap('btn-shift', () => { tapShift = true })
     tap('btn-use', () => { tapUse = true })
     tap('btn-sprint', sprintToggle)
-    tap('btn-radio', radioCycle)
+    tap('btn-radio', () => GAME.audio.cycle())
     tap('btn-team', () => teamSwitch())
     tap('btn-chat', () => openChat(''))
     tap('btn-tab', () => { tabOpen = !tabOpen })
@@ -10744,7 +10744,7 @@ function applySettings() {
   }
   viewScale = VIEW[settings.distance]; applyView()
   for (const id in SET_BUTTONS) { const b = el('#' + id); if (b) b.textContent = SET_BUTTONS[id][0](Q) }
-  sfxApply()
+  GAME.audio.apply()
 }
 const onOff = v => v ? 'on' : 'off', nextOf = (list, v) => list[(list.indexOf(v) + 1) % list.length]
 const SET_BUTTONS = {
@@ -10754,8 +10754,8 @@ const SET_BUTTONS = {
   'set-distance': [() => 'View distance: ' + settings.distance, () => { settings.distance = nextOf(Object.keys(VIEW), settings.distance) }],
   'set-shadows': [Q => 'Shadows: ' + (Q.shadows ? onOff(settings.shadows) : 'off (quality)'), () => { settings.shadows = !settings.shadows }],
   'set-balance': [() => 'Balance teams: ' + onOff(settings.balance), () => { settings.balance = !settings.balance }],
-  'set-radio': [() => 'Car radio: ' + onOff(settings.radio), () => { settings.radio = !settings.radio }, () => radioTick()],
-  'set-voices': [() => 'AI voices: ' + onOff(settings.voices) + (settings.voices && !('gpu' in navigator) ? ' (needs WebGPU)' : ''), voicesToggle],
+  'set-radio': [() => 'Car radio: ' + onOff(settings.radio), () => { settings.radio = !settings.radio }, () => GAME.audio.radio()],
+  'set-voices': [() => 'AI voices: ' + onOff(settings.voices) + (settings.voices && !('gpu' in navigator) ? ' (needs WebGPU)' : ''), () => GAME.audio.voicesToggle()],
 }
 
 let settingsOpen = false
@@ -10848,9 +10848,9 @@ function initSettings() {
   el('#host-back').onclick = settingsBack
   backdrop('hostset', settingsBack)
   el('#set-full').onclick = toggleFullscreen
-  el('#set-sound').onclick = sfxToggle
+  el('#set-sound').onclick = GAME.audio.toggle
   // #hudsound takes no pointer: desktop clicks only once unlocked
-  el('#hudsound').onclick = sfxToggle
+  el('#hudsound').onclick = GAME.audio.toggle
   backdrop('settings', settingsBack)
 }
 
@@ -11417,7 +11417,7 @@ function speak(who, i) {
 }
 
 // the audio the engine plays through: per frame, the radio, effects, one sound, voice lines and the voices' start
-GAME.audio = { frame: sfxFrame, radio: radioTick, fx: sfxFx, play: sfxPlay, speak, say, takeRadio, voices: startVoices }
+GAME.audio = { frame: sfxFrame, radio: radioTick, fx: sfxFx, play: sfxPlay, speak, say, takeRadio, voices: startVoices, toggle: sfxToggle, cycle: radioCycle, apply: sfxApply, start: sfxStart, gesture: sfxGesture, voicesToggle }
 
 // ---------------------------------------------------------------- pause
 // nothing pauses: the host keeps simulating
@@ -14855,14 +14855,14 @@ function wireMenu() {
     // must run in the click: Fullscreen needs a user gesture
     if (IS_TOUCH && FS_OK && !isFullscreen()) enterFullscreen()
     // sound starts in the click (a phone allows it only there); a server stays silent
-    if (fn !== startServer && settings.sound) sfxStart(true)
+    if (fn !== startServer && settings.sound) GAME.audio.start(true)
     startLog = { t0: now(), marks: [], frames: [], progs: renderer?.info.programs.length }
     // painted before the work, which runs two frames on
     document.body.classList.add('starting')
     requestAnimationFrame(() => requestAnimationFrame(() => {
       document.body.classList.remove('starting'); markStart('work')
       withLib(LIBS.peer, fn, e => setStatus(e.message, 'err'))
-      sfxApply()
+      GAME.audio.apply()
     }))
   }
   el('#jittip-x').onclick = () => { settings.jitTip = true; saveSettings(); jitTip() }
@@ -14892,7 +14892,7 @@ function wireMenu() {
 }
 // a link's #code joins once and leaves the address, so a refresh does not rejoin; other fragments are ignored.
 // Its first gesture is the picker's tap
-const joinGesture = () => { if (IS_TOUCH && FS_OK && !isFullscreen()) enterFullscreen(); sfxGesture() }
+const joinGesture = () => { if (IS_TOUCH && FS_OK && !isFullscreen()) enterFullscreen(); GAME.audio.gesture() }
 function joinLink() {
   const code = codeOf(location.hash.slice(1), '')
   if (!code) return
