@@ -788,7 +788,8 @@ const CHARS = [
 // rate: s/shot, spread: rad, range: m. Gun 0 never runs dry. look: line|beam|slash|blast; held: glow, heldScale, tether
 // kind: ray|pierce|chain|radius. dive: speed m/s, pull m/s²; dmg, knock × clamp(impact/ref, 1, cap), range × its root
 // kind dash: held, runs along the aim at speed m/s through people and objects; each it passes takes dmg and knock once a hold
-//   launch: { speed, lift m/s, spin rad/s, mass }: each object leaves along the dash at speed, up at lift, rolling at spin; heavier than mass, slower in proportion
+//   launch: { speed, lift m/s, spin rad/s, mass, credit s }: each object leaves along the dash at speed, up at lift, rolling at spin; heavier than mass, slower
+//   in proportion; what it runs over is the dasher's kill, with the dash's name, until it rests or credit runs out
 // gate: effect key it needs. dmg or lethal; knock; apply: POWERS effect; extra: the fifth upgrade
 // Append rows only; Beck's 32-bit bag holds no 33rd gun.
 // ground marks a GUNS row's `scar` names: r m, color centre, edge rim
@@ -873,7 +874,7 @@ const GUNS = [
     held:false, look:'beam', apply:'Webbed', kind:'ray' },
   { name:'Ground Slam', kind:'radius', rate:1.40, dmg:10, range: 4, knock:12.0, color:0xf2c53d,
     held:false, punch:'slam', punchMs:600, dive:{ speed:10, pull:40, ref:12, cap:2.5 } },
-  { name:'Speed Dash', kind:'dash', speed:80, rate:0, dmg:30, range:0, knock:12.0, launch: { speed: 30, lift: 12, spin: 4, mass: 12 }, color:0xffd23f, held:false },
+  { name:'Speed Dash', kind:'dash', speed:80, rate:0, dmg:30, range:0, knock:12.0, launch: { speed: 30, lift: 12, spin: 4, mass: 12, credit: 3 }, color:0xffd23f, held:false },
 ].map(G => ({ ...GUN_ROW, ...G }))
 // POWERS: dur s, then scales of move jump rate give take fuel jet reach lift (jet 0 grounds; reach 0 spares melee)
 // drop:false: by `apply` only. look: an EFFECT_LOOKS overlay
@@ -13373,6 +13374,7 @@ function weakenNear(list) {
 
 // host only. A contact's impulse = m/s given a person (mass 1)
 function vehicleTick(list, credit, touch, dt) {
+  for (const o of objs) if (o.launchBy !== undefined && ((o.launchT -= dt) <= 0 || !o.body.isActive())) o.launchBy = undefined
   for (const [o, c, m] of touch) {
     if (!o.V) continue
     if (list.includes(c)) {
@@ -13385,9 +13387,9 @@ function vehicleTick(list, credit, touch, dt) {
     const dx = c.x - o.x, dz = c.z - o.z, d = Math.hypot(dx, dz) || 1, v = o.body.getLinearVelocity(), into = (v.x() * dx + v.z() * dz) / d
     if (into < 2 || o.thrownBy !== undefined) continue
     c.hp -= stat(c, 'take', o.V.ram * into)
-    const by = players.get(o.riders[0])
+    const L = o.launchBy !== undefined, by = L ? o.launchBy !== c.id && players.get(o.launchBy) : players.get(o.riders[0])
     knockChar(c, dx / d, 0.3, dz / d, into * 0.5)
-    if (downed(c)) by ? credit(by.id, by)(c, { name: o.K.name }) : fell(c, 'was run over by a ' + o.K.name)
+    if (downed(c)) by ? credit(by.id, by)(c, L ? GUNS[o.launchG] : { name: o.K.name }) : fell(c, 'was run over by a ' + o.K.name)
   }
   for (const o of objs) if (o.V) {
     if (o.v0) {                         // m/s lost this step
@@ -13460,6 +13462,7 @@ function dashStrikes(list, credit) {
       const o = objs.find(o => A.getPointer(o.body) === A.getPointer(B.at(i)))
       if (!o || o.heldBy !== undefined || (c.dashHit ??= new Set()).has(o)) continue
       c.dashHit.add(o); launchObject(o, L, ux, uz); strikeObject(c, o, G, ux, 0.3, uz)
+      Object.assign(o, { launchBy: c.id, launchG: c.dashing, launchT: L.credit })
     }
   }
 }
