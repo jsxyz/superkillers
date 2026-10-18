@@ -7782,7 +7782,7 @@ function* warmSteps(root, far) {
 }
 // a body a step per call: its bodySteps, then its walk poses while more(); true once ready (a built model's in BUILT_CACHE)
 function bodyStep(B, M, id, cid, key, more) {
-  if (M.kind === 'built' && BUILT_CACHE.has(key)) return true
+  if (M.kind === 'built' && BUILT_CACHE.has(key)) { B.inst ||= BUILT_CACHE.get(key); return true }
   if (!B.inst) {
     const r = (B.gen ||= bodySteps(M, id, cid, key, rowFor(id, cid))).next()
     if (r.done && (B.inst = r.value) && !M.proto) BUILT_CACHE.set(key, B.inst)
@@ -13948,7 +13948,7 @@ function frameBody() {
     if (!startLog.frames.length) markStart('frame 1')
     startLog.frames.push(t - (startLog.last ?? t)); startLog.last = t
   }
-  try { if (phase === 'menu') prepMenu(); prepareStep() } catch (e) { prepQueue.length = 0; frameFailed('prep', e) }
+  try { if (phase === 'menu') prepMenu(); prepareStep() } catch (e) { prepQueue.shift(); prepAt = null; frameFailed('prep', e) }      // a failing row drops only itself
 }
 
 const lastHud = {}
