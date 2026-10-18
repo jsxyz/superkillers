@@ -3792,8 +3792,8 @@ let heldF = 1
 function updateCamera(me, inp, cam, firstPerson) {
   const seat = !(me.dead > 0) && seatOf(me)
   if (seat) return vehicleCamera(seat[0], me, inp, cam, firstPerson)
-  const rd = !(me.dead > 0) && rideOf(me), V = rd && vehicleOf(rd.K)
-  if (rd) return vehicleCamera({ ...rd, V, R: objR(rd.K), low: Math.min(...carPts(rd.K, V.wheels, hullAt(rd.K)).map(p => p[1])) }, me, inp, cam, firstPerson)
+  const rd = !(me.dead > 0) && rideOf(me)
+  if (rd) return vehicleCamera(rd, me, inp, cam, firstPerson)
   if (cam.fov !== settings.fov) { cam.fov = settings.fov; if (cam.updateProjectionMatrix) cam.updateProjectionMatrix() }
   if (firstPerson) {
     const [dx, dy, dz] = aimDir(inp.yaw, inp.pitch), eyeY = eyeOf(me)
@@ -4187,7 +4187,8 @@ function putObject(o, s) {
 const seated = (id, mine) => [...objSeats].some(([s, p]) => s >> 3 === id && (p === myId) === mine)
 // driven by another player: not predicted, by its passengers either
 const ridden = id => (p => p !== undefined && p !== myId)(objSeats.get(id * 8))
-const rideOf = c => c.ride && objectsAt(renderT).find(o => o.id === c.ride[0])
+const rideOf = c => (r => r && { ...r, V: vehicleOf(r.K), R: objR(r.K), at0: hullAt(r.K), low: Math.min(...carPts(r.K, vehicleOf(r.K).wheels, hullAt(r.K)).map(p => p[1])),
+  vs: (w => w ? Math.hypot(w[7], w[9]) : 0)(objVel?.get(r.id)) })(c.ride && objectsAt(renderT).find(o => o.id === c.ride[0]))
 function predictObjects(c, lead = 0) {
   const B = seatOf(c)?.[0] || c, v = B.body?.getLinearVelocity(), reach = v ? Math.hypot(v.x(), v.z()) * lead : 0, Br = B === c ? c.r : B.R
   // near what the player rides, else the player, by as far as that goes in `lead` s
@@ -4221,8 +4222,8 @@ function predictObjects(c, lead = 0) {
   c.ride = s ? [s[0] >> 3, s[0] & 7] : null
   if (c.ride && inWorld) world.removeRigidBody(c.body)
   if (was && !c.ride) { if (c.body && !seatOf(c) && !inWorld) world.addRigidBody(c.body, ...COLLIDE.capsule); predLost = true }
-  const r = rideOf(c), V = r && vehicleOf(r.K)
-  if (V?.seats[c.ride[1]]) [c.x, c.y, c.z] = seatAt({ ...r, at0: hullAt(r.K) }, onSeat(V.seats[c.ride[1]], GAME.participantOf(c)))
+  const r = rideOf(c)
+  if (r?.V.seats[c.ride[1]]) [c.x, c.y, c.z] = seatAt(r, onSeat(r.V.seats[c.ride[1]], GAME.participantOf(c)))
 }
 
 // inverted so NaN goes home too
@@ -14330,7 +14331,7 @@ function drawHud(me, others, t) {
   const nm = (roster.get(myId) || {}).name || myName
   drawPoll()
 
-  const seat = !(me.dead > 0) && (seatOf(me) || me.ride), car = seat && (seat[0].V ? seat[0] : (r => r && { V: vehicleOf(r.K), vs: (w => w ? Math.hypot(w[7], w[9]) : 0)(objVel?.get(r.id)) })(rideOf(me)))
+  const seat = !(me.dead > 0) && (seatOf(me) || me.ride), car = seat && (seat[0].V ? seat[0] : rideOf(me))
   const P = primaryOf(me)
   hud('spShow', el('#gun .sp'), 'display', P && !seat ? 'block' : 'none')
   if (P) {
