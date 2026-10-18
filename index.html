@@ -3768,12 +3768,16 @@ function lookStep(me, inp) {
   wallLook(inp, animOf(me) === 4 && rowOf(me)?.wallRun ? wallUp(me) : 0, TICK)
   const s = !(me.dead > 0) && seatOf(me)
   if (s) chaseStep(s[0], inp)
+  const o = !s && rideOf(me)
+  if (o) chaseStep(o, inp)
 }
 const camHold = { r: 0, from: 0, to: 0, at: 0 }
 let heldF = 1
 function updateCamera(me, inp, cam, firstPerson) {
   const seat = !(me.dead > 0) && seatOf(me)
   if (seat) return vehicleCamera(seat[0], me, inp, cam, firstPerson)
+  const rd = !(me.dead > 0) && rideOf(me), V = rd && vehicleOf(rd.K)
+  if (rd) return vehicleCamera({ ...rd, V, R: objR(rd.K), low: Math.min(...carPts(rd.K, V.wheels, hullAt(rd.K)).map(p => p[1])) }, me, inp, cam, firstPerson)
   if (cam.fov !== settings.fov) { cam.fov = settings.fov; if (cam.updateProjectionMatrix) cam.updateProjectionMatrix() }
   if (firstPerson) {
     const [dx, dy, dz] = aimDir(inp.yaw, inp.pitch), eyeY = eyeOf(me)
@@ -4156,6 +4160,9 @@ function putObject(o, s) {
 // guest: local bodies only for objects near it
 // seated per the host (mine: me; else: another)
 const seated = (id, mine) => [...objSeats].some(([s, p]) => s >> 3 === id && (p === myId) === mine)
+// driven by another player: not predicted, by its passengers either
+const ridden = id => (p => p !== undefined && p !== myId)(objSeats.get(id * 8))
+const rideOf = c => c.ride && objectsAt(renderT).find(o => o.id === c.ride[0])
 function predictObjects(c, lead = 0) {
   const B = seatOf(c)?.[0] || c, v = B.body?.getLinearVelocity(), reach = v ? Math.hypot(v.x(), v.z()) * lead : 0, Br = B === c ? c.r : B.R
   // near what the player rides, else the player, by as far as that goes in `lead` s
@@ -4164,23 +4171,33 @@ function predictObjects(c, lead = 0) {
     const m = Math.hypot(...o.off)
     o.off = o.off.map(v => v * (1 - Math.min(0.2, 0.15 / m)))
   }
-  // vehicle: always mine, never one only others ride
+  // vehicle: mine when I ride it and no one else drives it
   objs = objs.filter(o => {
-    const mine = seated(o.id, true) || o.V && o.riders.includes(c.id), theirs = !mine && seated(o.id, false)
+    const mine = !ridden(o.id) && (seated(o.id, true) || o.V && o.riders.includes(c.id)), theirs = !mine && seated(o.id, false)
     const keep = objTracks.has(o.id) && objTracks.get(o.id).at(-1).p[0] === o.k && !(objHeld.has(o.id) && objHeld.get(o.id) !== myId) &&
       !theirs && (mine || o.body.isActive() || near(o.x, o.y, o.z, o.R, 2.5))
+    const d = !keep && o.V && o.riders.includes(c.id) && objDrawn.get(o)
+    if (d) objEase.set(o.id, { at: [d.x, d.y, d.z] })
     if (!keep) dropObject(o)
     return keep
   })
   for (const [id, tr] of objTracks) {
-    const p = tr[tr.length - 1].p, K = OBJECTS[p[0]], H = hullOf(K), mine = seated(id, true)
+    const p = tr[tr.length - 1].p, K = OBJECTS[p[0]], H = hullOf(K), mine = seated(id, true) && !ridden(id)
     if (objs.length >= OBJ_MAX || objs.some(o => o.id === id) || K.shape === 'hull' && !H ||
         objHeld.has(id) && objHeld.get(id) !== myId || !mine && (seated(id, false) ||
         !near(p[1], p[2], p[3], objR(K), 1.5))) continue
-    const o = addObject(p[0], p.slice(1, 4), id)
-    if (o) putObject(o, [...p.slice(1), 0, 0, 0, 0, 0, 0])
+    const d = c.ride?.[0] === id && rideOf(c), o = addObject(p[0], p.slice(1, 4), id)
+    if (o) putObject(o, d && objVel?.get(id) || [...p.slice(1), 0, 0, 0, 0, 0, 0])
     if (o && o.V) seatFrom(o)
+    if (o && d) { o.off = [d.x - o.x, d.y - o.y, d.z - o.z]; o.offQ = qmulTo([0, 0, 0, 1], d.q, [-o.q[0], -o.q[1], -o.q[2], o.q[3]]); keepPose(o, o.q) }
   }
+  // riding a vehicle another drives: out of the world, in its seat as drawn
+  const s = [...objSeats].find(([s, p]) => p === myId && ridden(s >> 3)), was = c.ride, inWorld = c.body && A.getPointer(c.body.getBroadphaseHandle())
+  c.ride = s ? [s[0] >> 3, s[0] & 7] : null
+  if (c.ride && inWorld) world.removeRigidBody(c.body)
+  if (was && !c.ride) { if (c.body && !seatOf(c) && !inWorld) world.addRigidBody(c.body, ...COLLIDE.capsule); predLost = true }
+  const r = rideOf(c), V = r && vehicleOf(r.K)
+  if (V?.seats[c.ride[1]]) [c.x, c.y, c.z] = seatAt({ ...r, at0: hullAt(r.K) }, onSeat(V.seats[c.ride[1]], GAME.participantOf(c)))
 }
 
 // inverted so NaN goes home too
@@ -4388,6 +4405,10 @@ function wheelsOf(d, t, eye) {
   out.steer = s.steer
   return out
 }
+// a vehicle's body corners or hull and its wheel rims, round its centre at0
+const carPts = (K, W, at0) => { const H = hullOf(K), sides = K.half ? [-1, 1] : []
+  return [...H ? H.pts : sides.flatMap(a => sides.flatMap(b => sides.map(c => [a, b, c].map((v, j) => v * K.half[j])))), ...W.at.flatMap(([x, y, z]) => [-1, 1].flatMap(d => Array.from({ length: 8 }, (_, i) =>
+    [x + d * W.r * 0.3 - at0[0], y + W.r * Math.cos(i * Math.PI / 4) - at0[1], z + W.r * Math.sin(i * Math.PI / 4) - at0[2]])))] }
 // slip: one grip for every wheel, or [front, rear]
 const slipOf = (W, front) => Array.isArray(W.slip) ? W.slip[front ? 0 : 1] : W.slip
 function makeCar(o, V, at0) {
@@ -4401,12 +4422,8 @@ function makeCar(o, V, at0) {
     w.set_m_suspensionStiffness(W.stiff); w.set_m_wheelsDampingRelaxation(W.damp[0])
     w.set_m_wheelsDampingCompression(W.damp[1]); w.set_m_frictionSlip(slipOf(W, front)); w.set_m_rollInfluence(W.roll)
   }
-  const H = hullOf(o.K), sides = o.K.half ? [-1, 1] : []
-  const body = H ? H.pts : sides.flatMap(a => sides.flatMap(b => sides.map(c => [a, b, c].map((v, j) => v * o.K.half[j]))))
-  const rims = W.at.flatMap(([x, y, z]) => [-1, 1].flatMap(d => Array.from({ length: 8 }, (_, i) =>
-    [x + d * W.r * 0.3 - at0[0], y + W.r * Math.cos(i * Math.PI / 4) - at0[1], z + W.r * Math.sin(i * Math.PI / 4) - at0[2]])))
-  const s = carHull.get(o.K.name) || carHull.set(o.K.name, hullShape([...body, ...rims])).get(o.K.name)
-  o.low = Math.min(...body.map(p => p[1]), ...rims.map(p => p[1]))
+  const pts = carPts(o.K, W, at0), s = carHull.get(o.K.name) || carHull.set(o.K.name, hullShape(pts)).get(o.K.name)
+  o.low = Math.min(...pts.map(p => p[1]))
   Object.assign(o, { V, at0, hp: V.hp, riders: V.seats.map(() => undefined), radio: RADIO_START, car: v, carRay: r, parkShape: s, parked: false })
   world.addAction(v); setParked(o, true)
 }
@@ -13022,6 +13039,16 @@ function reconcile(a) {
     return
   }
 
+  // riding a vehicle another drives: only the objects replay
+  if (predicted.ride) {
+    reconcileErr = replaySteps = 0
+    if (objErr <= REWIND_EPS) return
+    restore()
+    for (const e of pending) { tickChars([], null, TICK); e.ob = objs.map(o => [o.id, ...objState(o)]) }
+    blend(); replaySteps = pending.length
+    return
+  }
+
   if (predLost) {
     restore(); blend()
     OWN_PREDICTION.restore(predicted, a, web)
@@ -13857,7 +13884,7 @@ function stepSim(t) {
       const _p1 = now()
       predictObjects(predicted, (Math.max(rtt, 0) + 100) / 1000)
       easeOffsets()
-      tickChars([predicted], () => inp, TICK)
+      tickChars(predicted.ride ? [] : [predicted], () => inp, TICK)
       lookStep(predicted, input)
       sampleTick(myId, predicted, predJump, input.fire || input.alt); predJump = false
       msPhys = msPhys * 0.9 + (now() - _p1) * 0.1
@@ -14060,7 +14087,7 @@ function draw(dt, t) {
   for (const o of obl) (o.K.carry ? carries : lifts).add(o.heldBy ?? objHeld.get(o.id) ?? o.liftBy)
   for (const [s, p] of objSeats) sits.set(p, [s >> 3, s & 7])
   if (isHost) for (const o of objs) o.riders?.forEach((p, i) => { if (p !== undefined) sits.set(p, [o.id, i]) })
-  else { const s = seatOf(me); sits.delete(myId); if (s) sits.set(myId, [s[0].id, s[1]]) }
+  else { const s = seatOf(me); sits.delete(myId); if (s || me.ride) sits.set(myId, s ? [s[0].id, s[1]] : me.ride) }
   const meMesh = avatarFor(myId, me.cid, me.cap | 0)
   meMesh.visible = !(me.dead > 0) && !joinPick()
   const meP = drawnPose(me), meD = meP ? { ...me, x: meP[0], y: meP[1], z: meP[2] } : me
@@ -14280,7 +14307,7 @@ function drawHud(me, others, t) {
   const nm = (roster.get(myId) || {}).name || myName
   drawPoll()
 
-  const seat = !(me.dead > 0) && seatOf(me), car = seat && seat[0]
+  const seat = !(me.dead > 0) && (seatOf(me) || me.ride), car = seat && (seat[0].V ? seat[0] : (r => r && { V: vehicleOf(r.K), vs: (w => w ? Math.hypot(w[7], w[9]) : 0)(objVel?.get(r.id)) })(rideOf(me)))
   const P = primaryOf(me)
   hud('spShow', el('#gun .sp'), 'display', P && !seat ? 'block' : 'none')
   if (P) {
@@ -14339,7 +14366,7 @@ function drawHud(me, others, t) {
     const hp = isHost ? car.hp : vehHp ?? car.V.hp, v = car.body?.getLinearVelocity()
     hud('vhpW', el('#vhpfill'), 'width', (clamp(hp / car.V.hp, 0, 1) * 100).toFixed(1) + '%')
     hud('vhpC', el('#vhpfill'), 'background', hp <= car.V.hp * car.V.boom.burn ? '#ff6a14' : '#d29922')
-    hud('vspd', el('#vspd'), 'textContent', String(Math.round((v ? Math.hypot(v.x(), v.z()) : 0) * SPEED_UNIT.per)))
+    hud('vspd', el('#vspd'), 'textContent', String(Math.round((v ? Math.hypot(v.x(), v.z()) : car.vs || 0) * SPEED_UNIT.per)))
     hud('vunit', el('#veh .u'), 'textContent', SPEED_UNIT.name)
     hud('vname', el('#vname'), 'textContent', car.V.name)
   }
@@ -14420,7 +14447,7 @@ function bakeChunk(c) {
   return B
 }
 function drawRadar(me, others, t) {
-  const on = phase === 'playing' && !menuUp() && !(me.dead > 0) && !!seatOf(me)
+  const on = phase === 'playing' && !menuUp() && !(me.dead > 0) && !!(seatOf(me) || me.ride)
   hud('radar', document.body, '.radar', on)
   if (!on || t - radarAt < RADAR_MS) return
   radarAt = t
