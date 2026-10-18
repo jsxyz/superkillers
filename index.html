@@ -3812,6 +3812,15 @@ function reticleAt(me, r, bodies, objects, reach) {
   }
   return best
 }
+// aims at the reticle point c.aimD along its camera ray, clamped to range; d = 0: the eye ray
+function aimAngles(c, reach = CAM.far) {
+  const d = c.aimD
+  if (!(d > 0)) return [c.yaw, c.pitch]
+  const r = camRay(c, c.yaw, c.pitch), t = clamp(d, r.near, r.near + reach)
+  const [ex, ey, ez] = eyeAt(c), px = r.x + r.dx * t - ex, py = r.y + r.dy * t - ey, pz = r.z + r.dz * t - ez
+  const n = Math.hypot(px, py, pz)
+  return n > 1e-3 ? [Math.atan2(-px, -pz), Math.asin(clamp(py / n, -1, 1))] : [c.yaw, c.pitch]
+}
 
 // ---------------------------------------------------------------- physics
 let A = null, world = null, tmpTrans = null
@@ -4694,15 +4703,6 @@ function castPellet(shooter, targets, yaw, pitch, G, fx) {
 }
 
 const reachOf = (c, G) => G.range * profRange(c, G.name) * (G.melee ? 1 : eff(c, 'reach'))
-// aims at the reticle point c.aimD along its camera ray, clamped to range; d = 0: the eye ray
-function aimAngles(c, reach = CAM.far) {
-  const d = c.aimD
-  if (!(d > 0)) return [c.yaw, c.pitch]
-  const r = camRay(c, c.yaw, c.pitch), t = clamp(d, r.near, r.near + reach)
-  const [ex, ey, ez] = eyeAt(c), px = r.x + r.dx * t - ex, py = r.y + r.dy * t - ey, pz = r.z + r.dz * t - ez
-  const n = Math.hypot(px, py, pz)
-  return n > 1e-3 ? [Math.atan2(-px, -pz), Math.asin(clamp(py / n, -1, 1))] : [c.yaw, c.pitch]
-}
 
 // true only on the killing hit
 const downed = c => c.hp <= 0 && c.dead <= 0 && (c.dead = RESPAWN_S, true)
@@ -12381,7 +12381,7 @@ function objectsAt(t) {
 }
 
 const objectsDrawn = (others = []) => (objDrawn.clear(), isHost ? objs.map(drawnObj) : objectsAt(renderT).map(o => {
-  const by = objHeld.get(o.id), c = by !== undefined && others.find(p => p.id === by), C = c && CHARS[c.cid], e = objEase.get(o.id)
+  const by = objHeld.get(o.id), c = by !== undefined && others.find(p => p.id === by), C = c && GAME.rows.of(c.cid), e = objEase.get(o.id)
   if (C && o.K.carry) {
     const p = handOf({ ...c, r: C.r, h: C.h }, { K: o.K, R: objR(o.K) })
     objEase.set(o.id, { at: p })
@@ -12508,7 +12508,7 @@ function pushRoster() {
 function applyRoster(list) {
   const seen = new Set()
   for (const [id, cid, name, cap] of list) {
-    roster.set(id, { cid: clamp(cid | 0, 0, CHARS.length - 1), name: cleanName(name),
+    roster.set(id, { cid: GAME.rows.cid(cid), name: cleanName(name),
                      cap: capText(cap) })
     seen.add(id)
   }
@@ -12982,7 +12982,7 @@ function reconcile(a) {
   const F = GAME.schema.col
   // own row teleports the body: a non-finite one aborts the world step; keep the prediction
   if (!finiteFields(a, [F.x, F.y, F.z, F.vy, F.fuel, F.vx, F.vz])) return
-  const acid = clamp(a[F.cid] | 0, 0, CHARS.length - 1)
+  const acid = GAME.rows.cid(a[F.cid])
   if (acid !== predicted.cid) applyChar(predicted, acid)
   GAME.schema.own(a, predicted)
   const web = webPoint(a[F.web]) ? a[F.web] : 0
@@ -13602,6 +13602,8 @@ GAME.rows = {
     return cid
   },
   joined(c, cid) { if (CHARS[cid].team) fieldTeam(c), teamsChanged() },
+  cid: v => clamp(v | 0, 0, CHARS.length - 1),
+  of: cid => CHARS[cid],
 }
 // the guest messages this game adds to the engine's
 GAME.msgs = { host: {
