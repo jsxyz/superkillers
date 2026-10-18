@@ -3930,7 +3930,7 @@ function growChunk(ci, cj) {
 function growTick() {
   for (let n = 0; n < 4 && navQueue.length; n++) navTile(...navQueue.shift())
   const me = isHost ? players.get(0) : predicted, pts = isHost ? [...players.values()].map(c => [c.x, c.z])
-    : [...tracks.values()].map(tr => [tr.at(-1).p[PLAYER_STATE.col.x], tr.at(-1).p[PLAYER_STATE.col.z]])
+    : [...tracks.values()].map(tr => [tr.at(-1).p[GAME.schema.col.x], tr.at(-1).p[GAME.schema.col.z]])
   if (me) growNear([[me.x, me.z]], true, growReach() - 96)
   if (isHost) growNear(pts, true, 96)
   growNear(me ? [[me.x, me.z], ...pts] : pts, false)
@@ -12244,7 +12244,7 @@ function noteSnap(t) {
 }
 const extrapMs = () => TIER_MS + 2 * snapGap
 function trackAt(tr, t) {
-  const F = PLAYER_STATE.col
+  const F = GAME.schema.col
   const last = tr[tr.length - 1]
   let j = 0
   while (j < tr.length && tr[j].t < t) j++
@@ -12262,7 +12262,7 @@ const flatList = (x, stride, cap, int) => Array.isArray(x) && x.length % stride 
 const finiteFields = (r, F) => F.every(i => Number.isFinite(r[i]))
 function trackRow(p, t) {
   if (!Array.isArray(p)) return
-  const F = PLAYER_STATE.col
+  const F = GAME.schema.col
   // hostile host: JSON 1e999 = Infinity, which `|| 0` misses; never let it reach a matrix
   if (!finiteFields(p, [F.x, F.y, F.z, F.yaw, F.vy, F.vx, F.vz])) return
   const tr = tracks.get(p[F.id]), was = tr && haveT && !(p[F.dead] > 0) ? trackAt(tr, renderT) : null
@@ -12972,7 +12972,7 @@ const GUEST_MSGS = {
     if (!(now() - (burnHeard.get(f[10]) ?? -1e9) < 1000)) GAME.audio.play('burning', { x: f[0], y: f[1], z: f[2] }, 'world', 1, 0, 3, K && K.name)
     burnHeard.set(f[10], now())
   }
-  const mine = (d.P || []).find(p => p[PLAYER_STATE.col.id] === myId)
+  const mine = (d.P || []).find(p => p[GAME.schema.col.id] === myId)
   if (mine) { admitted ||= myId > 0; reconcile(mine) }
   } },
 }
@@ -12989,12 +12989,12 @@ function onLag(n) {
 
 function reconcile(a) {
   if (!predicted) return
-  const F = PLAYER_STATE.col
+  const F = GAME.schema.col
   // own row teleports the body: a non-finite one aborts the world step; keep the prediction
   if (!finiteFields(a, [F.x, F.y, F.z, F.vy, F.fuel, F.vx, F.vz])) return
   const acid = clamp(a[F.cid] | 0, 0, CHARS.length - 1)
   if (acid !== predicted.cid) applyChar(predicted, acid)
-  PLAYER_STATE.own(a, predicted)
+  GAME.schema.own(a, predicted)
   const web = webPoint(a[F.web]) ? a[F.web] : 0
 
   const ack = a[F.ack] | 0
@@ -13156,7 +13156,7 @@ function beginPlay() {
 
 function remoteAt(t) {
   if (!buf.length) return []
-  const F = PLAYER_STATE.col
+  const F = GAME.schema.col
   const newest = buf[buf.length - 1].t, out = []
   for (const [id, tr] of tracks) {
     const last = tr[tr.length - 1]
@@ -13510,6 +13510,39 @@ GAME.host = HOST_PHASES
 // a bot's input for this tick, from what it sees
 GAME.think = botThink
 
+const PLAYER_STATE = stateSchema([
+  ['id', (c, id) => id],
+  ['x', c => r2(c.x), null, 0.01],
+  ['y', c => r2(c.y), null, 0.01],
+  ['z', c => r2(c.z), null, 0.01],
+  ['yaw', c => r2(c.yaw)],
+  ['hp', c => Math.round(c.hp), (c, v) => { c.hp = v }],
+  ['gun', c => c.gun, (c, v) => { c.gun = GUNS[v] ? v : handsOf(CHARS[c.cid]) }],
+  ['ammo', c => c.ammo === Infinity ? -1 : c.ammo, (c, v) => { c.ammo = v === -1 ? Infinity : v }],
+  ['dead', c => r2(c.dead), (c, v) => { c.dead = v }],
+  ['cid', c => c.cid],
+  ['vy', c => r2(c.vy)],
+  ['kills', c => c.kills, (c, v) => { c.kills = v | 0 }],
+  ['fuel', c => r2(c.fuel), null, 0.01],
+  ['prot', c => r2(c.prot), (c, v) => { if (v !== undefined) c.prot = v }],
+  ['vx', c => r2(c.vx)],
+  ['vz', c => r2(c.vz)],
+  ['ack', (c, id) => inAck.get(id) || 0],
+  ['jLock', c => c.jLock ? 1 : 0],
+  ['anim', c => animOf(c)],
+  ['pow', c => c.pow | 0, (c, v) => { c.pow = v | 0 }],
+  ['powT', c => r2(c.powT), (c, v) => { c.powT = v || 0 }],
+  ['sp', c => c.sp === Infinity ? -1 : c.sp | 0, (c, v) => { c.sp = v === -1 ? Infinity : (v | 0) }],
+  ['markT', c => r2(c.markT), (c, v) => { c.markT = v || 0 }],
+  ['bag', c => c.bag | 0, (c, v) => { c.bag = v | 0 }],
+  ['cap', c => c.cap | 0, (c, v) => { c.cap = v | 0 }],
+  ['prof', c => profBits(c, GUNS[c.gun].name), (c, v) => { c.prof = v | 0 }],
+  ['sprof', c => primaryOf(c) ? profBits(c, primaryOf(c).name) : 0, (c, v) => { c.sprof = v | 0 }],
+  ['mark', c => c.mark | 0, (c, v) => { c.mark = effId(v) }],
+  ['web', c => c.web || 0]
+])
+GAME.schema = PLAYER_STATE
+
 // ---------------------------------------------------------------- loop
 let acc = 0, last = now(), snapAcc = 0, tickAt = 0      // ms: when the last tick fell due
 // this frame's ticks of each player simulated here, for the drawn side to step through; fresh: moved by a reconcile, not a tick
@@ -13643,40 +13676,9 @@ function stateSchema(fields) {
            pack: (id, c) => fields.map(([, encode]) => encode(c, id)),
            own: (a, c) => { for (const [i, own] of owns) own(c, a[i]) } }
 }
-const PLAYER_STATE = stateSchema([
-  ['id', (c, id) => id],
-  ['x', c => r2(c.x), null, 0.01],
-  ['y', c => r2(c.y), null, 0.01],
-  ['z', c => r2(c.z), null, 0.01],
-  ['yaw', c => r2(c.yaw)],
-  ['hp', c => Math.round(c.hp), (c, v) => { c.hp = v }],
-  ['gun', c => c.gun, (c, v) => { c.gun = GUNS[v] ? v : handsOf(CHARS[c.cid]) }],
-  ['ammo', c => c.ammo === Infinity ? -1 : c.ammo, (c, v) => { c.ammo = v === -1 ? Infinity : v }],
-  ['dead', c => r2(c.dead), (c, v) => { c.dead = v }],
-  ['cid', c => c.cid],
-  ['vy', c => r2(c.vy)],
-  ['kills', c => c.kills, (c, v) => { c.kills = v | 0 }],
-  ['fuel', c => r2(c.fuel), null, 0.01],
-  ['prot', c => r2(c.prot), (c, v) => { if (v !== undefined) c.prot = v }],
-  ['vx', c => r2(c.vx)],
-  ['vz', c => r2(c.vz)],
-  ['ack', (c, id) => inAck.get(id) || 0],
-  ['jLock', c => c.jLock ? 1 : 0],
-  ['anim', c => animOf(c)],
-  ['pow', c => c.pow | 0, (c, v) => { c.pow = v | 0 }],
-  ['powT', c => r2(c.powT), (c, v) => { c.powT = v || 0 }],
-  ['sp', c => c.sp === Infinity ? -1 : c.sp | 0, (c, v) => { c.sp = v === -1 ? Infinity : (v | 0) }],
-  ['markT', c => r2(c.markT), (c, v) => { c.markT = v || 0 }],
-  ['bag', c => c.bag | 0, (c, v) => { c.bag = v | 0 }],
-  ['cap', c => c.cap | 0, (c, v) => { c.cap = v | 0 }],
-  ['prof', c => profBits(c, GUNS[c.gun].name), (c, v) => { c.prof = v | 0 }],
-  ['sprof', c => primaryOf(c) ? profBits(c, primaryOf(c).name) : 0, (c, v) => { c.sprof = v | 0 }],
-  ['mark', c => c.mark | 0, (c, v) => { c.mark = effId(v) }],
-  ['web', c => c.web || 0]
-])
 // ack = last input SIMULATED, not arrived, or the guest's rewind lands short and snaps back
 function packPlayer(id, c) {
-  return PLAYER_STATE.pack(id, c)
+  return GAME.schema.pack(id, c)
 }
 // trailing zeros trimmed to WIRE_MIN: decoders read missing cols >= 16 as 0; old guests drop rows missing 1-4,10,12,14,15
 const WIRE_MIN = 16
@@ -13686,7 +13688,7 @@ const wireRow = r => { let n = r.length; while (n > WIRE_MIN && r[n - 1] === 0) 
 // from the row, half from a restore from one) replays forever: fuel's is a step and a tenth, and REWIND_EPS may not be under
 // position's.
 const OWN_PREDICTION = (F => {
-  const S = PLAYER_STATE.step, fuelEps = S.fuel + S.fuel / 10
+  const S = GAME.schema.step, fuelEps = S.fuel + S.fuel / 10
   if (REWIND_EPS < Math.hypot(S.x, S.y, S.z)) throw Error('REWIND_EPS is under the wire step')
   return {
     take: (c, e = {}) => { e.x = c.x; e.y = c.y; e.z = c.z; e.fuel = c.fuel; e.jl = !!c.jLock; e.fl = !!c.flying; e.sp = c.springT || 0; e.ft = !!c.flyTurn; e.kn = [c.knT || 0, c.knx || 0, c.knz || 0, c.knUp || 0]; e.wh = !!c.wallHeld; e.sl = !!c.slide; e.web = c.web || 0; return e },
@@ -13695,9 +13697,9 @@ const OWN_PREDICTION = (F => {
     carry: (e, c) => { c.flying = e.fl; c.springT = e.sp; c.flyTurn = e.ft; [c.knT, c.knx, c.knz, c.knUp] = e.kn; c.wallHeld = e.wh; c.slide = e.sl },
     restore: (c, a, web) => { restoreChar(c, a[F.x], a[F.y], a[F.z], a[F.vx], a[F.vy], a[F.vz], a[F.fuel]); tie(c, web); c.jLock = !!a[F.jLock] },
   }
-})(PLAYER_STATE.col)
+})(GAME.schema.col)
 // the game this engine runs: its messages, state schema, input, host tick rules and own predicted component
-Object.assign(GAME, { msgs: { host: HOST_MSGS, guest: GUEST_MSGS }, schema: PLAYER_STATE, input: INPUT_SCHEMA, predict: OWN_PREDICTION })
+Object.assign(GAME, { msgs: { host: HOST_MSGS, guest: GUEST_MSGS }, input: INPUT_SCHEMA, predict: OWN_PREDICTION })
 
 // background tabs throttle rAF to ~0 Hz, freezing a host: a worker is its clock
 const BG_SRC = 'var h;onmessage=function(e){clearInterval(h);' +
@@ -13876,7 +13878,7 @@ const hotUntil = new Map()        // pairKey -> host time the fight ends
 const pairKey = (a, b) => a < b ? a + ':' + b : b + ':' + a
 let snapSeq = 0
 const rowState = r => {
-  const F = PLAYER_STATE.col
+  const F = GAME.schema.col
   return [r[F.hp], r[F.gun], r[F.dead] > 0, r[F.cid], r[F.kills], r[F.prot] > 0, r[F.pow], r[F.markT] > 0,
           r[F.cap], r[F.prof], r[F.sprof]].join()
 }
@@ -13894,7 +13896,7 @@ function sendSnapshot(s) {
   const held = JSON.stringify(objs.flatMap(o => o.heldBy === undefined ? [] : [o.id, o.heldBy]))
   // a guest reads an absent vehicle as RADIO_START
   const tuned = JSON.stringify(objs.flatMap(o => o.V && o.radio !== RADIO_START ? [o.id, o.radio] : []))
-  const rows = s.P.map(r => ({ id: r[PLAYER_STATE.col.id], json: JSON.stringify(wireRow(r)), state: rowState(r), c: players.get(r[PLAYER_STATE.col.id]) }))
+  const rows = s.P.map(r => ({ id: r[GAME.schema.col.id], json: JSON.stringify(wireRow(r)), state: rowState(r), c: players.get(r[GAME.schema.col.id]) }))
   const head = '{"k":"s","t":' + JSON.stringify(s.t) + ',"P":['
   const rest = Object.assign({}, s, { k: undefined, t: undefined, P: undefined })
   const tails = {}
