@@ -10586,10 +10586,7 @@ function drawDebug(me, fps) {
              ' of ' + p(MAX_INQ, 2) + '  ticks of standing lag ' +
              p(Math.round(Math.min(...d) * TICK * 1000), 3) + ' ms'
     })()) : '') +
-    (navWorker ? row('nav', navFail ? '<span class="w">' + esc(navFail) + '</span>'
-                                   : navUp ? v(p(navMeshCount, 2)) + ' meshes built, in a worker' : 'loading') : '') +
-    (voiceWorker ? row('voices', esc(voiceStatus()[0])) +
-                   row('chatterbox', voiceFail ? '<span class="w">' + esc(voiceStatus()[1]) + '</span>' : esc(voiceStatus()[1])) : '') +
+    GAME.view.debug(row, v, p) +
     row('bg', 'clock ' + v(bgMode.padEnd(6)) +
         (bgActive ? ' <span class="w">running hidden</span>' : ' foreground')) +
     (frameFails ? row('fail', '<span class="w">' + p(frameFails, 4) +
@@ -14673,7 +14670,14 @@ function drawRadar(me, others, t) {
 // what the host draws of the pickups: the ones standing, as their snapshot rows
 const hostPickups = () => pickups.filter(p => p.respawn <= 0).map(p => [p.x, p.y, p.z, p.gun, p.pow, p.heal])
 
-GAME.view = { serverReset: () => { srvSig = null; srvDrawnAt = 0 }, tab: drawTab, results: drawResults, server: drawServer, serverInit: initServerPanel, hud: drawHud, faceYaw, radar: drawRadar, pickups: hostPickups, passengerAim: (id, c, t, seat) => seat > 0 && seatRanged(GUNS[heldGun(id, c, t)]) }
+// the game's rows in the F3 panel: bot navigation and the voices, each while its worker runs
+function debugRows(row, v, p) {
+  return (navWorker ? row('nav', navFail ? '<span class="w">' + esc(navFail) + '</span>'
+                                 : navUp ? v(p(navMeshCount, 2)) + ' meshes built, in a worker' : 'loading') : '') +
+    (voiceWorker ? row('voices', esc(voiceStatus()[0])) +
+                   row('chatterbox', voiceFail ? '<span class="w">' + esc(voiceStatus()[1]) + '</span>' : esc(voiceStatus()[1])) : '')
+}
+GAME.view = { serverReset: () => { srvSig = null; srvDrawnAt = 0 }, tab: drawTab, results: drawResults, server: drawServer, serverInit: initServerPanel, hud: drawHud, faceYaw, radar: drawRadar, pickups: hostPickups, passengerAim: (id, c, t, seat) => seat > 0 && seatRanged(GUNS[heldGun(id, c, t)]), debug: debugRows }
 
 // ---------------------------------------------------------------- boot
 class Arena extends ENABLE3D.Scene3D {
