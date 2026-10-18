@@ -3921,7 +3921,8 @@ function growChunk(ci, cj) {
     if (isHost && k >= 0 && objs.length < OBJ_MAX - 64) { objSeeds[objs.length] = seed; placeObject(k, [x, 0, z], yaw) }
   }
   onChunk({ cell: [ci, cj], boxes, scenery })
-  if (craters.length) { (crb.regrow ||= []).push({ a0: ci * 96 - ARENA, a1: ci * 96 + 96 - ARENA, b0: cj * 96 - ARENA, b1: cj * 96 + 96 - ARENA }); buildCrater() }
+  const cell = { a0: ci * 96 - ARENA, a1: ci * 96 + 96 - ARENA, b0: cj * 96 - ARENA, b1: cj * 96 + 96 - ARENA }
+  if (craters.some(([x, z, r]) => over(cell, craterSquare(x, z, r)))) { (crb.regrow ||= []).push(cell); buildCrater() }
 }
 // host grows all chunks within 96 m of any player (teleports); then the nearest in reach, one a tick
 function growTick() {
@@ -4011,7 +4012,7 @@ let CRATER_BUILDER = {
 }
 function craterBuild(list, done) {
   const top = b => b.cy + b.ey, sq = b => ({ a0: b.cx - b.ex, a1: b.cx + b.ex, b0: b.cz - b.ez, b1: b.cz + b.ez })
-  const over = (p, q) => p.a0 < q.a1 && q.a0 < p.a1 && p.b0 < q.b1 && q.b0 < p.b1, rs = list.map((c, i) => ({ ...craterSquare(c.x, c.z, c.r), cr: [i] }))
+  const rs = list.map((c, i) => ({ ...craterSquare(c.x, c.z, c.r), cr: [i] }))
   for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) if (over(rs[i], rs[j])) {
     const p = rs[i], q = rs.splice(j, 1)[0]
     rs[i] = { a0: Math.min(p.a0, q.a0), a1: Math.max(p.a1, q.a1), b0: Math.min(p.b0, q.b0), b1: Math.max(p.b1, q.b1), cr: p.cr.concat(q.cr).sort((a, b) => a - b) }; i = -1; break }
@@ -4026,9 +4027,10 @@ function craterBuild(list, done) {
     for (const [k, o] of old) if (k !== key && o.rect.a0 >= rect.a0 && o.rect.a1 <= rect.a1 && o.rect.b0 >= rect.b0 && o.rect.b1 <= rect.b1) { old.delete(k); out.push({ key: k, gone: [o.render] }) }
     if (was?.n === R.n && !regrow?.some(g => over(g, rect))) { if (!craterRegions.has(key)) out.push(R) } else asks.push([R, c])
   }
-  for (const [i, rects] of gs) { const b = BOXES[i], s = sq(b), t = [], w = b.ex >= ARENA && b.ez >= ARENA ? 96 : Infinity
+  for (const [i, rects] of gs) { const b = BOXES[i], s = sq(b), t = [], w = b.ex >= ARENA && b.ez >= ARENA ? 96 : Infinity, cut = JSON.stringify(rects)
+    if (craterRegions.get('g' + i)?.cut === cut) continue          // already cut so
     for (let a = s.a0; a < s.a1; a += w) for (let c = s.b0; c < s.b1; c += w) t.push({ a0: a, a1: Math.min(a + w, s.a1), b0: c, b1: Math.min(c + w, s.b1) })
-    out.push({ key: 'g' + i, boxes: t.flatMap(r => subtractRects(r, rects)).map(p => ({ cx: (p.a0 + p.a1) / 2, cy: b.cy, cz: (p.b0 + p.b1) / 2, ex: (p.a1 - p.a0) / 2, ey: b.ey, ez: (p.b1 - p.b0) / 2 })) }) }
+    out.push({ key: 'g' + i, cut, boxes: t.flatMap(r => subtractRects(r, rects)).map(p => ({ cx: (p.a0 + p.a1) / 2, cy: b.cy, cz: (p.b0 + p.b1) / 2, ex: (p.a1 - p.a0) / 2, ey: b.ey, ez: (p.b1 - p.b0) / 2 })) }) }
   const ask = k => LV !== lv ? 0 : k < asks.length ? craterWork(...asks[k], d => { const R = asks[k][0]      // sequential: each on the ground the last left
     if (d) { R.gone = [R.render]; Object.assign(R, d); out.push(R) } else crb.regions.delete(R.key); ask(k + 1) }) : done({ regions: out, replaces: [...gs.keys()] })
   ask(0)
@@ -4040,6 +4042,7 @@ function smashCheck(c, impact) {
   if (g) addCrater(c.x, c.z, S.r, g.cy + g.ey)
 }
 const craterSquare = (x, z, r) => { const g = v => Math.round(v * 2) / 2, e = g(1.25 * r); return { a0: g(x) - e, a1: g(x) + e, b0: g(z) - e, b1: g(z) + e } }
+const over = (p, q) => p.a0 < q.a1 && q.a0 < p.a1 && p.b0 < q.b1 && q.b0 < p.b1
 const craterGround = (q, y, below = 0.3) => BOXES.filter(b => !b.paint && b.cx - b.ex <= q.a0 && b.cx + b.ex >= q.a1 && b.cz - b.ez <= q.b0 && b.cz + b.ez >= q.b1 &&
   b.cy + b.ey - y <= 0.3 && y - b.cy - b.ey <= below).sort((a, b) => b.cy + b.ey - a.cy - a.ey)[0]
 function craterFits(x, z, r, y) {
@@ -4081,8 +4084,8 @@ function craterTake({ regions, replaces }) {
   for (const b of replaces.map(i => BOXES[i]).filter(b => !craterReplaced.has(b))) {
     const c = statics.find(c => c.src.includes(b)); craterReplaced.add(b); dropChunk(c); addChunk(c.src.filter(o => o !== b), c.cell, [], c.slim, false, c.crowns)
   }
-  for (const o of objs) o.body.activate()
-  for (const c of players.values()) if (c.body) c.body.activate()
+  // an object over a crater loses its ground; all else dropped here is back where it was
+  for (const o of objs) if (regions.some(g => g.rect && over(g.rect, { a0: o.x - o.R, a1: o.x + o.R, b0: o.z - o.R, b1: o.z + o.R }))) o.body.activate()
 }
 function craterClear() {
   for (const k of craterRegions.keys()) { const c = statics.find(c => c.cell === k); if (c) dropChunk(c) }
