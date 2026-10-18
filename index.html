@@ -13648,10 +13648,10 @@ const OWN_PREDICTION = (F => {
   const S = PLAYER_STATE.step, fuelEps = S.fuel + S.fuel / 10
   if (REWIND_EPS < Math.hypot(S.x, S.y, S.z)) throw Error('REWIND_EPS is under the wire step')
   return {
-    take: (c, e = {}) => { e.x = c.x; e.y = c.y; e.z = c.z; e.fuel = c.fuel; e.jl = !!c.jLock; e.fl = !!c.flying; e.sp = c.springT || 0; e.ft = !!c.flyTurn; e.web = c.web || 0; return e },
+    take: (c, e = {}) => { e.x = c.x; e.y = c.y; e.z = c.z; e.fuel = c.fuel; e.jl = !!c.jLock; e.fl = !!c.flying; e.sp = c.springT || 0; e.ft = !!c.flyTurn; e.kn = [c.knT || 0, c.knx || 0, c.knz || 0, c.knUp || 0]; e.wh = !!c.wallHeld; e.sl = !!c.slide; e.web = c.web || 0; return e },
     err: (e, a) => Math.hypot(e.x - a[F.x], e.y - a[F.y], e.z - a[F.z]),
     agrees: (e, a, web) => (e.web || 0) === web && Math.abs(e.fuel - a[F.fuel]) <= fuelEps && e.jl === !!a[F.jLock],
-    carry: (e, c) => { c.flying = e.fl; c.springT = e.sp; c.flyTurn = e.ft },
+    carry: (e, c) => { c.flying = e.fl; c.springT = e.sp; c.flyTurn = e.ft; [c.knT, c.knx, c.knz, c.knUp] = e.kn; c.wallHeld = e.wh; c.slide = e.sl },
     restore: (c, a, web) => { restoreChar(c, a[F.x], a[F.y], a[F.z], a[F.vx], a[F.vy], a[F.vz], a[F.fuel]); tie(c, web); c.jLock = !!a[F.jLock] },
   }
 })(PLAYER_STATE.col)
