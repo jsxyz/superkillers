@@ -7609,19 +7609,18 @@ function buildWorld() {
 // sun distance: the tallest building stays behind the shadow camera's near plane
 const sunHome = new THREE.Vector3(12, 22, 8).multiplyScalar(4), sunFocus = new THREE.Vector3()
 const sunX = new THREE.Vector3(0, 1, 0).cross(sunHome).normalize(), sunY = sunHome.clone().cross(sunX).normalize()
-// hidden for one render: a chunk or a pooled vehicle that the camera and, while the sun casts, its shadow camera both miss
+// hidden for one render: a chunk, or a pooled vehicle by its look's reach, that the camera and the casting sun both miss
 const culled = [], reaches = new Map()
-let viewCull = null
 function cullView(cam) {
   for (const o of culled.splice(0)) o.visible = true
-  const { seen, M, ball } = viewCull ||= { seen: new THREE.Frustum(), M: new THREE.Matrix4(), ball: new THREE.Sphere() }
-  seen.setFromProjectionMatrix(M.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse))
-  const lit = renderer.shadowMap.enabled && sunLight?.castShadow && (sunLight.shadow.updateMatrices(sunLight), sunLight.shadow.getFrustum())
-  const hide = (o, v, test = v.isBox3 ? 'intersectsBox' : 'intersectsSphere') => { if (!seen[test](v) && !(lit && lit[test](v))) { o.visible = false; culled.push(o) } }
+  cullFrom(cam)
+  if (!culling) return
+  const { v, s, b } = cullT, lit = renderer.shadowMap.enabled && sunLight.castShadow
+  const hide = (o, x, test = x.isBox3 ? 'intersectsBox' : 'intersectsSphere') => { if (!v[test](x) && !(lit && s[test](x))) { o.visible = false; culled.push(o) } }
   for (const g of worldGroup.children) if (g.userData.cell && g.visible) hide(g, g.userData.box ||= new THREE.Box3().setFromObject(g).expandByScalar(2))
-  for (const m of objPool) if (m.visible) { const { k, paint } = m.userData           // a look's reach: its sphere, round the hull's centre
-    hide(m, ball.set(m.position, reaches.get(k) ?? reaches.set(k, new THREE.Box3().setFromObject(propModel('object', k, true, paint)).getBoundingSphere(ball).radius
-      + ball.center.distanceTo(new THREE.Vector3(...hullAt(OBJECTS[k])))).get(k))) }
+  for (const m of objPool) if (m.visible) { const { k, paint } = m.userData
+    hide(m, b.set(m.position, reaches.get(k) ?? reaches.set(k, new THREE.Box3().setFromObject(propModel('object', k, true, paint)).getBoundingSphere(b).radius
+      + b.center.distanceTo(new THREE.Vector3(...hullAt(OBJECTS[k])))).get(k))) }
 }
 function followSun() {
   if (!sunLight || !camera || ARENA <= 96 || !LV.scenery?.length) return
