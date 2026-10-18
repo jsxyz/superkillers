@@ -10327,8 +10327,8 @@ const INPUT_SCHEMA = {
     if ((e.code === 'KeyY' || e.code === 'KeyN') && !e.repeat) voteBallot(e.code === 'KeyY')
     if (e.code === 'KeyB' && !e.repeat) GAME.audio.cycle()
     if (e.code === 'KeyC' && !e.repeat) teamSwitch()
-    if (/^Digit[1-9]$/.test(e.code) && !e.repeat && !(isHost && resultsLeft > 0)) teamSwitch(+e.code.slice(5) - 1)
-    if (isHost && resultsLeft > 0 && /^Digit[1-9]$/.test(e.code) && +e.code.slice(5) <= LEVELS.length) pickNext(+e.code.slice(5) - 1)
+    if (/^Digit[1-9]$/.test(e.code) && !e.repeat && !(isHost && GAME.match.resultsLeft > 0)) teamSwitch(+e.code.slice(5) - 1)
+    if (isHost && GAME.match.resultsLeft > 0 && /^Digit[1-9]$/.test(e.code) && +e.code.slice(5) <= LEVELS.length) GAME.match.pickNext(+e.code.slice(5) - 1)
   },
   keyUp(e) {
     if (e.code === 'Tab') { tabOpen = false; return }
@@ -10897,25 +10897,25 @@ function openHost() {
   bots.value = BOT_COUNT
   out.textContent = String(BOT_COUNT)
   bots.oninput = () => { out.textContent = bots.value }
-  bots.onchange = () => spawnBots(+bots.value)
+  bots.onchange = () => GAME.match.bots(+bots.value)
   const re = el('#set-rate'), ro = el('#set-rate-v')
   const rateText = () => settings.rate ? settings.rate + ' / s' : 'Auto, ' + snapHz(players.size) + ' / s'
   re.value = SNAP_STEPS.indexOf(settings.rate)
   ro.textContent = rateText()
   re.oninput = () => { settings.rate = SNAP_STEPS[+re.value] || 0; ro.textContent = rateText(); saveSettings() }
   // "no limit" at the right end
-  const fr = el('#set-frags'), fo = el('#set-frags-v'), fn = FRAG_STEPS.length
+  const fr = el('#set-frags'), fo = el('#set-frags-v'), fn = GAME.match.fragSteps.length
   const fragText = () => GAME.match.fragLimit ? String(GAME.match.fragLimit) : 'no limit'
   fr.max = fn - 1
-  fr.value = (FRAG_STEPS.findIndex(v => v >= GAME.match.fragLimit) + fn - 1) % fn
+  fr.value = (GAME.match.fragSteps.findIndex(v => v >= GAME.match.fragLimit) + fn - 1) % fn
   fo.textContent = fragText()
-  fr.oninput = () => { GAME.match.frags(FRAG_STEPS[(+fr.value + 1) % fn]); fo.textContent = fragText() }
+  fr.oninput = () => { GAME.match.frags(GAME.match.fragSteps[(+fr.value + 1) % fn]); fo.textContent = fragText() }
   const tm = el('#set-time'), to = el('#set-time-v')
   const timeText = () => GAME.match.timeLimit ? +(GAME.match.timeLimit / 60).toFixed(2) + ' min' : 'untimed'
-  tm.max = MINUTE_STEPS.length - 1
-  tm.value = MINUTE_STEPS.findIndex(v => v >= GAME.match.timeLimit / 60)
+  tm.max = GAME.match.minuteSteps.length - 1
+  tm.value = GAME.match.minuteSteps.findIndex(v => v >= GAME.match.timeLimit / 60)
   to.textContent = timeText()
-  tm.oninput = () => { GAME.match.minutes(MINUTE_STEPS[+tm.value]); to.textContent = timeText() }
+  tm.oninput = () => { GAME.match.minutes(GAME.match.minuteSteps[+tm.value]); to.textContent = timeText() }
   show('hostset', 1)
 }
 
@@ -10930,7 +10930,7 @@ function initSettings() {
     el('#' + id).onclick = () => { change(); applySettings(); saveSettings(); if (then) then() }
   }
   el('#set-mode').onclick = () => {
-    setMode(nextOf(MODES, gameMode))
+    GAME.match.mode(nextOf(MODES, gameMode))
     announce('§7Mode: §f' + gameMode)
     openHost()
   }
@@ -13820,7 +13820,7 @@ function setMatchMinutes(n) {
   settings.mins = n; saveSettings()
 }
 // the match's limits and its restart, as chat, settings and a level change set them
-GAME.match = { frags: setFragLimit, minutes: setMatchMinutes, restart: resetMatch, get fragLimit() { return fragLimit }, get timeLimit() { return timeLimit } }
+GAME.match = { frags: setFragLimit, minutes: setMatchMinutes, restart: resetMatch, get fragLimit() { return fragLimit }, get timeLimit() { return timeLimit }, bots: spawnBots, mode: setMode, pickNext: i => pickNext(i), get resultsLeft() { return resultsLeft }, get fragSteps() { return FRAG_STEPS }, get minuteSteps() { return MINUTE_STEPS } }
 // the commands this game adds to the page's own
 GAME.commands = {
   spawn:  { args: '<name|rangers|tmnt|all>', help: 'host only, bring enemies in now', run: a => {
@@ -13899,6 +13899,8 @@ GAME.rows = {
   refusal,
   // what the pick screen's room note adds
   pickNote: () => balanced() ? ' · sides balanced' : '',
+  // the bots whose looks the menu prepares for a player on this row
+  menuBots: cid => gameMode === 'ffa' || !sideOffered(CHARS[cid].side) ? [...heroWant(), ...SQUAD] : waveOrder(),
   cid: v => clamp(v | 0, 0, CHARS.length - 1),
   of: cid => CHARS[cid],
 }
@@ -14874,8 +14876,8 @@ const teamOf = i => CHARS[i].team, members = t => CHARS.flatMap((C, i) => C.team
 let pickedLevel = 0
 // what a Host draws first: the pick and its team, the first wave or the free-for-all's bots
 function prepMenu() {
-  const team = CHARS[myCid].team, ffa = gameMode === 'ffa' || !sideOffered(CHARS[myCid].side)
-  prepareRows([...(team ? members(team) : [myCid]).map(k => [0, k]), ...botPairs(ffa ? [...heroWant(), ...SQUAD] : waveOrder())])
+  const team = CHARS[myCid].team
+  prepareRows([...(team ? members(team) : [myCid]).map(k => [0, k]), ...botPairs(GAME.rows.menuBots(myCid))])
 }
 // a thumbnail compiles its level: drawn when idle after Ready, at most half a second later on a page that never idles
 const thumbsDue = [], paintThumbs = () => { for (const f of thumbsDue.splice(0)) try { f() } catch (e) { console.error(e) } }
