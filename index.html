@@ -13640,6 +13640,8 @@ const OWN_PREDICTION = (F => {
     restore: (c, a, web) => { restoreChar(c, a[F.x], a[F.y], a[F.z], a[F.vx], a[F.vy], a[F.vz], a[F.fuel]); tie(c, web); c.jLock = !!a[F.jLock] },
   }
 })(PLAYER_STATE.col)
+// the game this engine runs: its messages, state schema, input, host tick rules and own predicted component
+const GAME = { msgs: { host: HOST_MSGS, guest: GUEST_MSGS }, schema: PLAYER_STATE, input: INPUT_SCHEMA, host: HOST_PHASES, predict: OWN_PREDICTION }
 
 // background tabs throttle rAF to ~0 Hz, freezing a host: a worker is its clock
 const BG_SRC = 'var h;onmessage=function(e){clearInterval(h);' +
