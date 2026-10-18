@@ -2691,6 +2691,21 @@ function pressesOn(c, o, x, z) {
 }
 // Bullet: is c's capsule sunk into an object now
 let inCb = null, inHit = false
+// a flight tilt taken only where the tilted capsule fits, 20 cm in a face allowed; else Bullet would push it straight back out
+let tiltGhost = null, tiltCb = null, tiltHit = false
+function tiltFits(c, yaw) {
+  if (!tiltCb) {
+    tiltGhost = new A.btGhostObject(); tiltCb = new A.ConcreteContactResultCallback()
+    tiltCb.addSingleResult = cp => { tiltHit ||= A.wrapPointer(cp, A.btManifoldPoint).getDistance() < -0.2; return 0 }
+    tiltCb.needsCollision = p => (A.wrapPointer(p, A.btBroadphaseProxy).get_m_collisionFilterGroup() & (G_STATIC | G_OBJ)) !== 0
+  }
+  const was = c.flyTurn; c.flyTurn = true; const q = turnOf(c, yaw); c.flyTurn = was
+  tiltGhost.setCollisionShape(c.body.getCollisionShape())
+  scratchTr.setIdentity(); posVec.setValue(c.x, c.y, c.z); scratchTr.setOrigin(posVec); quatVec.setValue(...q); scratchTr.setRotation(quatVec)
+  tiltGhost.setWorldTransform(scratchTr)
+  tiltHit = false; world.contactTest(tiltGhost, tiltCb)
+  return !tiltHit
+}
 function insideObject(c) {
   if (!inCb) {
     inCb = new A.ConcreteContactResultCallback()
@@ -2823,7 +2838,7 @@ function applyIntent(c, inp, dt) {
   }
   if (c.ceil) [mx, vy, mz] = surfV(0, -1, 0, wx, wz, GAME.participantOf(c).climb)
   if (c.springT > 0 && c.grounded) { const k = stat(c, 'move', GAME.participantOf(c).run ?? c.speed * RUN) / 2; mx = wx * k; mz = wz * k }
-  const fly = flyFast(c, inp.yaw)
+  const fly = flyFast(c, inp.yaw) && (c.flyTurn || tiltFits(c, inp.yaw))
   if (fly || c.flyTurn) { c.flyTurn = fly; teleportBody(c.body, c.x, c.y, c.z, turnOf(c, inp.yaw)) }
   const runner = GAME.participantOf(c)?.wallRun && !J && !c.tie && !seatOf(c), R = runner && runUpWall(c, inp, spd, wx, wz, dt)
   if (R) [mx, vy, mz] = R
