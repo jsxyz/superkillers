@@ -13706,7 +13706,7 @@ function onTicker() {
   if (!document.hidden && !serving) return
   const t = now()
   stepSim(t)
-  if (serving) drawServer(t)
+  if (serving) GAME.view.server(t)
 }
 
 let bgTimer = 0
@@ -14244,13 +14244,15 @@ function draw(dt, t) {
       '  ·  T chat  ·  Tab scores' +
       (locked || chatOpen ? '' : '  ·  click to capture mouse') + clock)
 
-  drawTab(others)
-  drawResults(others)
+  GAME.view.tab(others)
+  GAME.view.results(others)
   drawDebug(me, fps)
   fadeChat(t)
   tickObfuscated(t)
 }
 
+// ---------------------------------------------------------------- view
+// this game's panels: the tab, the results and the serving host's panel; the engine calls them through GAME.view
 const dives = G => G?.dive ? ' (dives in the air)' : ''
 let lastTabSig = null, lastProfSig = null
 function standings(others) {
@@ -14383,6 +14385,8 @@ function initServerPanel() {
   el('#srv-time-more').onclick = mins(1)
 }
 
+GAME.view = { tab: drawTab, results: drawResults, server: drawServer, serverInit: initServerPanel }
+
 // ---------------------------------------------------------------- boot
 class Arena extends ENABLE3D.Scene3D {
   constructor() { super({ key: 'arena' }) }
@@ -14410,7 +14414,7 @@ class Arena extends ENABLE3D.Scene3D {
       initSettings()
       initPause()
       initEndModal()
-      initServerPanel()
+      GAME.view.serverInit()
       wireMenu()
       setStatus('')
       const broke = m => { if (phase === 'connecting' || picking) setStatus('Something broke: ' + m, 'err') }
