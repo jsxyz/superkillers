@@ -13960,82 +13960,6 @@ function hud(key, node, prop, value) {
   else if (prop[0] === '.') node.classList.toggle(prop.slice(1), value)
   else node.style[prop] = value
 }
-const mmss = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0')
-
-// drawn facing: the run on the ground; the aim when still, attacking or in a state of its own; in the air the turn it had
-const FACE_MS = 400, FACE_RATE = 14
-// ticks: this frame's sim ticks (the last is c), else one step of dt
-function faceYaw(id, c, anim, own, t, dt, firing, ticks) {
-  const a = avatars.get(id)
-  if (!a) return c.yaw
-  const G = GUNS[a.shotGun], C = GUNS[a.chargeGun], n = ticks ? ticks.length : 1
-  for (let i = 0; i < n; i++) {
-    const s = i < n - 1 ? ticks[i] : c, an = s === c ? anim : s.anim, at = ticks ? tickAt - (n - 1 - i) * TICK * 1000 : t, y = a.face ?? s.yaw, mine = own || an > 3
-    const attack = (s === c ? firing : s.fire) || at - a.shotAt < Math.max(FACE_MS, G?.punchMs ?? G?.rate * 1000) || at - a.chargeAt < (C?.windup ?? 0) * 1000
-    const flyWant = an === 5 && Math.hypot(s.vx, s.vz) > FLY_V * 0.6 ? Math.atan2(-s.vx, -s.vz) : null
-    const want = attack ? s.yaw : mine && flyWant === null ? s.yaw : flyWant ?? (an === 0 ? s.yaw : an === 1 && Math.hypot(s.vx, s.vz) > 0.8 ? Math.atan2(-s.vx, -s.vz) : y), k = (ticks ? TICK : dt) * FACE_RATE * (mine ? 4 : attack ? 2 : 1)
-    a.face = y + clamp(Math.atan2(Math.sin(want - y), Math.cos(want - y)), -k, k)
-  }
-  return a.face ?? c.yaw
-}
-// GTA's radar while seated: each static chunk baked top-down once, then one rotated drawImage apiece; up is where the
-// camera looks (world north, the N on the rim, is -z)
-const RADAR_M = 70, RADAR_PX = 2, RADAR_MS = 1000 / 30         // m centre to rim; bake px a metre; redrawn at most 30 Hz
-const radarBake = new WeakMap()
-let radarCtx = null, radarAt = 0
-// boxes wider than a radar's view (a level-wide floor) are its background; the lid and street furniture are not drawn
-function bakeChunk(c) {
-  let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity
-  const src = c.src.filter(b => b.ex < 200 && b.ez < 200 && b.cy - b.ey < 10 && Math.max(b.ex, b.ez) >= 0.75)
-  for (const b of src) { x0 = Math.min(x0, b.cx - b.ex); x1 = Math.max(x1, b.cx + b.ex); z0 = Math.min(z0, b.cz - b.ez); z1 = Math.max(z1, b.cz + b.ez) }
-  const k = Math.min(RADAR_PX, 2048 / Math.max(x1 - x0, z1 - z0, 1)), cv = document.createElement('canvas'), g = cv.getContext('2d')
-  cv.width = Math.max(1, Math.ceil((x1 - x0) * k)); cv.height = Math.max(1, Math.ceil((z1 - z0) * k))
-  for (const low of [true, false]) for (const b of src) if ((b.cy + b.ey <= 1.2) === low) {
-    g.fillStyle = low ? '#262d36' : '#7d8794'
-    g.fillRect((b.cx - b.ex - x0) * k, (b.cz - b.ez - z0) * k, 2 * b.ex * k, 2 * b.ez * k)
-  }
-  const B = { cv, x0, z0, x1, z1 }
-  radarBake.set(c, B)
-  return B
-}
-function drawRadar(me, others, t) {
-  const on = phase === 'playing' && !menuUp() && !(me.dead > 0) && !!seatOf(me)
-  hud('radar', document.body, '.radar', on)
-  if (!on || t - radarAt < RADAR_MS) return
-  radarAt = t
-  const g = radarCtx ||= el('#radar').getContext('2d'), R = 75, s = R / RADAR_M, yaw = chase.yaw + chase.look
-  const cs = Math.cos(yaw), sn = Math.sin(yaw), turn = (x, z) => [x * cs - z * sn, x * sn + z * cs]
-  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, 2 * R, 2 * R)
-  g.save(); g.beginPath(); g.arc(R, R, R - 1, 0, 2 * Math.PI); g.clip()
-  g.fillStyle = '#0d1117'; g.fillRect(0, 0, 2 * R, 2 * R)
-  g.translate(R, R); g.rotate(yaw); g.scale(s, s); g.translate(-me.x, -me.z)
-  const far = RADAR_M * 1.5
-  for (const c of statics) {
-    if (!c.src?.length) continue
-    const B = radarBake.get(c) || bakeChunk(c)
-    if (B.x1 > me.x - far && B.x0 < me.x + far && B.z1 > me.z - far && B.z0 < me.z + far) g.drawImage(B.cv, B.x0, B.z0, B.x1 - B.x0, B.z1 - B.z0)
-  }
-  g.setTransform(1, 0, 0, 1, 0, 0)
-  const mine = sideOf(me)
-  for (const o of others) {
-    if (o.dead > 0) continue
-    let [x, y] = turn((o.x - me.x) * s, (o.z - me.z) * s)
-    const d = Math.hypot(x, y), k = d > R - 5 ? (R - 5) / d : 1
-    g.fillStyle = gameMode !== 'ffa' && rowFor(o.id, o.cid).side === mine ? '#58a6ff' : '#f85149'
-    g.beginPath(); g.arc(R + x * k, R + y * k, 3, 0, 2 * Math.PI); g.fill()
-  }
-  g.restore()
-  g.strokeStyle = '#8b949e'; g.lineWidth = 2; g.beginPath(); g.arc(R, R, R - 1, 0, 2 * Math.PI); g.stroke()
-  const [fx, fy] = turn(-Math.sin(me.yaw), -Math.cos(me.yaw)), [nx, ny] = turn(0, -1)
-  g.save(); g.translate(R, R); g.rotate(Math.atan2(fx, -fy))
-  g.fillStyle = '#e6edf3'; g.beginPath(); g.moveTo(0, -8); g.lineTo(5.5, 6); g.lineTo(0, 3); g.lineTo(-5.5, 6); g.closePath(); g.fill()
-  g.restore()
-  g.save(); g.translate(R + nx * (R - 9), R + ny * (R - 9))
-  g.fillStyle = '#0d1117'; g.beginPath(); g.arc(0, 0, 8, 0, 2 * Math.PI); g.fill()
-  g.strokeStyle = '#e6edf3'; g.lineWidth = 1.8; g.beginPath(); g.moveTo(-3, 4); g.lineTo(-3, -4); g.lineTo(3, 4); g.lineTo(3, -4); g.stroke()
-  g.restore()
-}
-
 const lifts = new Set(), sits = new Map(), carries = new Set()
 function draw(dt, t) {
   let me, others, pkl
@@ -14048,7 +13972,7 @@ function draw(dt, t) {
       .map(([id, c]) => ({ id, ...(P => P ? { x: P[0], y: P[1], z: P[2], sim: c } : { x: c.x, y: c.y, z: c.z })(drawnPose(c)), yaw: c.yaw, wy: c.wy, vx: c.vx, vz: c.vz, dead: c.dead,
                            cid: c.cid, prot: c.prot, anim: animOf(c), cap: c.cap | 0, web: c.web,
                            gun: c.gun, pitch: c.pitch, hp: c.hp, kills: c.kills | 0, mark: c.mark, markT: c.markT, vy: c.vy, jl: c.jLock }))
-    pkl = pickups.filter(p => p.respawn <= 0).map(p => [p.x, p.y, p.z, p.gun, p.pow, p.heal])
+    pkl = GAME.view.pickups()
   } else {
     me = predicted
     if (!me) return
@@ -14076,8 +14000,8 @@ function draw(dt, t) {
   meMesh.position.set(meD.x, meD.y, meD.z)
   const myHold = holdOf(myId, me) || me.ceil && 'ceiling'
   const myTicks = tickSamples.get(myId) || []
-  meMesh.rotation.y = faceYaw(myId, me, animOf(me), myHold || firstPerson || carries.has(myId), t, dt, input.fire || input.alt, myTicks)
-  if (!drawSeat(meMesh, me, sits.get(myId), obl) && !drawCeiling(meMesh, meD, myHold === 'ceiling', dt, myTicks)) drawTurned(meMesh, meD, animOf(me) === 4 && rowOf(me)?.wallRun, dt, myTicks)
+  meMesh.rotation.y = GAME.view.faceYaw(myId, me, animOf(me), myHold || firstPerson || carries.has(myId), t, dt, input.fire || input.alt, myTicks)
+  if (!drawSeat(meMesh, me, sits.get(myId), obl) && !drawCeiling(meMesh, meD, myHold === 'ceiling', dt, myTicks)) drawTurned(meMesh, meD, animOf(me) === 4 && GAME.participantOf(me)?.wallRun, dt, myTicks)
   setAnim(myId, crouchOf(myId, me.cid, animOf(me), me.springT > 0, myHold), dt, t, myHold, false, myTicks, [me.x - meD.x, me.y - meD.y, me.z - meD.z])
   drawHealth(myId, me.hp)
 
@@ -14089,11 +14013,11 @@ function draw(dt, t) {
     m.visible = !(o.dead > 0)
     ghost(m, o.prot || 0)
     m.position.set(o.x, o.y, o.z)
-    const C = rowFor(o.id, o.cid)
+    const C = GAME.participant(o.id, o.cid)
     o.ceil = o.anim === 4 && C.climb && !C.wallRun && ceilAbove(o.x, o.y, o.z, C.r, 0.1)
     const hold = holdOf(o.id, o) || o.ceil && 'ceiling'
     const ticks = isHost ? tickSamples.get(o.id) || [] : undefined
-    m.rotation.y = faceYaw(o.id, o, o.anim || 0, hold || carries.has(o.id), t, dt, false, ticks)
+    m.rotation.y = GAME.view.faceYaw(o.id, o, o.anim || 0, hold || carries.has(o.id), t, dt, false, ticks)
     if (o.anim === 4 && C.wallRun && o.wy === undefined) o.wy = wallYawAt(o.x, o.y, o.z, C.h + C.r + 0.4)
     if (!drawSeat(m, o, sits.get(o.id), obl) && !drawCeiling(m, o, hold === 'ceiling', dt, ticks)) drawTurned(m, o, o.anim === 4 && C.wallRun, dt, ticks)
     const still = !posed(m.position)
@@ -14111,7 +14035,7 @@ function draw(dt, t) {
   radioTick()
 
   const cam = updateCamera(meD, input, camera, firstPerson)
-  drawRadar(meD, others, t)
+  GAME.view.radar(meD, others, t)
   const held = cam.ray && obl.find(o => !o.K.carry && (o.heldBy ?? objHeld.get(o.id)) === myId)
   heldF += ((held ? heldFade(cam.ray, me, held) : 1) - heldF) * timeShare(dt, TICK / 0.15)
   for (const m of objPool) if (m.visible) ghost(m, 0, (held && m.userData.oid === held.id ? heldF : 1) * (OBJECTS[m.userData.k].glow === undefined ? 1 : GLOW_OP))
@@ -14122,7 +14046,7 @@ function draw(dt, t) {
   const view = cam.ray || firstPerson && !seatOf(me) && (([dx, dy, dz]) => ({ x: meD.x, y: eyeOf(meD), z: meD.z, dx, dy, dz, near: 0 }))(aimDir(input.yaw, input.pitch))
   if (view && !(me.dead > 0)) {
     const bodies = isHost ? [...players.values()].map(c => (P => P ? { ...c, x: P[0], y: P[1], z: P[2] } : c)(c === me ? null : drawnPose(c)))
-      : others.map(o => { const C = rowFor(o.id, o.cid)
+      : others.map(o => { const C = GAME.participant(o.id, o.cid)
                           return { x: o.x, y: o.y, z: o.z, r: C.r, h: C.h, dead: o.dead, prot: o.prot } })
     const d = reticleAt(me, view, bodies, obl, CAM.far)
     if (cam.ray) input.d = d
@@ -14390,7 +14314,85 @@ function drawHud(me, others, t) {
       (locked || chatOpen ? '' : '  ·  click to capture mouse') + clock)
 }
 
-GAME.view = { tab: drawTab, results: drawResults, server: drawServer, serverInit: initServerPanel, hud: drawHud }
+const mmss = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0')
+
+// drawn facing: the run on the ground; the aim when still, attacking or in a state of its own; in the air the turn it had
+const FACE_MS = 400, FACE_RATE = 14
+// ticks: this frame's sim ticks (the last is c), else one step of dt
+function faceYaw(id, c, anim, own, t, dt, firing, ticks) {
+  const a = avatars.get(id)
+  if (!a) return c.yaw
+  const G = GUNS[a.shotGun], C = GUNS[a.chargeGun], n = ticks ? ticks.length : 1
+  for (let i = 0; i < n; i++) {
+    const s = i < n - 1 ? ticks[i] : c, an = s === c ? anim : s.anim, at = ticks ? tickAt - (n - 1 - i) * TICK * 1000 : t, y = a.face ?? s.yaw, mine = own || an > 3
+    const attack = (s === c ? firing : s.fire) || at - a.shotAt < Math.max(FACE_MS, G?.punchMs ?? G?.rate * 1000) || at - a.chargeAt < (C?.windup ?? 0) * 1000
+    const flyWant = an === 5 && Math.hypot(s.vx, s.vz) > FLY_V * 0.6 ? Math.atan2(-s.vx, -s.vz) : null
+    const want = attack ? s.yaw : mine && flyWant === null ? s.yaw : flyWant ?? (an === 0 ? s.yaw : an === 1 && Math.hypot(s.vx, s.vz) > 0.8 ? Math.atan2(-s.vx, -s.vz) : y), k = (ticks ? TICK : dt) * FACE_RATE * (mine ? 4 : attack ? 2 : 1)
+    a.face = y + clamp(Math.atan2(Math.sin(want - y), Math.cos(want - y)), -k, k)
+  }
+  return a.face ?? c.yaw
+}
+// GTA's radar while seated: each static chunk baked top-down once, then one rotated drawImage apiece; up is where the
+// camera looks (world north, the N on the rim, is -z)
+const RADAR_M = 70, RADAR_PX = 2, RADAR_MS = 1000 / 30         // m centre to rim; bake px a metre; redrawn at most 30 Hz
+const radarBake = new WeakMap()
+let radarCtx = null, radarAt = 0
+// boxes wider than a radar's view (a level-wide floor) are its background; the lid and street furniture are not drawn
+function bakeChunk(c) {
+  let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity
+  const src = c.src.filter(b => b.ex < 200 && b.ez < 200 && b.cy - b.ey < 10 && Math.max(b.ex, b.ez) >= 0.75)
+  for (const b of src) { x0 = Math.min(x0, b.cx - b.ex); x1 = Math.max(x1, b.cx + b.ex); z0 = Math.min(z0, b.cz - b.ez); z1 = Math.max(z1, b.cz + b.ez) }
+  const k = Math.min(RADAR_PX, 2048 / Math.max(x1 - x0, z1 - z0, 1)), cv = document.createElement('canvas'), g = cv.getContext('2d')
+  cv.width = Math.max(1, Math.ceil((x1 - x0) * k)); cv.height = Math.max(1, Math.ceil((z1 - z0) * k))
+  for (const low of [true, false]) for (const b of src) if ((b.cy + b.ey <= 1.2) === low) {
+    g.fillStyle = low ? '#262d36' : '#7d8794'
+    g.fillRect((b.cx - b.ex - x0) * k, (b.cz - b.ez - z0) * k, 2 * b.ex * k, 2 * b.ez * k)
+  }
+  const B = { cv, x0, z0, x1, z1 }
+  radarBake.set(c, B)
+  return B
+}
+function drawRadar(me, others, t) {
+  const on = phase === 'playing' && !menuUp() && !(me.dead > 0) && !!seatOf(me)
+  hud('radar', document.body, '.radar', on)
+  if (!on || t - radarAt < RADAR_MS) return
+  radarAt = t
+  const g = radarCtx ||= el('#radar').getContext('2d'), R = 75, s = R / RADAR_M, yaw = chase.yaw + chase.look
+  const cs = Math.cos(yaw), sn = Math.sin(yaw), turn = (x, z) => [x * cs - z * sn, x * sn + z * cs]
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, 2 * R, 2 * R)
+  g.save(); g.beginPath(); g.arc(R, R, R - 1, 0, 2 * Math.PI); g.clip()
+  g.fillStyle = '#0d1117'; g.fillRect(0, 0, 2 * R, 2 * R)
+  g.translate(R, R); g.rotate(yaw); g.scale(s, s); g.translate(-me.x, -me.z)
+  const far = RADAR_M * 1.5
+  for (const c of statics) {
+    if (!c.src?.length) continue
+    const B = radarBake.get(c) || bakeChunk(c)
+    if (B.x1 > me.x - far && B.x0 < me.x + far && B.z1 > me.z - far && B.z0 < me.z + far) g.drawImage(B.cv, B.x0, B.z0, B.x1 - B.x0, B.z1 - B.z0)
+  }
+  g.setTransform(1, 0, 0, 1, 0, 0)
+  const mine = sideOf(me)
+  for (const o of others) {
+    if (o.dead > 0) continue
+    let [x, y] = turn((o.x - me.x) * s, (o.z - me.z) * s)
+    const d = Math.hypot(x, y), k = d > R - 5 ? (R - 5) / d : 1
+    g.fillStyle = gameMode !== 'ffa' && rowFor(o.id, o.cid).side === mine ? '#58a6ff' : '#f85149'
+    g.beginPath(); g.arc(R + x * k, R + y * k, 3, 0, 2 * Math.PI); g.fill()
+  }
+  g.restore()
+  g.strokeStyle = '#8b949e'; g.lineWidth = 2; g.beginPath(); g.arc(R, R, R - 1, 0, 2 * Math.PI); g.stroke()
+  const [fx, fy] = turn(-Math.sin(me.yaw), -Math.cos(me.yaw)), [nx, ny] = turn(0, -1)
+  g.save(); g.translate(R, R); g.rotate(Math.atan2(fx, -fy))
+  g.fillStyle = '#e6edf3'; g.beginPath(); g.moveTo(0, -8); g.lineTo(5.5, 6); g.lineTo(0, 3); g.lineTo(-5.5, 6); g.closePath(); g.fill()
+  g.restore()
+  g.save(); g.translate(R + nx * (R - 9), R + ny * (R - 9))
+  g.fillStyle = '#0d1117'; g.beginPath(); g.arc(0, 0, 8, 0, 2 * Math.PI); g.fill()
+  g.strokeStyle = '#e6edf3'; g.lineWidth = 1.8; g.beginPath(); g.moveTo(-3, 4); g.lineTo(-3, -4); g.lineTo(3, 4); g.lineTo(3, -4); g.stroke()
+  g.restore()
+}
+// what the host draws of the pickups: the ones standing, as their snapshot rows
+const hostPickups = () => pickups.filter(p => p.respawn <= 0).map(p => [p.x, p.y, p.z, p.gun, p.pow, p.heal])
+
+GAME.view = { tab: drawTab, results: drawResults, server: drawServer, serverInit: initServerPanel, hud: drawHud, faceYaw, radar: drawRadar, pickups: hostPickups }
 
 // ---------------------------------------------------------------- boot
 class Arena extends ENABLE3D.Scene3D {
