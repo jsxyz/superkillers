@@ -698,7 +698,7 @@ const THREE = ENABLE3D.THREE
 // wallRun: { at: share of run speed }, entered and held sprinting. climb: m/s on walls and ceilings. spring: { full s, k × jump }
 // shove: { mass: its capsule's, so Bullet's contacts knock vehicles; sprint: only sprinting; cap: m/s faster than a vehicle moves away that it closes on it }
 // sprintSpd: on-foot sprint m/s (default speed); jet.sprint: flight sprint m/s
-// swing: { range m }. bones: { box_man bone: [x, y, z] } (y: length). sparks: running-spark colour
+// swing: { range m, pace: m/s it travels }. bones: { box_man bone: [x, y, z] } (y: length). sparks: running-spark colour
 const VITOSCREEN_SKIN = { shell: 0xe1dec7, rim: 0x536651, screen: 0x78d72b,
   phosphor: 0x94dd43, ink: 0x254e24, gold: 0xe8c24a }
 // SIDES (CHARS `side`): color: picker; guns: false = players carry none (clicks fire atk/far); waves: the waves' side
@@ -773,7 +773,7 @@ const CHARS = [
     shape: { torso: [1.12, 1, 1.04], arm: [1.1, 1, 1.08] },
     skin: { head: 0xd9a78b, torso: 0x2bd65a, arm: 0x13251f, hand: 0xf2f1e9, leg: 0x13251f, boot: 0x2bd65a } },
   { name: 'Spider-Man', side: 'heroes', role: 'Your friendly neighbourhood headache · webs, swings', costume: 'spider', atk: 'Spider Strike', far: 'Web Shooter', jump: 12, leap: { move: 2.2 },
-    climb: 4, spring: { full: 1, k: 2 }, swing: { range: 40 }, h: 0.5, r: 0.37, color: 0xd42a2a, speed: 11, hp: 140,
+    climb: 4, spring: { full: 1, k: 2 }, swing: { range: 40, pace: 15 }, h: 0.5, r: 0.37, color: 0xd42a2a, speed: 11, hp: 140,
     skin: { head: 0xc8262a, torso: 0x1f3fa8, chest: 0xc8262a, arm: 0x1f3fa8, hand: 0xc8262a, leg: 0x1f3fa8, boot: 0xc8262a } },
   { name: 'Superman', side: 'heroes', role: 'Faster than a speeding killer · flies, heat vision', costume: 'hero', atk: ['Freeze Breath', 'Super Punch', 'Ground Slam'], far: 'Heat Vision', lift: 40,
     hurl: { speed: 30, dmg: 45, reach: 2, seek: 14 }, shove: { mass: 4 }, h: 0.55, r: 0.40,
@@ -3102,11 +3102,11 @@ function navWorkerMain() {
         return
       }
       if (data.pos) return levels.set(data.level, data)
-      const key = data.level + ' ' + data.climb
+      const key = data.level + ' ' + data.climb + (data.agent ? ' ' + data.agent : '')
       if (!levels.has(data.level)) return self.postMessage({ ask: data.ask, level: data.level, way: [], there: false, pad: null, meshes: meshes.size })   // no tile in yet
       if (!meshes.has(key)) {
-        // cs 50 cm, ch 5 cm: headroom 2 m; 1 m off walls (2x widest enemy) so early corners clear
-        const L = levels.get(data.level), cfg = { cs: 0.5, ch: 0.05, walkableHeight: 40, walkableRadius: 2,
+        // cs 50 cm, ch 5 cm: headroom 2 m; 1 m off walls (2x widest enemy) so early corners clear; an agent: [radius, height]
+        const [rad, tall] = data.agent || [1, 2], L = levels.get(data.level), cfg = { cs: 0.5, ch: 0.05, walkableHeight: Math.round(tall / 0.05), walkableRadius: Math.ceil(rad / 0.5),
           maxSimplificationError: 0.5, walkableClimb: Math.round(data.climb / 0.05), maxEdgeLen: 0 }
         if (L.tiles) { const q = tiled(L.A, L.top, cfg); L.tiles.forEach(q.add); meshes.set(key, q) }
         else { const r = G.generateSoloNavMesh(L.pos, L.idx, cfg); meshes.set(key, r.success ? new R.NavMeshQuery(r.navMesh) : null) }
@@ -3117,7 +3117,7 @@ function navWorkerMain() {
       const there = !!end && Math.hypot(end.x - data.to.x, end.z - data.to.z) < 1.5 && Math.abs(end.y - data.to.y) < 2
       const pad = !there && data.pad
       if (q && pad) path = q.computePath(data.from, pad, { halfExtents: near, maxPathPolys: 4096 }).path
-      self.postMessage({ ask: data.ask, level: data.level, way: path.slice(1, -1), there, pad: pad || null, meshes: meshes.size })
+      self.postMessage({ ask: data.ask, level: data.level, way: path.slice(1, -1), there, pad: pad || null, meshes: meshes.size, end: path[path.length - 1] || null })
     } catch (e) { self.postMessage({ fail: String((e && e.message) || e) }) }
   }
 }
@@ -3130,7 +3130,7 @@ function startNav() {
     navMeshCount = data.meshes
     const b = data.level === levelId && players.get(data.ask)
     if (!b || !b.ai) return
-    Object.assign(b.ai, { way: data.way, navThere: data.there, navPad: data.pad, navGot: true })
+    Object.assign(b.ai, { way: data.way, navThere: data.there, navPad: data.pad, navEnd: data.end, navGot: true })
   }
   navWorker.postMessage({ libs: NAV_LIB })
 }
@@ -3146,8 +3146,8 @@ function padBelow(b) {
 }
 
 const feetOf = c => { const [x, y, z] = axisOf(c), k = c.h + c.r; return { x: c.x - x * k, y: c.y - y * k, z: c.z - z * k } }
-// next corner, re-asked about every metre; null = straight; no way up: the way to a pad
-function navPlan(b, tgt, dt) {
+// next corner, re-asked about every metre; null = straight; no way up: the way to a pad; a car: its own way
+function navPlan(b, tgt, dt, car) {
   if (!navWorker) startNav()
   if (!navUp) return null
   const ai = b.ai
@@ -3158,11 +3158,12 @@ function navPlan(b, tgt, dt) {
       if (LV.grow) navQueue.push(...[...grown].map(c => c.split(' ').map(Number)))
       else navWorker.postMessage({ level: levelId, ...navGeo(BOXES) })
     }
-    navWorker.postMessage({ ask: b.id, level: levelId, climb: climbOf(b), from: feetOf(b), to: feetOf(tgt),
-                            pad: tgt.y - b.y > 3.5 && padBelow(b) })
+    navWorker.postMessage({ ask: b.id, level: levelId, climb: car ? CAR_NAV.climb : climbOf(b), agent: car && CAR_NAV.agent, from: car ? groundOf(car) : feetOf(b), to: feetOf(tgt),
+                            pad: !car && tgt.y - b.y > 3.5 && padBelow(b) })
   }
   if (!ai.navGot) return null
-  while (ai.way.length && Math.hypot(ai.way[0].x - b.x, ai.way[0].z - b.z) < 0.3) ai.way.shift()
+  const at = car || b
+  while (ai.way.length && Math.hypot(ai.way[0].x - at.x, ai.way[0].z - at.z) < (car ? 4 : 0.3)) ai.way.shift()
   return { corner: ai.way[0] || null, pad: ai.navPad, there: ai.navThere }
 }
 
@@ -3182,6 +3183,90 @@ function dashWant(b, tgt, dist, los, on, dt, all) {
   }
   ai.dashT = (dist + 3) / G.speed
   return true
+}
+// a bot boards a vehicle BOARD_GAIN times its own best speed, for a target over BOARD_FAR m off or to roam
+const BOARD_GAIN = 3.8, BOARD_FAR = 100, CAR_NAV = { climb: 0.2, agent: [2.5, 3] }
+const bestPace = c => Math.max(rowOf(c).sprintSpd ?? c.speed, jetOf(c)?.sprint ?? 0, rowOf(c).swing?.pace ?? 0)
+const upOf = o => rotq(o.q, [0, 1, 0])[1], speedOf = o => { const v = o.body.getLinearVelocity(); return Math.hypot(v.x(), v.z()) }
+const groundOf = o => (([x, y, z]) => ({ x, y, z }))(seatAt(o, [0, 0, 0]))
+// a parked spot 150-400 m off, so on a street
+function roamSpot(b, y) {
+  const s = [...parked.keys()].map(k => k.split(' ').map(n => n / 2)).filter(([x, z]) => (d => d > 150 && d < 400)(Math.hypot(x - b.x, z - b.z)))
+  const p = s.length && s[Math.random() * s.length | 0]
+  return p && { id: -4, x: p[0], y, z: p[1], h: 0, r: 0 }
+}
+const carNav = ai => Object.assign(ai, { navTgt: -1, way: [], navGot: false })
+// on foot, the vehicle to walk to and board: { to, use }; a passenger: { use } to get out
+function carWant(b, seat, tgt, sd, dt) {
+  const ai = b.ai
+  if (ai.seated && !seat) ai.carCd = 4, ai.roam = null, carNav(ai)
+  ai.seated = !!seat
+  if (seat) { const o = seat[0]; return { use: o.fuse !== undefined || o.riders[0] === undefined || upOf(o) < 0.3 || speedOf(o) < 5 && (!tgt || sd < 30) } }
+  if ((ai.carCd = (ai.carCd || 0) - dt) > 0 || tgt && sd < (ai.car ? 50 : BOARD_FAR) || !tgt && !(ai.roam ||= parked.size && roamSpot(b, b.y - b.h - b.r)) || objs.some(o => o.heldBy === b.id)) return ai.car = null
+  const free = (o, i) => o.riders[i] === undefined && fits(b, o, i), by = o => players.get(o.riders[0])
+  // empty, or a same-side driver's while it waits
+  const usable = o => o.V && o.car && o.heldBy === undefined && o.thrownBy === undefined && o.fuse === undefined && upOf(o) > 0.7 && !canLift(b, o) &&
+    o.V.speed >= BOARD_GAIN * bestPace(b) && (o.riders[0] === undefined ? free(o, 0) : by(o) && sideOf(by(o)) === sideOf(b) && speedOf(o) < 3 && o.riders.some((r, i) => free(o, i)))
+  if (ai.car && !(objs.includes(ai.car) && usable(ai.car) && Math.hypot(ai.car.x - b.x, ai.car.z - b.z) < 30 && (ai.carT -= dt) > 0)) ai.car = null
+  if (!ai.car && (ai.carScan = (ai.carScan || 0) - dt) <= 0) {
+    ai.carScan = 0.5
+    let near = tgt ? 20 : 15
+    for (const o of objs) { const d = Math.hypot(o.x - b.x, o.z - b.z); if (d < near && usable(o) && (o.riders[0] === undefined || d < 12)) near = d, ai.car = o }
+    if (ai.car) ai.carT = 10
+  }
+  const o = ai.car
+  if (o) ai.strafe = 0
+  return o && { to: { id: -3, x: o.x, y: o.y, z: o.z, h: 0, r: o.R, vx: 0, vy: 0, vz: 0 }, use: objGap(b, o) <= 1.5 && inSight(b, o) }
+}
+// seat 0: pure pursuit along the car's way, on a player's keys; out at the goal or the way's end, or when it burns, flips or sticks
+function driveThink(b, o, tgt, dt, all) {
+  const ai = b.ai, V = o.V
+  if (!ai.seated) ai.seated = true, ai.drive = { stuck: 0, back: 0, turn: 0, turnCd: 0, tries: 0, flip: 0, free: 0, wait: 0 }, carNav(ai)
+  const D = ai.drive, goal = tgt || ai.roam
+  const fw = rotq(o.q, [0, 0, -1]), rt = rotq(o.q, [1, 0, 0]), h = Math.hypot(fw[0], fw[2]) || 1, v = o.body.getLinearVelocity(), go = v.x() * fw[0] + v.z() * fw[2]
+  const pedal = { f: 0, r: 0, yaw: Math.atan2(-fw[0], -fw[2]), pitch: 0 }
+  D.flip = upOf(o) < 0.3 ? D.flip + dt : 0
+  if (!goal || o.fuse !== undefined || D.flip > 1 || D.tries > 2) return { ...pedal, use: true }
+  const plan = navPlan(b, goal, dt, o), end = plan && !plan.there && ai.navEnd || goal
+  if (!plan && navUp && (D.wait += dt) < 2) return pedal
+  if (Math.hypot(goal.x - o.x, goal.z - o.z) < 25 || Math.hypot(end.x - o.x, end.z - o.z) < 8) return { ...pedal, f: go > 3 ? -1 : 0, use: Math.abs(go) < 3 }
+  let L = clamp(0.45 * Math.abs(go), 3, 12), px = o.x, pz = o.z, P = end
+  for (const q of [...plan?.corner ? ai.way : [], end]) {
+    const s = Math.hypot(q.x - px, q.z - pz)
+    if (s >= L) { P = { x: px + (q.x - px) * L / s, z: pz + (q.z - pz) * L / s }; break }
+    L -= s; px = q.x; pz = q.z
+  }
+  const err = wrapPi(Math.atan2(o.x - P.x, o.z - P.z) - pedal.yaw), stop = go * go / 16 + 6, brake = go * go / 16 + 2
+  let f = 1, r = clamp(-2.2 * err, -1, 1)
+  // slow for the next corner
+  const c0 = plan?.corner, c1 = ai.way[1] || end
+  if (c0) {
+    const turn = Math.abs(wrapPi(Math.atan2(c0.x - c1.x, c0.z - c1.z) - Math.atan2(o.x - c0.x, o.z - c0.z))), vc = turn < 0.35 ? V.speed : 5 + 25 * (1 - turn / Math.PI) ** 3
+    if (go > vc && Math.hypot(c0.x - o.x, c0.z - o.z) < (go * go - vc * vc) / 16 + 6) f = -1
+  }
+  if (Math.abs(err) > 0.9 && go > 10 || go > 3 && Math.hypot(goal.x - o.x, goal.z - o.z) - 22 < go * go / 16) f = -1
+  // the bumper's rays, its middle ahead and its corners toward the steer: away from the nearer side, braking when short
+  const ec = pedal.yaw + clamp(err, -0.6, 0.6)
+  const [hl, hc, hr] = [-1, 0, 1].map(k => castRay(...seatAt(o, [k * (V.w / 2 - 0.2), 0.6, -V.l / 2 - 0.3]), k ? -Math.sin(ec) : fw[0] / h, 0, k ? -Math.cos(ec) : fw[2] / h, stop, RAY_GROUP | G_OBJ))
+  if (Math.min(hl, hc, hr) < 1) {
+    if (Math.abs(err) < 1.2) r = clamp(r + (hl < hr ? 1.5 : hr < hl || r < 0 ? -1.5 : 1.5) * (1 - Math.min(hl, hc, hr)), -1, 1)
+    if ((hc * stop < brake || Math.max(hl, hr) * stop < brake) && go > 1) f = -1
+  }
+  for (const c of all) if (c !== b && !(c.dead > 0) && !seatOf(c) && sideOf(c) === sideOf(b)) {
+    const a = (c.x - o.x) * fw[0] + (c.z - o.z) * fw[2], s = (c.x - o.x) * rt[0] + (c.z - o.z) * rt[2]
+    if (a > 0 && a < stop + V.l / 2 && Math.abs(s) < V.w / 2 + c.r + 0.8) f = go > 1 ? -1 : 0
+  }
+  // stuck: back out at opposite lock; the goal behind: a leg back round, then one forward
+  D.free = go > 6 ? D.free + dt : 0
+  if (D.free > 2) D.tries = 0
+  if (D.back > 0) D.back -= dt
+  else if (Math.abs(go) < 1.5 && (f > 0 || D.turn > 0)) { if ((D.stuck += dt) > 1) D.stuck = 0, D.back = 0.8, D.tries++ }
+  else D.stuck = 0
+  D.turnCd -= dt
+  if (D.turn > 0) D.turn = Math.abs(err) < 1 && go < 0 ? 0 : D.turn - dt
+  else if (Math.abs(err) > 2.2 && go < 5 && D.back <= 0 && D.turnCd <= 0) D.turn = 1.2, D.turnCd = 2.4
+  if (D.back > 0 || D.turn > 0) f = go < -4 ? 0 : -1, r = -r
+  return { ...pedal, f, r }
 }
 function botThink(b, all, dt) {
   const ai = b.ai, spec = b.bot
@@ -3231,20 +3316,24 @@ function botThink(b, all, dt) {
   ai.aimX += (ai.driftX - ai.aimX) * ease
   ai.aimY += (ai.driftY - ai.aimY) * ease
 
-  if (!tgt) return { f: 0.92, r: 0, j: false, descend: false, fire: false, yaw: ai.wander, pitch: 0 }
+  const seat = seatOf(b)
+  if (seat && !seat[1]) return driveThink(b, seat[0], tgt, dt, all)
+  const car = carWant(b, seat, tgt, sd, dt)
+  if (!tgt && !car?.to) return { f: 0.92, r: 0, j: false, descend: false, fire: false, yaw: ai.wander, pitch: 0, use: car?.use }
 
   const H = spec.hurl, held = H && objs.find(o => o.heldBy === b.id)
   let prey = null
-  if (H && !held && sd > Math.max(...[spec.atk].flat().map(n => GUNS[gunNamed(n)].range)))
+  if (H && !held && !car && sd > Math.max(...[spec.atk].flat().map(n => GUNS[gunNamed(n)].range)))
     for (const o of objs) if (o.heldBy === undefined && o.thrownBy === undefined && !o.K.carry && !o.V && o.K.mass <= liftOf(b) &&
       Math.hypot(o.x - b.x, o.z - b.z) < Math.min(H.seek, sd) && (!prey || objGap(b, o) < objGap(b, prey))) prey = o
   if (prey) tgt = { id: -2, x: prey.x, y: prey.y, z: prey.z, h: 0, r: prey.R, vx: 0, vy: 0, vz: 0 }
+  if (car?.to) tgt = car.to
 
   // air: alt (m over target), dive (s between drop-ins), land (on foot in range, up past 2x); < 1/4 tank: land till full
   const tank = tankOf(b), A = tank > 0 && spec.air
   if (A) ai.down = b.fuel < tank * (ai.down ? 1 : 0.25)
   if (A?.land) ai.land = sd < spec.range * (ai.land ? 2 : 1)
-  const air = A && !ai.down && !ai.land && !prey && !held
+  const air = A && !ai.down && !ai.land && !prey && !held && !car
   if (air && (ai.diveT = (ai.diveT ?? A.dive) - dt) <= 0) ai.dive ||= ai.diveT > -A.dive
 
   const crawl = spec.climb && tgt.y - b.y > 1.5 && sd < 25
@@ -3328,7 +3417,7 @@ function botThink(b, all, dt) {
   // feet planted while charging: the only tell
   const charging = !!G.windup && b.charge > 0 && b.charge < G.windup
   const orbit = spec.spins && tgt && !charging && dist < SPIN_R ? reach * 0.7 : 0
-  const f = charging ? 0 : climbing ? 1
+  const f = charging ? 0 : climbing || car ? 1
           : orbit ? (dist > orbit * 1.15 ? 1 : dist < orbit * 0.85 ? -1 : 0)
           : dist > want ? 1 : dist < want * 0.55 ? -1 : 0
   const cone = Math.atan2(tgt.r + 0.35, Math.max(best, 1)) + (G.spread || 0)
@@ -3346,12 +3435,12 @@ function botThink(b, all, dt) {
     [mf, mr] = toLocal(yaw, dx, dz).map(v => v / m)
   }
   if (spec.hitRun) { if (ai.awayT > 0) ai.awayT -= dt; else if ((ai.swT = los && dist < reach ? (ai.swT || 0) + dt : 0) > spec.hitRun[0]) ai.awayT = spec.hitRun[1], ai.swT = 0 }
-  const fire = !prey && los && (held ? dist < 0.7 * H.speed && off < Math.atan2(tgt.r, dist) + 0.02 : (air ? Math.hypot(dist, b.y - tgt.y) : dist) < reach) && onTarget && !(ai.awayT > 0)     // a flier's reach is 3D
+  const fire = !prey && !car?.to && seatShot(b, G) && los && (held ? dist < 0.7 * H.speed && off < Math.atan2(tgt.r, dist) + 0.02 : (air ? Math.hypot(dist, b.y - tgt.y) : dist) < reach) && onTarget && !(ai.awayT > 0)     // a flier's reach is 3D
   const out = threatOf(b)
   if (out) [mf, mr] = toLocal(yaw, ...out)
   if (ai.dive && (fire && !(b.cool > 0) && !(b.charge < G.windup) || ai.diveT < -A.dive)) ai.dive = false, ai.diveT = A.dive
   // ai.sw: 0 ground, 1 jump, 2 web at the top (6: none, a leap), 3 tied, 4-5 released; no other air press (it webs)
-  const SW = spec.swing, far = SW && !air && !crawl && sd > 25
+  const SW = spec.swing, far = SW && !air && !crawl && !car && sd > 25
   let sj = null, sp = null, sy = 0
   if (SW) {
     if (b.wall > 0 || !far && !ai.sw) ai.sw = 0, sj = b.grounded || b.wall > 0 ? null : false
@@ -3405,7 +3494,7 @@ function botThink(b, all, dt) {
     j: sj ?? (air ? ai.hop || (flier ? !b.flying || b.y < wantY - 0.5 : b.y + rise(b.vy, jetOf(b).grav || 1) < wantY)
        : ai.hop && !(b.wall > 0) || (charging || pace < 1 || b.wall > 0 || POWERS[tgt.mark - 1]?.move === 0 ? false : Math.random() < spec.jumpy * dt)),   // wall: climbs on; held target: on foot
     descend: flier && b.flying && !ai.hop && b.y > wantY + 0.5 || _doZip,
-    fire: fire && !sig && !_wrForward, alt: fire && sig && !_wrForward || dashWant(b, tgt, dist, los, onTarget, dt, all), use: !!prey && objGap(b, prey) <= (H.reach ?? 1.5), sprint: !((jetOf(b)?.sprint && b.flying) || prey),
+    fire: fire && !sig && !_wrForward, alt: fire && sig && !_wrForward || dashWant(b, tgt, dist, los, onTarget, dt, all), use: !!prey && objGap(b, prey) <= (H.reach ?? 1.5) || !!car?.use, sprint: !((jetOf(b)?.sprint && b.flying) || prey),
     yaw: yaw + sy, pitch: sp ?? pitch,
   }
 }
