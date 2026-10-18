@@ -788,7 +788,7 @@ const CHARS = [
 // rate: s/shot, spread: rad, range: m. Gun 0 never runs dry. look: line|beam|slash|blast; held: glow, heldScale, tether
 // kind: ray|pierce|chain|radius. dive: speed m/s, pull m/s²; dmg, knock × clamp(impact/ref, 1, cap), range × its root
 // kind dash: held, runs along the aim at speed m/s through people and objects; each it passes takes dmg and knock once a hold
-//   launch: { speed, lift m/s, spin rad/s, mass, credit s }: each object leaves along the dash at speed, up at lift, rolling at spin; heavier than mass, slower
+//   launch: { speed, lift m/s, spin rad/s, mass, credit s (3 if unset) }: each object leaves along the dash at speed, up at lift, rolling at spin; heavier than mass, slower
 //   in proportion; what it runs over is the dasher's kill, with the dash's name, until it rests or credit runs out
 // gate: effect key it needs. dmg or lethal; knock; apply: POWERS effect; extra: the fifth upgrade
 // Append rows only; Beck's 32-bit bag holds no 33rd gun.
@@ -13403,7 +13403,7 @@ function dashStrikes(list, credit) {
       const o = objs.find(o => A.getPointer(o.body) === A.getPointer(B.at(i)))
       if (!o || o.heldBy !== undefined || (c.dashHit ??= new Set()).has(o)) continue
       c.dashHit.add(o); launchObject(o, L, ux, uz); strikeObject(c, o, G, ux, 0.3, uz)
-      Object.assign(o, { launchBy: c.id, launchG: c.dashing, launchT: L.credit })
+      Object.assign(o, { launchBy: c.id, launchG: c.dashing, launchT: L.credit ?? 3 })
     }
   }
 }
