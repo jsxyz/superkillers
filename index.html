@@ -915,6 +915,18 @@ const FX_LIBS = [
 // [min, max]; cone rad about the burst's direction; fall m/s² down; grow, the size at death over the size at birth; add
 // draws additive; cell of the glow atlas (0 dot, 3 star); stretch draws each along its travel; color fixes it, else the caller's,
 // hot moves it that share of the way to white
+// BEAM_STYLES: a GUNS beam row's `style`, drawn in glow quads. spiral: a coil round the axis, r m, a turn every turn m, n
+// segments at most; bolts: n fat bolts strung along it, len m each; rings: rings of dots facing along it, r m, one every m, n at
+// most, dots each dot m wide; twin: two beams apart m at the source (the eyes); arc: each hop a jagged bolt of segs, jag m off the line,
+// a new shape every ms; lance: a thick core with a bright pulse running to the tip at speed m/s
+const BEAM_STYLES = {
+  spiral: { r: 0.12, turn: 1.5, n: 40 },
+  bolts: { n: 5, len: 0.9 },
+  rings: { r: 0.3, every: 1.2, n: 8, dots: 10, dot: 0.16 },
+  twin: { apart: 0.07 },
+  arc: { segs: 6, jag: 0.18, ms: 40 },
+  lance: { speed: 60 },
+}
 const PARTICLES = {
   flare: { n: 1, life: [0.1, 0.14], speed: [0, 0], size: [0.9, 1.1], cone: 0, grow: 1.8, add: true, cell: 3, hot: 0.3 },
   spark: { n: 12, life: [0.18, 0.4], speed: [5, 12], size: [0.1, 0.16], cone: 1, fall: 12, grow: 0.4, add: true, cell: 0, stretch: 0.07, hot: 0.55 },
@@ -928,12 +940,12 @@ const GUNS = [
   { name:'Scatter', drop:true, scar:'hole', rate:0.80, dmg: 7, spread:0.075, pellets:8, range:16, knock:1.4, ammo:28,       color:0xff9e64 },
   { name:'Needler', drop:true, scar:'hole', rate:0.09, dmg: 5, spread:0.026, range:45, knock:0.6, ammo:110,      color:0x7ee787 },
   { name:'Railer', drop:true, scar:'scorch',  rate:1.15, dmg:55, range:90, knock:11,  ammo:9,        color:0xff7b72,
-    look:'beam' },
+    look:'beam', style:'spiral' },
 
   { name:'Bitter Sword', rate:0.80, dmg:24, spread:0.30, pellets:7, range: 4.4, knock: 8.0,
     color:0xff6b5a, melee:true },
   { name:'Lance', scar:'scorch',        rate:1.60, dmg:48, range:72,   knock: 6.0,
-    color:0x5ad1ff, windup:0.75, look:'beam' },
+    color:0x5ad1ff, windup:0.75, look:'beam', style:'lance' },
   { name:'Sparker', scar:'scorch',      rate:0.85, dmg: 9, spread:0.03, range:38,   knock: 0.8,
     color:0xf2e05a, burst:3, burstGap:0.09 },
   { name:'Slug', scar:'hole',         rate:1.00, dmg:10, spread:0.11, pellets:7, range:15,   knock: 2.6,
@@ -957,10 +969,10 @@ const GUNS = [
 
   { name:'Raygun', scar:'scorch',     kind:'pierce', flashMs:260, charges:3, lethal:true, rate:0.85, range:90,
     knock: 5.0, dmg: 0, color:0xffe066,
-    special:true, look:'beam', extra:{ free:0.06, label:'FREE SHOT' } },
+    special:true, look:'beam', style:'bolts', extra:{ free:0.06, label:'FREE SHOT' } },
   { name:'Zap', scar:'scorch',        kind:'chain',  chain:3, jumpTo:8, rate:0.50, range:15, heldScale:1.14,
     dmg:17, knock: 1.5, color:0x8fd6ff,
-    special:true, look:'beam', extra:{ hop:1, label:'CHAIN' } },
+    special:true, look:'beam', style:'arc', extra:{ hop:1, label:'CHAIN' } },
   { name:'Spoiler',    kind:'ray',    rate:1.10, range:46,
     dmg: 9, knock: 1.0, color:0xd2a8ff,
     special:true },
@@ -969,16 +981,16 @@ const GUNS = [
     special:true, extra:{ knock:0.10, label:'KNOCKBACK' }, dive:{ speed:18, ref:15, cap:1.75 } },
   { name:'Static', scar:'scorch',     kind:'chain',  chain:4, jumpTo:7, rate:0.42, range:13, held:false,
     dmg:13, knock: 1.2, color:0x94dd43,
-    special:true, look:'beam', extra:{ hop:1, label:'CHAIN' } },
+    special:true, look:'beam', style:'arc', extra:{ hop:1, label:'CHAIN' } },
 
   { name:'Pie Construct', rate:1.20, dmg:22, spread:0.70, pellets:7, range: 4.4, knock:14.0, color:0x3dff6a,
     melee:true, model:'Pie', glow:0x3dff6a, heldScale:2.4, tether:2.8 },
   { name:'Mallet Construct', rate:1.60, dmg:24, spread:0.35, pellets:5, range: 4.0, knock:22.0, color:0x3dff6a,
     melee:true, model:'Hammer', glow:0x3dff6a, heldScale:2.0, tether:2.4 },
   { name:'Ring Blaster', scar:'scorch', rate:0.28, dmg:10, spread:0.02, range:42, knock: 1.0, color:0x3dff6a,
-    model:'Needler', glow:0x3dff6a, look:'beam' },
+    model:'Needler', glow:0x3dff6a, look:'beam', style:'rings' },
   { name:'Heat Vision', scar:'scorch', rate:0.90, dmg:14, spread:0.004, range:60, knock: 1.0, color:0xff2a1a,
-    look:'beam', held:false },
+    look:'beam', style:'twin', held:false },
   { name:'Freeze Breath', look:'blizzard', rate:0.60, dmg: 4, spread:0.18, pellets:6, range: 7, knock: 6.0, color:0xbfefff,
     held:false, apply:'Chilled' },
   { name:'Super Punch', rate:0.90, dmg:36, spread:0.06, pellets:3, range: 2.6, knock:40.0, color:0xf2c53d,
@@ -10063,7 +10075,11 @@ function glowTex() {
   return glowMap
 }
 const GLOW = () => ({ map: glowTex(), blending: THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false })
+// at most GLOW_MAX glow quads a frame; past it a glow is refused, so no flood grows the pool or the batch without bound
+const GLOW_MAX = 6144
 function glowMesh(hex, alpha, cell) {
+  if (!(glowPool.at > 0 && glowPool[glowPool.at - 1].visible)) glowPool.at = 0
+  if (glowPool.at >= GLOW_MAX) return null
   const m = fxMesh(glowPool, () => new THREE.Mesh(glowPlane ||= new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ ...FX, ...GLOW() })), hex, alpha)
   m.fxCell = cell
   return m
@@ -10071,6 +10087,7 @@ function glowMesh(hex, alpha, cell) {
 // additive, always batched: a camera-facing square of side size, turned spin radians in the view
 function fxGlow(x, y, z, size, hex, alpha, cell = 0, spin = 0) {
   const m = glowMesh(hex, alpha, cell)
+  if (!m) return
   m.position.set(x, y, z); m.scale.set(size, size, 1)
   if (camera) m.quaternion.copy(camera.quaternion); else m.quaternion.identity()
   if (spin) m.rotateZ(spin)
@@ -10079,6 +10096,7 @@ function fxGlow(x, y, z, size, hex, alpha, cell = 0, spin = 0) {
 const glowAxis = new THREE.Vector3(), glowSide = new THREE.Vector3(), glowFace = new THREE.Vector3()
 function fxStreak(x1, y1, z1, x2, y2, z2, w, hex, alpha, cell = 2) {
   const m = glowMesh(hex, alpha, cell)
+  if (!m) return
   glowAxis.set(x2 - x1, y2 - y1, z2 - z1)
   const len = glowAxis.length() || 0.001
   glowAxis.divideScalar(len)
@@ -10091,6 +10109,57 @@ function fxStreak(x1, y1, z1, x2, y2, z2, w, hex, alpha, cell = 2) {
   m.scale.set(len, w, 1)
 }
 // a record's own seed
+// the i-th number in 0..1 drawn from a seed
+const fxRand = (s, i) => (Math.imul(s ^ Math.imul(i + 1, 2654435761), 1597334677) >>> 0) / 4294967296
+// a styled beam (BEAM_STYLES) from x, y, z to its end, in glow quads; u and v span the plane across it, u level
+const styleAxis = new THREE.Vector3(), styleU = new THREE.Vector3(), styleV = new THREE.Vector3()
+function beamStyle(S, kind, o, x, y, z, w, k, hex, fade, t, s) {
+  const f = o.f, L = Math.hypot(f[3] - x, f[4] - y, f[5] - z) || 0.001, A = styleAxis.set(f[3] - x, f[4] - y, f[5] - z).divideScalar(L)
+  styleU.set(-A.z, 0, A.x); if (styleU.lengthSq() < 1e-8) styleU.set(1, 0, 0)
+  const U = styleU.normalize(), V = styleV.crossVectors(A, U)
+  const px = (d, a, r) => x + A.x * d + (U.x * Math.cos(a) + V.x * Math.sin(a)) * r, py = (d, a, r) => y + A.y * d + (U.y * Math.cos(a) + V.y * Math.sin(a)) * r,
+    pz = (d, a, r) => z + A.z * d + (U.z * Math.cos(a) + V.z * Math.sin(a)) * r
+  const line = (d1, d2, wide, c, alpha, cell = 1) => fxStreak(px(d1, 0, 0), py(d1, 0, 0), pz(d1, 0, 0), px(d2, 0, 0), py(d2, 0, 0), pz(d2, 0, 0), wide, c, alpha, cell)
+  if (kind === 'spiral') {
+    line(0, L, w * 1.8, hex, 0.6 * fade); line(0, L, w * 1.1, 0xffffff, fade)
+    const n = Math.min(S.n, Math.ceil(L / S.turn * 8)), turn = Math.max(S.turn, L / (n / 8)), r = S.r * k, spin = -t / 60
+    for (let i = 0; i < n; i++) {
+      const d1 = i / n * L, d2 = (i + 1) / n * L, a1 = 2 * Math.PI * d1 / turn + spin, a2 = 2 * Math.PI * d2 / turn + spin
+      fxStreak(px(d1, a1, r), py(d1, a1, r), pz(d1, a1, r), px(d2, a2, r), py(d2, a2, r), pz(d2, a2, r), w * 0.9, hex, fade, 1)
+    }
+  } else if (kind === 'bolts') {
+    for (let j = 0; j < S.n; j++) {
+      const d = (j + 0.5) / S.n * L, half = Math.min(S.len * k, L / S.n * 0.8) / 2, pulse = 1 + 0.25 * Math.sin(t / 40 + j * 1.7), b = fade * (0.55 + 0.45 * (j + 1) / S.n)
+      line(d - half, d + half, w * 3 * pulse, hex, b, 2); line(d - half, d + half, w * 1.2 * pulse, 0xffffff, b, 2)
+    }
+  } else if (kind === 'rings') {
+    line(0, L, w * 2, hex, 0.5 * fade); line(0, L, w * 1.1, 0xffffff, fade)
+    const n = Math.min(S.n, Math.floor(L / S.every)), r = S.r * (1 + (1 - fade) * 0.8)
+    for (let i = 0; i < n; i++) {
+      const d = (i + 1) * L / (n + 1), a = fade * (1 - 0.6 * i / Math.max(1, n))
+      for (let q = 0; q < S.dots; q++) { const g = 2 * Math.PI * q / S.dots; fxGlow(px(d, g, r), py(d, g, r), pz(d, g, r), S.dot, hex, a) }
+    }
+  } else if (kind === 'twin') {
+    for (const side of [-1, 1]) {
+      const ox = x + U.x * S.apart / 2 * side, oy = y + U.y * S.apart / 2 * side, oz = z + U.z * S.apart / 2 * side
+      fxStreak(ox, oy, oz, f[3], f[4], f[5], w * 2.2, hex, 0.8 * fade, 1); fxStreak(ox, oy, oz, f[3], f[4], f[5], w * 0.8, 0xffffff, fade, 1)
+    }
+  } else if (kind === 'arc') {
+    const e = Math.floor(t / S.ms)
+    let ax = x, ay = y, az = z
+    for (let i = 1; i <= S.segs; i++) {
+      const d = i / S.segs * L, j = i < S.segs ? S.jag * k : 0, r1 = (fxRand(s ^ e, 2 * i) * 2 - 1) * j, r2 = (fxRand(s ^ e, 2 * i + 1) * 2 - 1) * j
+      const bx = x + A.x * d + U.x * r1 + V.x * r2, by = y + A.y * d + U.y * r1 + V.y * r2, bz = z + A.z * d + U.z * r1 + V.z * r2
+      fxStreak(ax, ay, az, bx, by, bz, w * 2.2, hex, 0.7 * fade, 1); fxStreak(ax, ay, az, bx, by, bz, w * 0.7, 0xffffff, fade, 1)
+      if (i < S.segs) fxGlow(bx, by, bz, 0.1 * k, 0xffffff, fade)
+      ax = bx; ay = by; az = bz
+    }
+  } else if (kind === 'lance') {
+    line(0, L, w * 4, hex, 0.7 * fade); line(0, L, w * 1.8, 0xffffff, fade)
+    const d = ((t - o.born) * S.speed / 1000) % L
+    fxGlow(px(d, 0, 0), py(d, 0, 0), pz(d, 0, 0), 0.6 * k, 0xffffff, fade)
+  }
+}
 const fxSeed = f => { let s = 0; for (let i = 0; i < 6; i++) s = Math.imul(s ^ Math.round(f[i] * 100), 16777619); return s }
 // PARTICLES' bursts, drawn by three.quarks: loaded from the first frame of play a browser's real renderer draws (a realm
 // without one never loads it), one system per row under one batched renderer, stepped by the frame's own clock; a burst asked before
@@ -10143,7 +10212,8 @@ function fxBeam(o, G, x, y, z, age, t, hex) {
     }
     fxGlow(f[3], f[4], f[5], R * 4, hex, fade)
     fxGlow(f[3], f[4], f[5], R * 1.8, 0xffffff, fade)
-  } else {
+  } else if (G.style) beamStyle(BEAM_STYLES[G.style], G.style, o, x, y, z, w, k, hex, fade, t, s)
+  else {
     fxStreak(x, y, z, f[3], f[4], f[5], w * 3.4, hex, 0.8 * fade, 1)
     fxStreak(x, y, z, f[3], f[4], f[5], w * 1.1, 0xffffff, fade, 1)
   }
