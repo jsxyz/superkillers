@@ -871,12 +871,12 @@ const CHARS = [
 
     shape: { torso: [1.3, 1, 1.12], arm: [1.2, 1, 1.16] },
     skin: { head: 0xe0b08c, torso: 0x1f4fd8, arm: 0x1f4fd8, hand: 0xe0b08c, leg: 0x1f4fd8, boot: 0xc8262a, cape: 0xc8262a, emblem: 0xf2c53d } },
-  { name: 'Kaiji', side: 'heroes', event: 'HallowLeem', role: 'Half man, half dinosaur · talons, stomp, fire breath', costume: 'dino', room: [0.93, 1.08], sitLegs: [0.3, 0.6], atk: ['Talon Rake', 'Ground Slam'], far: 'Extinction Breath', lift: 40,
+  { name: 'Kaiji', side: 'heroes', event: 'HallowLeem', role: 'Turns dinosaur when he fights · talons, stomp, fire breath', costume: 'dino', room: [0.93, 1.08], sitLegs: [0.3, 0.6], atk: ['Talon Rake', 'Ground Slam'], far: 'Extinction Breath', lift: 40,
     hurl: { speed: 26, dmg: 45, reach: 2.2, seek: 12 }, shove: { mass: 6 }, smash: { speed: 14, r: 4.5, depth: 1.2 }, h: 0.59, r: 0.445, jump: 7.5, color: 0xb8321e, speed: 5.6, sprintSpd: 9, hp: 280,
     bones: { leg_upper: [1, 1.95, 1], leg_lower: [1, 1.95, 1.25], arm_upper: [1, 1.5, 1], arm_lower: [1, 1.5, 1], head: [0.72, 0.72, 0.72], body_upper: [0.95, 1.1, 1.15], body_lower: [1, 1.15, 1] },
-    stand: [['body_IK', -0.18, 0, 0], ['leg_upper', 0.554, 0, 0], ['leg_lower', -0.647, 0, 0], ['body_upper', 0.55, 0, 0], ['head', -0.45, 0, 0], ['arm_upper', -0.35, 0, 0], ['arm_lower', -0.4, 0, 0]],
+    hunch: [['body_upper', 0.55, 0, 0], ['head', -0.45, 0, 0], ['arm_upper', -0.35, 0, 0], ['arm_lower', -0.4, 0, 0]],
     shape: { torso: [1.45, 1, 1.25], arm: [1.4, 1, 1.3], hand: [1.15, 1, 1.15], leg: [1.25, 1, 1.2] },
-    skin: { head: 0xd9a07c, torso: 0xc9c6c0, arm: 0xd4581f, hand: 0xb8321a, leg: 0x1f2a44, boot: 0xd4581f, scale: 0xb8321a, spike: 0x6e1a0c, claw: 0xe8d8b0, hair: 0x6b2a14,
+    skin: { head: 0xd9a07c, torso: 0xc9c6c0, arm: 0xd4581f, hand: 0xb8321a, leg: 0x1f2a44, boot: 0xd4581f, scale: 0xb8321a, spike: 0x6e1a0c, claw: 0xe8d8b0, hair: 0x6b2a14, iris: 0x3f8f45, lip: 0xb06f5c,
       eye: { color: 0xffd23f, emissive: 0xffb000, emissiveIntensity: 1 } } },
   { name: 'Xenotype', side: 'heroes', event: 'HallowLeem', role: 'Out of the dream · punches, energy whips, beam blast', atk: ['Xeno Punch', 'Energy Whip'], far: 'Beam Blast',
     h: 0.53, r: 0.39, jump: 8.89, color: 0x5fd8ff, speed: 9, hp: 150, costume: 'xeno', shape: { torso: [1.04, 1, 0.98], arm: [0.98, 1, 0.98], leg: [0.96, 1, 0.98] },
@@ -1207,7 +1207,7 @@ const MODELS = {
       climb: { l: [[3.4, -0.3], [1.4]], a: [[1.7], [-0.2]] }, pull: { l: [[4.1, -0.2], [0.8]], a: [[2.1], [-0.5]] },
       dive: { l: [[4.71, 0.04], [0.05]], a: [[1.5, 0.08], [0]] },
       slam: { lL: [[2.15], [1.37]], lR: [[3.5], [1.57]], aR: [[3.3], [0]], aL: [[5.1, 0.3], [0]] },
-      rake: { aR: [[2.7, 1.3], [-0.5]], aL: [[3.7, 0.15], [-0.9]] },
+      rake: { aR: [[3.9, 1.0], [-0.5]], aL: [[4.0, -0.15], [-0.8]] },
       hover: { lL: [[4.06, 0.05], [1.5]], lR: [[4.61, 0.05], [0.2]], a: [[4.51, -0.15], [-0.35]] },
       descend: { lL: [[4.46, 0.04], [0.5]], lR: [[4.66, 0.04], [0.15]], a: [[4.56, -0.32], [-0.3]] },
       ascend: { lL: [[4.76, 0.04], [0.6]], lR: [[4.81, 0.04], [0.15]], aR: [[1.52, 0.08], [0]], aL: [[4.61, -0.15], [-0.35]] },
@@ -1386,7 +1386,11 @@ const COSTUMES = {
   speedster: { part: speedsterPart, loft: UNIFORM_BODY, legs: 1.2, plain: true, neck: 'head', shoulder: true },
   fighter: { part: fighterPart, loft: UNIFORM_BODY, bare: true, neck: 'head', collar: .5, glove: false },
   turtle: { part: turtlePart, bare: true, band: 'mask' },
-  dino: { part: dinoPart, loft: UNIFORM_BODY, bare: true, neck: 'head', collar: .5, glove: false },
+  // form: tags only the beast shows, tags only the man shows; the man's body map slots (skin) and part paint by tag (a skin slot
+  // or a colour); he turns when he attacks and turns back `hold` s after, over `morph` s
+  dino: { part: dinoPart, loft: UNIFORM_BODY, bare: true, neck: 'head', collar: .5, glove: false,
+    form: { hold: 5, morph: 0.3, dino: ['scaledHalf', 'eye', 'mouth', 'tooth', 'spike', 'scalePatch', 'talon', 'claw', 'tornSleeve', 'sleeveCap', 'shirtHem', 'collar'],
+      human: ['sclera', 'iris', 'brow', 'nose', 'lips'], skin: { arm: 'torso', hand: 'head' }, paint: { thumb: 'head', ankle: 0x24242a, foot: 0x24242a, toe: 0x24242a } } },
   lantern: { part: lanternPart, loft: UNIFORM_BODY, legs: 1.2, neck: 'head', collar: .54, plain: true, belt: 'torso', shoulder: true },
   xeno: { part: xenoPart, loft: UNIFORM_BODY, legs: 1.1, neck: 'torso', collar: .54, plain: true, belt: 'torso', glove: false, shoulder: true,
     metal: ['head', 'helm', 'boot', 'torso', 'armour', 'gem'] },
@@ -5976,18 +5980,26 @@ function dinoPart(K, part, side) {
     for (let i = 0; i < 7; i++) { const x = (i - 3) * 0.085, z = -0.48 + Math.abs(i - 3) * 0.035
       const k = x > 0 ? 1.8 : 1
       cone('ivory', 0.03 * k, 0.10 * k, [x, -0.25, z], [Math.PI, 0, 0], 'tooth'); cone('ivory', 0.028 * k, 0.09 * k, [x, -0.41, z + 0.01], [0, 0, 0], 'tooth') }
+    for (const s of [-1, 1]) {
+      orb('ivory', [0.17, 0.08, 0.035], [s * 0.20, -0.04, -0.455], 'sclera')
+      orb('iris', [0.06, 0.07, 0.02], [s * 0.20, -0.04, -0.472], 'iris')
+      tube('hair', [[s * 0.08, 0.05, -0.475], [s * 0.22, 0.08, -0.455], [s * 0.32, 0.10, -0.40]], 0.022, 'brow')
+    }
+    orb('head', [0.13, 0.20, 0.18], [0, -0.14, -0.47], 'nose')
+    tube('lip', [[-0.13, -0.32, -0.38], [0, -0.335, -0.395], [0.13, -0.32, -0.38]], 0.02, 'lips')
   }
   if (part === 'torso') {
     fighterPart(K, 'torso', side)
     for (const s of [-1, 1]) add({ g: ['outline', [[0, 0], [0.32, 0.06], [0.06, -0.36]], 0.03], m: 'torso', s: [s, 1, 1], p: [s * 0.12, 0.62, -0.44], r: [0.25, 0, 0], tag: 'collar' })
     for (const [x, y, z, h] of [[-0.62, 0.42, 0.10, 0.34], [-0.52, 0.55, 0.30, 0.28], [-0.30, 0.50, 0.55, 0.30], [0.05, 0.30, 0.66, 0.26], [0.10, 0.02, 0.66, 0.22]])
       cone('spike', 0.10, h, [x, y, z], [0.9, 0, Math.atan2(x, 0.5) * -1.2], 'spike')
-    for (const [x, y, z] of [[0.48, 0.10, -0.40], [-0.30, -0.25, -0.55], [0.58, 0.35, 0.25]]) orb('scale', [0.26, 0.22, 0.10], [x, y, z], 'scalePatch')
+    for (const [x, y, z] of [[0.48, 0.10, -0.40], [-0.30, -0.25, -0.55]]) orb('scale', [0.26, 0.22, 0.10], [x, y, z], 'scalePatch')
   }
   // the shirt untucked over the jeans, its hem ragged
   const rag = (rows, tag) => add({ g: ['loft', rows.map(([y, r, d], row) => ring(16, (c, s, i) => [c * r, y - (row === rows.length - 1 ? (i % 2) * d : 0), s * r * 1.05])), false], m: 'torso', tag })
   if (part === 'pelvis') rag([[0.10, 0.55, 0], [-0.16, 0.57, 0.12]], 'shirtHem')
-  if (part === 'arm') fighterPart(K, 'arm', side)
+  // the torn sleeve's shoulder end closed, so no open tube shows when the arm swings
+  if (part === 'arm') { fighterPart(K, 'arm', side); orb('torso', [0.9, 0.24, 0.9], [0, 0.66, 0], 'sleeveCap') }
   if (part === 'hand') {
     orb('hand', [0.34, 0.38, 0.42], [side * 0.43, -0.30, -0.11], 'thumb')
     for (const s of [-1, 0, 1]) cone('claw', 0.13, 0.95, [s * 0.24, -0.98, -0.32], [Math.PI - 0.55, 0, 0], 'talon')
@@ -6602,8 +6614,9 @@ function* loftSteps(inst, skin, key) {
   bindCloth(rig, g, new THREE.MeshStandardMaterial({ map, vertexColors: !!L.join, roughness: costumeOf(key).legs ? 0.65 : 0.8, side: THREE.DoubleSide, ...costumeOf(key).metal && chrome() }), 'body')
 }
 
-const bodyMaps = new Map()
+const bodyMaps = new Map(), mapMade = new WeakMap()
 function bodyMap(key, skin, L = costumeOf(key).loft, edges = []) {
+  const made = [key, L, edges]
   if (L.join) key += ':' + meshDetail
   if (bodyMaps.has(key)) return bodyMaps.get(key)
   const { parts, paint } = L, size = 1024, cv = document.createElement('canvas'), ctx = cv.getContext('2d')
@@ -6645,8 +6658,24 @@ function bodyMap(key, skin, L = costumeOf(key).loft, edges = []) {
   const map = new THREE.CanvasTexture(cv)
   map.colorSpace = THREE.SRGBColorSpace
   map.userData.shared = true
-  bodyMaps.set(key, map)
+  bodyMaps.set(key, map); mapMade.set(map, made)
   return map
+}
+// a two-form costume's body map: the beast's as built, the man's painted once with the form's slots
+function formMap(a, F) {
+  a.mesh.traverse(n => { if (!n.isMesh || n.userData.part !== 'body' || !n.material.map) return
+    const M = a.formMaps ||= new Map(), maps = M.get(n) || [n.material.map], [key, L, edges] = mapMade.get(maps[0]) || []
+    M.set(n, maps)
+    if (!maps[1] && key) maps[1] = bodyMap(key + '~man', { ...a.spec.skin, ...Object.fromEntries(Object.entries(F.skin).map(([k, v]) => [k, a.spec.skin[v]])) }, L, edges)
+    n.material.map = maps[a.form < 0.5 && maps[1] ? 1 : 0] })
+}
+// an unbatched part mesh (the authoring build): shown by the form's tags, the man's paint on its material
+function formPart(a, F, n) {
+  const tags = n.userData.part.split('|'), k = (a.form || 0) < 0.5 ? 0 : 1, C = a.formColors ||= new Map(), t = tags.find(t => t in F.paint)
+  n.visible = !tags.some(t => (k ? F.human : F.dino).includes(t))
+  if (!t) return
+  if (!C.has(n)) C.set(n, n.material.color.clone())
+  if (k) n.material.color.copy(C.get(n)); else n.material.color.set(typeof F.paint[t] === 'string' ? a.spec.skin[F.paint[t]] : F.paint[t])
 }
 
 const torsoBlend = (low, high) => y => THREE.MathUtils.smoothstep(y, low.min.y + (low.max.y - low.min.y) * 0.70,
@@ -8385,6 +8414,8 @@ function* avatarSteps(id, cid, cap, body) {
   avatars.set(id, { mesh, cid, spec: C, stand: standOf(C), mixer, actions, prof, drop, walkDrop, sprintDrop, ankle, turned, anim: -1, fast: false, v: 0, model: built || !!M.proto,
     ...built && { height: 2 * (C.h + C.r), animate: M.animate, built: builtParts(mesh) } })
   updateCap(avatars.get(id), cap, id)
+  const F = COSTUMES[C.costume]?.form
+  if (F) { const a = avatars.get(id); a.form = 0; wear(a); formMap(a, F) }
   // Build LOD buffers at spawn, never on distance crossings.
   if (camera && id >= 0) { avatarDetail(id, true); avatarDetail(id, false) }
   if (mixer && id >= 0) {      // probes ready before any slam
@@ -8594,12 +8625,54 @@ function capeSeated(skin, S) {
   seatCache.set(skin, g)
   return g
 }
-const dress = (a, skin) => tinted(a.hold === 'sit' ? capeSeated(skin, MODELS[a.spec.model || 'man'].sit) : skin, a.tint)
+// a costume with two forms: each a cached variant without the other's parts, the man's with his paint; between them one
+// geometry per avatar and mesh, its parts scaled about their centres and the paint faded (seated or tinted, it snaps)
+const formCache = new WeakMap(), formSource = new WeakMap(), formParts = new WeakMap()
+function formed(a, skin) {
+  const F = COSTUMES[a.spec.costume]?.form, parts = skin.userData.parts
+  if (!F || !parts?.length) return skin
+  const has = (p, tags) => p.tags.split('|').some(t => tags.includes(t)), f = a.form || 0
+  let P = formParts.get(skin)
+  if (!P) formParts.set(skin, P = parts.map(p => {
+    const ids = [...new Set(skin.index.array.subarray(p.start, p.start + p.count))], c = new THREE.Vector3(), v = new THREE.Vector3()
+    for (const i of ids) c.add(v.fromBufferAttribute(skin.attributes.position, i))
+    const t = Object.keys(F.paint).find(t => has(p, [t]))
+    return { ids, c: c.divideScalar(ids.length), grow: has(p, F.dino) ? 1 : has(p, F.human) ? -1 : 0, paint: t && F.paint[t] }
+  }))
+  const paint = (g, w) => { const c = skin.attributes.color; if (!c) return
+    const out = g.attributes.color !== c ? g.attributes.color : c.clone(), k = new THREE.Color(), was = new THREE.Color()
+    for (const q of P) if (q.paint !== undefined) { k.set(typeof q.paint === 'string' ? a.spec.skin[q.paint] : q.paint)
+      for (const i of q.ids) out.setXYZ(i, ...was.fromBufferAttribute(c, i).lerp(k, w).toArray()) }
+    g.setAttribute('color', out); out.needsUpdate = true }
+  if (f > 0 && f < 1 && a.hold !== 'sit' && a.tint == null) {
+    const m = (a.morph ||= new Map()), g = m.get(skin) || variantOf(skin), pos = g.attributes.position !== skin.attributes.position ? g.attributes.position : skin.attributes.position.clone(), o = skin.attributes.position
+    if (!m.has(skin)) { m.set(skin, g); g.setAttribute('position', pos); formSource.set(g, skin); cleanGeometry.set(g, cleanGeometry.get(skin) || skin) }
+    for (const q of P) if (q.grow) { const s = q.grow > 0 ? f : 1 - f
+      for (const i of q.ids) pos.setXYZ(i, q.c.x + (o.getX(i) - q.c.x) * s, q.c.y + (o.getY(i) - q.c.y) * s, q.c.z + (o.getZ(i) - q.c.z) * s) }
+    pos.needsUpdate = true; paint(g, 1 - f)
+    return g
+  }
+  const k = f < 0.5 ? 0 : 1, C = formCache.get(skin) || []
+  formCache.set(skin, C)
+  if (C[k]) return C[k]
+  // parts may nest (a hand inside its sleeve): mask the dropped ranges once, then map each kept range through the mask
+  const g = variantOf(skin), I = skin.index.array, keep = new Uint8Array(I.length).fill(1), at = new Uint32Array(I.length + 1)
+  for (const p of parts) if (has(p, k ? F.human : F.dino)) keep.fill(0, p.start, p.start + p.count)
+  for (let i = 0; i < I.length; i++) at[i + 1] = at[i] + keep[i]
+  g.setIndex(new THREE.BufferAttribute(I.filter((_, i) => keep[i]), 1))
+  g.userData.parts = parts.filter(p => !has(p, k ? F.human : F.dino)).map(q => ({ ...q, start: at[q.start], count: at[q.start + q.count] - at[q.start] }))
+  if (!k) paint(g, 1)
+  formSource.set(g, skin); cleanGeometry.set(g, cleanGeometry.get(skin) || skin)
+  return C[k] = g
+}
+const dress = (a, skin) => { const g = formed(a, skin); return tinted(a.hold === 'sit' ? capeSeated(g, MODELS[a.spec.model || 'man'].sit) : g, a.tint) }
 // its own meshes only (a held weapon is in avatarGroup)
 function wear(a) {
+  const F = COSTUMES[a.spec.costume]?.form
   a.mesh.traverse(n => {
     if (!n.isMesh || n.userData.damageOverlay) return
-    const tint = tintSource.get(n.geometry) || n.geometry, g = dress(a, seatSource.get(tint) || tint)
+    if (F && n.userData.part && !n.geometry.userData.parts) formPart(a, F, n)
+    const tint = tintSource.get(n.geometry) || n.geometry, seat = seatSource.get(tint) || tint, g = dress(a, formSource.get(seat) || seat)
     if (n.geometry !== g) { n.geometry = g; cullSkin(n) }
     if (n.material.map && n.userData.part === 'body') n.material.color.set(0xffffff).lerp(new THREE.Color(a.tint ?? 0xffffff), TINT)
   })
@@ -9127,12 +9200,17 @@ function setAnim(id, want, dt, t, hold, still, ticks, shift) {
       a.idled ||= want === 0
       const w = a.idled ? share(a.prof[0]) : 0
       turn(a.mesh, a.stand, w)
+      turn(a.mesh, a.spec.hunch, w * Math.max(0, a.form || 0))      // a two-form row hunches as the beast
       a.swayT = (a.swayT || 0) + (a.actions[a.prof[0].clip]?.paused ? 0 : dt * 1000)
       for (const [p, list] of MODELS[a.spec.model || 'man'].sway || []) turn(a.mesh, list, w * Math.sin(a.swayT / p + a.cid * 1.7))
       k.position.y += w * (a.ankle - ankleOf(a.mesh)) - a.drop * (1 - w - v)
     }
   }
   if (want === 'crouchRun') { const k = a.mesh.children[0], y = ankleOf(a.mesh); turn(a.mesh, MODELS[a.spec.model || 'man'].crouchRun); k.position.y += y - ankleOf(a.mesh) }
+  const F = COSTUMES[a.spec.costume]?.form
+  if (F) { const f = a.form ?? -1, to = t - (a.fightAt ?? -Infinity) < F.hold * 1000 ? 1 : 0
+    a.form = to ? Math.min(1, Math.max(0, f) + dt / F.morph) : Math.max(0, f - dt / F.morph)
+    if (a.form !== f) { wear(a); formMap(a, F) } }
   posePunch(a, t, false, hold || want === 4 && !a.spec.wallRun && 'climb')
   fitCeiling(a, t)
   bendLimit(a)
@@ -9760,6 +9838,7 @@ function addTracers(list, t) {
     } else slash = null
     const a = avatars.get(f[8])
     if (!a || f[7] === 4 || f[7] === 5 || f[7] === 6 || f[7] === 9) continue
+    a.fightAt = f.firedAt ?? t
     if (f[9] === 1) {
       if (G && G.charge === 'palms') { a.chargeAt = f.firedAt ?? t; a.chargeGun = f[6] }
       continue
