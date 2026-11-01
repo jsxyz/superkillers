@@ -10165,8 +10165,10 @@ const fxSeed = f => { let s = 0; for (let i = 0; i < 6; i++) s = Math.imul(s ^ M
 // without one never loads it), one system per row under one batched renderer, stepped by the frame's own clock; a burst asked before
 // the library is in is dropped
 let fxQ = null, fxQLoad = null
+// at most PARTICLE_MAX live particles of a kind; past it a burst is dropped, so no flood grows a system or its batch without bound
+const PARTICLE_MAX = 2048
 function burst(kind, x, y, z, dx, dy, dz, hex, scale = 1) {
-  if (!fxQ) return
+  if (!fxQ || fxQ.kinds[kind].sys.particleNum >= PARTICLE_MAX) return
   const P = fxQ.kinds[kind], row = PARTICLES[kind], c = fxQ.c.setHex(row.color ?? hex).lerp(fxQ.w, row.hot || 0)
   P.color.color.set(c.r, c.g, c.b, 1)
   glowAxis.set(dx, dy, dz).normalize()
