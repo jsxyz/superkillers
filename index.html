@@ -661,6 +661,7 @@
     <button id="set-quality">Quality: high</button>
     <button id="set-distance">View distance: normal</button>
     <button id="set-shadows">Shadows: on</button>
+    <button id="set-shake">Camera shake: on</button>
     <button id="set-sound">Sound: on</button>
     <button id="set-voices" title="Characters speak lines made on this machine: about 700 MB, fetched and run in the background. Needs WebGPU.">AI voices: off</button>
     <button id="set-radio">Car radio: on</button>
@@ -9112,7 +9113,7 @@ function setAnim(id, want, dt, t, hold, still, ticks, shift) {
     a.anim = want; a.fast = fast
   }
   for (const [b, q] of a.turned) b.quaternion.copy(q)      // last frame's turns off: the mixer only writes a bone whose clip value moved
-  a.mixer.update(dt)
+  a.mixer.update(t < (a.holdTo || 0) ? 0 : dt)
   for (const [b, q] of a.turned) q.copy(b.quaternion)
   // row turns over the clip; its stand over idle by idle's weight
   const legs = want !== 4 || a.spec.wallRun
@@ -9752,7 +9753,10 @@ function addTracers(list, t) {
         if (melee) { o.arc = [f]; o.hit = !!f[7] }
         liveTracers.push(o)
         slash = melee ? o : null
+        if (f[7] === 6) kick(0.35, f[0], f[1], f[2], 25, 700, t)
+        else if (f[7] === 7) kick(0.22, f[0], f[1], f[2], 14, 450, t)
       }
+      if (slash?.hit && !slash.struck) { slash.struck = true; strikeWeight(f, t) }
     } else slash = null
     const a = avatars.get(f[8])
     if (!a || f[7] === 4 || f[7] === 5 || f[7] === 6 || f[7] === 9) continue
@@ -9882,13 +9886,41 @@ const boomTake = (list, live) => { const ids = [6, 7].map(k => new Set(live.filt
   return list.filter(f => { if (f[7] !== 6 && f[7] !== 7) return true
     const s = ids[f[7] - 6], i = f[f[7] === 6 ? 10 : 8]
     return Number.isInteger(i) && (f[7] === 7 ? i >= -1 : i >= 0 && i < OBJ_MAX) && s.size < 16 && !s.has(i) && s.add(i) }) }
+// camera shake: a ring of kicks, each fading over its ms and to nothing at far m from where it struck
+const kicks = Array.from({ length: 16 }, () => ({ a: 0, x: 0, y: 0, z: 0, far: 1, ms: 0, born: -Infinity }))
+let kickAt = 0
+function kick(a, x, y, z, far, ms, born = now()) {
+  const k = kicks[kickAt++ % kicks.length]
+  k.a = a; k.x = x; k.y = y; k.z = z; k.far = far; k.ms = ms; k.born = born
+}
 function shake(cam, t) {
+  if (!settings.shake) return
   let a = 0
-  for (const o of liveTracers) { const k = o.f[7], T = t - o.born, [A, far, ms] = k === 6 ? [0.35, 25, 700] : k === 7 ? [0.22, 14, 450] : []
-    if (T < ms) a = Math.max(a, A * Math.max(0, 1 - Math.hypot(cam.position.x - o.f[0], cam.position.y - o.f[1], cam.position.z - o.f[2]) / far) * (1 - T / ms)) }
+  for (const k of kicks) { const T = t - k.born
+    if (T < k.ms) a = Math.max(a, k.a * Math.max(0, 1 - Math.hypot(cam.position.x - k.x, cam.position.y - k.y, cam.position.z - k.z) / k.far) * (1 - T / k.ms)) }
   if (a > 0) cam.position.set(cam.position.x + a * Math.sin(t * 0.091), cam.position.y + a * Math.sin(t * 0.137), cam.position.z + a * Math.cos(t * 0.113))
 }
 
+// a landed blow, drawn only: the camera kicks, both fighters' animations hold a beat, and the one struck flashes
+const FLASH_MS = 90
+function strikeWeight(f, t) {
+  const d = clamp((GUNS[f[6]]?.dmg || 20) / 60, 0.3, 1), a = avatars.get(f[8]), hold = t + 50 + 30 * d
+  kick(0.04 + 0.1 * d, f[3], f[4], f[5], 12, 220, t)
+  let hit = null, best = 0.5
+  for (const [id, b] of avatars) if (id >= 0 && b !== a && b.mesh.visible) {
+    const p = b.mesh.position
+    for (let u = 0; u <= 1; u += 0.25) {
+      const e = Math.hypot(f[0] + (f[3] - f[0]) * u - p.x, Math.max(0, Math.abs(f[1] + (f[4] - f[1]) * u - p.y) - b.spec.h), f[2] + (f[5] - f[2]) * u - p.z) - b.spec.r
+      if (e < best) { best = e; hit = b }
+    }
+  }
+  if (a) a.holdTo = hold
+  if (hit) { hit.holdTo = hold; hit.flashAt = t }
+}
+function drawStruck(id, t) {
+  const age = t - (avatars.get(id)?.flashAt ?? -Infinity)
+  if (age < FLASH_MS) bodyShell(id, 0xffffff, 0.55 * (1 - age / FLASH_MS), 0.03)
+}
 function fxOrb(x, y, z, r, hex, alpha, tall = 1) {
   const m = fxMesh(orbPool, () => fxSolid(new THREE.SphereGeometry(1, 12, 8)), hex, alpha)
   m.position.set(x, y, z)
@@ -11032,6 +11064,7 @@ function loadSettings() {
   settings.sens = clamp(+settings.sens || 1, 0.2, 3)
   settings.fov = clamp(+settings.fov || 72, 60, FOV_MAX)
   settings.shadows = !!settings.shadows
+  settings.shake = settings.shake !== false
   if (!QUALITY[settings.quality]) settings.quality = 'high'
   if (!Object.hasOwn(VIEW, settings.distance)) settings.distance = 'normal'
   settings.qualityChosen = !!settings.qualityChosen
@@ -11093,6 +11126,7 @@ const SET_BUTTONS = {
     () => { settings.quality = nextOf(QNAMES, settings.quality); settings.qualityChosen = true; qualityAuto = '' }],
   'set-distance': [() => 'View distance: ' + settings.distance, () => { settings.distance = nextOf(Object.keys(VIEW), settings.distance) }],
   'set-shadows': [Q => 'Shadows: ' + (Q.shadows ? onOff(settings.shadows) : 'off (quality)'), () => { settings.shadows = !settings.shadows }],
+  'set-shake': [() => 'Camera shake: ' + onOff(settings.shake), () => { settings.shake = !settings.shake }],
   'set-balance': [() => 'Balance teams: ' + onOff(settings.balance), () => { settings.balance = !settings.balance }],
   'set-radio': [() => 'Car radio: ' + onOff(settings.radio), () => { settings.radio = !settings.radio }, () => GAME.audio.radio()],
   'set-vhs': [() => 'VHS: ' + onOff(settings.vhs !== false), () => { settings.vhs = settings.vhs === false }],
@@ -14729,6 +14763,7 @@ function draw(dt, t) {
     poseSeatAim(o.id, armed && o, t)
     drawHealth(o.id, o.hp)
     drawEffect(o.id, o.markT > 0 ? o.mark : 0)
+    drawStruck(o.id, t)
     drawAura(o.id, o.anim || 0, dt)
     drawHeld(o.id, (!sits.has(o.id) || armed) && o, t)        // cosmetic, never a capsule
   }
@@ -14764,6 +14799,7 @@ function draw(dt, t) {
   ghost(meMesh, me.prot || 0, cam.fade)
   drawAura(myId, animOf(me), dt)
   drawEffect(myId, me.markT > 0 ? me.mark : 0)
+  drawStruck(myId, t)
   drawLooks()
   drawHeld(myId, (!sits.has(myId) || myArmed) && me, t, firstPerson ? camera : null, cam.fade)
   drawTracers(t, me, others, firstPerson ? myId : undefined)
