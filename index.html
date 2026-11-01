@@ -446,6 +446,8 @@
   body.hl:not(.novhs) #vhs-read{display:block}
   body.hl:not(.novhs) #vhs{display:block;position:fixed;inset:0;z-index:60;pointer-events:none;
     background:repeating-linear-gradient(0deg,rgba(0,0,0,.24) 0 1px,transparent 1px 3px),radial-gradient(ellipse at center,transparent 58%,rgba(0,0,0,.62) 100%)}
+  /* in play the vignette alone: fine lines are costly to stream */
+  body.hl.playing #vhs{background:radial-gradient(ellipse at center,transparent 58%,rgba(0,0,0,.62) 100%)}
   #vhs-read b{position:fixed;top:calc(14px + env(safe-area-inset-top));font:700 18px/1 'Courier New',monospace;color:var(--yel);
     text-shadow:2px 0 var(--red),-2px 0 var(--vcr);letter-spacing:.12em}
   #vhs-ch{left:calc(18px + env(safe-area-inset-left))}
