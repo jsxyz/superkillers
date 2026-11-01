@@ -7679,7 +7679,7 @@ function fitCeiling(a, t) {
 // ---------------------------------------------------------------- render
 let renderer, scene, camera, scene3d, sunLight, avatarGroup, pickGroup, tracerGroup, worldGroup
 const avatars = new Map()
-const pickPool = [], tracerPool = [], boxPool = [], orbPool = [], slashPool = [], whipPool = [], effectPool = []
+const pickPool = [], tracerPool = [], boxPool = [], orbPool = [], slashPool = [], whipPool = [], clawPool = [], ringPool = [], flashPool = [], effectPool = []
 let fxKey = null
 const baseTex = {}
 let liveTracers = []
@@ -9834,7 +9834,7 @@ function addTracers(list, t) {
         if (f[7] === 6) kick(0.35, f[0], f[1], f[2], 25, 700, t)
         else if (f[7] === 7) kick(0.22, f[0], f[1], f[2], 14, 450, t)
       }
-      if (slash?.hit && !slash.struck) { slash.struck = true; strikeWeight(f, t) }
+      if (slash?.hit && !slash.struck) slash.struck = strikeWeight(f, t) || true
     } else slash = null
     const a = avatars.get(f[8])
     if (!a || f[7] === 4 || f[7] === 5 || f[7] === 6 || f[7] === 9) continue
@@ -9852,7 +9852,7 @@ function addTracers(list, t) {
 
 // WebGL ignores LineBasicMaterial.linewidth; thick effects need geometry.
 const SLASH_MS = 300, BEAM_MS = 380, BURST_MS = 220
-const SLASH_STEPS = 48, SLASH_PULL = 0.6, BEAM_W = 0.085, IMPACT_W = 0.105
+const SLASH_STEPS = 24, SLASH_PULL = 0.6, BEAM_W = 0.085, IMPACT_W = 0.105
 const IMPACT_MS = 260
 const fxDir = new THREE.Vector3()
 
@@ -9995,10 +9995,32 @@ function strikeWeight(f, t) {
   }
   if (a) a.holdTo = hold
   if (hit) { hit.holdTo = hold; hit.flashAt = t }
+  return hit
 }
+// the struck one glows: a disc facing the camera just in front of the body, its alpha falling off to nothing at the rim
 function drawStruck(id, t) {
-  const age = t - (avatars.get(id)?.flashAt ?? -Infinity)
-  if (age < FLASH_MS) bodyShell(id, 0xffffff, 0.55 * (1 - age / FLASH_MS), 0.03)
+  const a = avatars.get(id), age = t - (a?.flashAt ?? -Infinity)
+  if (!(age < FLASH_MS) || !a.mesh.visible) return
+  const m = poolMesh(flashPool, avatarGroup, () => {
+    const g = new THREE.RingGeometry(0.001, 1, 16, 3), p = g.attributes.position
+    g.setAttribute('color', new THREE.Float32BufferAttribute(Array.from({ length: p.count }, (_, i) => [1, 1, 1, (1 - Math.hypot(p.getX(i), p.getY(i))) ** 2]).flat(), 4))
+    return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, ...FX, blending: THREE.AdditiveBlending, toneMapped: false }))
+  }), C = a.spec
+  if (m.parent !== avatarGroup) avatarGroup.add(m)
+  frontOf(m, a)
+  m.scale.set(C.r + 0.35, C.h + C.r + 0.35, 1)
+  m.material.color.setHex(0xffffff)
+  m.material.opacity = 0.7 * (1 - age / FLASH_MS) * ghostOf(a)
+}
+function fxRing(a, age, hex) {
+  const m = fxMesh(ringPool, () => fxSolid(new THREE.RingGeometry(0.8, 1, 24)), hex, (1 - age) * (1 - age))
+  frontOf(m, a)
+  m.scale.setScalar(0.12 + 0.7 * age)
+}
+// faces the camera, just in front of the avatar's body
+function frontOf(m, a) {
+  m.position.copy(a.mesh.position)
+  if (camera) { m.quaternion.copy(camera.quaternion); m.position.addScaledVector(fxDir.subVectors(camera.position, m.position).normalize(), a.spec.r) }
 }
 function fxOrb(x, y, z, r, hex, alpha, tall = 1) {
   const m = fxMesh(orbPool, () => fxSolid(new THREE.SphereGeometry(1, 12, 8)), hex, alpha)
@@ -10007,17 +10029,20 @@ function fxOrb(x, y, z, r, hex, alpha, tall = 1) {
 }
 
 function fxSlash(o, age, hex) {
-  // a whip runs from the swinger's hand to the swing's middle, waving and sagging until it snaps straight
-  const whip = GUNS[o.arc[0][6]]?.whip && avatars.get(o.arc[0][8]), m = poolMesh(whip ? whipPool : slashPool, tracerGroup, () => {
+  // a whip runs from the swinger's hand to the swing's middle, waving and sagging until it snaps straight.
+  // Each ribbon has B bands of N + 1 samples facing the camera: a blade's second is a wide faint glow round its first,
+  // claws rake three narrow streaks side by side, and a whip's second band is its white core.
+  const G = GUNS[o.arc[0][6]], whip = G?.whip && avatars.get(o.arc[0][8]), claw = G?.punch === 'rake', B = claw ? 3 : 2, N = claw ? 15 : SLASH_STEPS
+  const m = poolMesh(whip ? whipPool : claw ? clawPool : slashPool, tracerGroup, () => {
     const indices = []
-    for (let i = 0; i < SLASH_STEPS; i++) for (let j = 0; j < 2; j++) {
-      const a = i * 3 + j
+    for (let b = 0; b < B; b++) for (let i = 0; i < N; i++) for (let j = 0; j < 2; j++) {
+      const a = (b * (N + 1) + i) * 3 + j
       indices.push(a, a + 3, a + 1, a + 1, a + 3, a + 4)
     }
-    const mesh = fxRibbon((SLASH_STEPS + 1) * 3, indices, whip && { fog: false, blending: THREE.AdditiveBlending })
+    const mesh = fxRibbon((N + 1) * 3 * B, indices, whip && { fog: false, blending: THREE.AdditiveBlending })
     mesh.frustumCulled = false
     mesh.slash = { curve: new THREE.CatmullRomCurve3([], false, 'centripetal'), controls: [],
-      samples: Array.from({ length: SLASH_STEPS + 1 }, () => new THREE.Vector3()),
+      samples: Array.from({ length: N + 1 }, () => new THREE.Vector3()),
       view: new THREE.Vector3(), normal: new THREE.Vector3(), tangent: new THREE.Vector3(),
       across: new THREE.Vector3(), tint: new THREE.Color() }
     return mesh
@@ -10048,33 +10073,37 @@ function fxSlash(o, age, hex) {
   if (camera) camera.getWorldPosition(s.view).sub(mid).normalize()
   else s.view.copy(s.normal)
   const head = Math.min(1, 0.06 + age * 3), tail = Math.max(0, (age - 0.3) / 0.7)
-  for (let i = 0; i <= SLASH_STEPS; i++)
-    s.curve.getPoint(tail + (head - tail) * i / SLASH_STEPS, s.samples[i])
+  for (let i = 0; i <= N; i++)
+    s.curve.getPoint(tail + (head - tail) * i / N, s.samples[i])
   // Transparent sorting reads this centre even with frustum culling disabled.
-  m.geometry.boundingSphere.center.copy(s.samples[SLASH_STEPS / 2])
-  m.geometry.boundingSphere.radius = length + 0.23
+  m.geometry.boundingSphere.center.copy(s.samples[N >> 1])
+  m.geometry.boundingSphere.radius = length + 0.6
   s.tint.setHex(hex)
   const pos = m.geometry.attributes.position, colors = m.geometry.attributes.color
-  for (let i = 0; i <= SLASH_STEPS; i++) {
-    const u = i / SLASH_STEPS, p = s.samples[i]
-    s.tangent.subVectors(s.samples[Math.min(i + 1, SLASH_STEPS)], s.samples[Math.max(0, i - 1)]).normalize()
+  for (let i = 0; i <= N; i++) {
+    const u = i / N, p = s.samples[i]
+    s.tangent.subVectors(s.samples[Math.min(i + 1, N)], s.samples[Math.max(0, i - 1)]).normalize()
     s.across.crossVectors(s.view, s.tangent)
     if (s.across.lengthSq() < 0.001) s.across.crossVectors(s.normal, s.tangent)
     s.across.normalize()
     const width = (whip ? 0.2 - 0.1 * u : (o.hit ? 0.46 : 0.32) * Math.pow(Math.sin(Math.PI * u), 0.65) *
       (0.35 + 0.65 * u)) * Math.min(1, (head - tail) * 4)
     const heat = (o.hit ? 0.85 : 0.22) * u * u
-    for (let j = 0; j < 3; j++) {
-      const v = i * 3 + j, w = (j - 1) * width / 2, hot = whip ? 0 : heat
-      pos.setXYZ(v, p.x + s.across.x * w, p.y + s.across.y * w, p.z + s.across.z * w)
-      colors.setXYZW(v, s.tint.r + (1 - s.tint.r) * hot,
-        s.tint.g + (1 - s.tint.g) * hot, s.tint.b + (1 - s.tint.b) * hot,
-        whip ? j === 1 ? 1 : 0.6 : j === 1 ? (0.12 + 0.88 * u) * (o.hit ? 1 : 0.65) : 0)
+    for (let b = 0; b < B; b++) {
+      const glow = !whip && !claw && b, k = whip && b ? 0.3 : claw ? 0.35 : glow ? 1.3 : 1, off = claw ? (b - 1) * 0.16 : 0
+      for (let j = 0; j < 3; j++) {
+        const v = (b * (N + 1) + i) * 3 + j, w = (j - 1) * width * k / 2 + off, hot = whip ? b : heat
+        pos.setXYZ(v, p.x + s.across.x * w, p.y + s.across.y * w, p.z + s.across.z * w)
+        colors.setXYZW(v, s.tint.r + (1 - s.tint.r) * hot,
+          s.tint.g + (1 - s.tint.g) * hot, s.tint.b + (1 - s.tint.b) * hot,
+          whip ? j === 1 ? 1 : b ? 0 : 0.6 : j === 1 ? (0.12 + 0.88 * u) * (o.hit ? 1 : 0.65) * (glow ? 0.45 : 1) : 0)
+      }
     }
   }
   pos.needsUpdate = true
   colors.needsUpdate = true
   m.material.opacity = whip ? 1 - age * age : 1 - age
+  if (o.hit && G.punch && !claw && o.struck.mesh) fxRing(o.struck, age, hex)
 }
 
 function effectOpacity(shader) {
@@ -10412,7 +10441,7 @@ function drawTornado(t) {
   for (let i = count; i < tornadoViews.length; i++) tornadoViews[i].root.visible = false
 }
 
-const fxPools = [...effectSources, effectPool, slashPool, whipPool]
+const fxPools = [...effectSources, effectPool, slashPool, whipPool, clawPool, ringPool]
 const webHand = new THREE.Vector3()
 function drawWebs(me, others) {
   fxKey = 'web'
@@ -14778,6 +14807,7 @@ function draw(dt, t) {
   let me, others, pkl
   shotSkip = null
   for (const m of shellPool) m.visible = false
+  for (const m of flashPool) m.visible = false
 
   if (isHost) {
     me = players.get(0)
