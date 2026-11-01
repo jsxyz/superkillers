@@ -388,10 +388,73 @@
   body.touch #radar{position:fixed;top:calc(56px + env(safe-area-inset-top));right:calc(12px + env(safe-area-inset-right));width:104px;height:104px}
   body.touch.radar #pills{display:none}
   @media (max-width:430px){ body.touch #radar{top:calc(82px + env(safe-area-inset-top))} body.touch.radar #chat{width:calc(100vw - 136px)} }
+  /* an event's theme: its class on body while it is on */
+  body.hl{--bg:#140c0a;--bg2:#1d1210;--panel:#241611;--ink:#dcccc2;--line:#3a241d;--yel:#ffce2b;--org:#ef5a1f;--red:#c01810;
+    --deep:#7c0d08;--blood:#9e1409;--frame:#5a160d;--dim:#a8907f;--g1:#ff7a3a;--g2:#ef5a1f;--g3:#c21a0b;--vcr:#2a7fff;background:var(--bg);color:var(--ink)}
+  body.hl #ui,body.hl #charpick{background:var(--bg)}
+  body.hl #ui::before,body.hl #charpick::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:-1;
+    box-shadow:inset 0 0 0 5px var(--frame),inset 0 0 90px 10px var(--deep);
+    background:radial-gradient(46px 30px at 2% 5%,var(--blood) 98%,transparent),
+      radial-gradient(22px 16px at 6% 2%,var(--red) 98%,transparent),
+      radial-gradient(9px 7px at 9% 8%,var(--blood) 98%,transparent),
+      radial-gradient(5px 5px at 12% 3%,var(--red) 98%,transparent),
+      radial-gradient(6px 9px at 4% 12%,var(--blood) 98%,transparent),
+      radial-gradient(52px 34px at 97% 3%,var(--red) 98%,transparent),
+      radial-gradient(16px 11px at 92% 7%,var(--blood) 98%,transparent),
+      radial-gradient(7px 6px at 88% 2%,var(--red) 98%,transparent),
+      radial-gradient(8px 12px at 99% 15%,var(--blood) 98%,transparent),
+      radial-gradient(4px 4px at 85% 10%,var(--blood) 98%,transparent),
+      radial-gradient(40px 28px at 1% 95%,var(--red) 98%,transparent),
+      radial-gradient(18px 12px at 6% 98%,var(--blood) 98%,transparent),
+      radial-gradient(5px 5px at 10% 92%,var(--red) 98%,transparent),
+      radial-gradient(7px 5px at 3% 86%,var(--blood) 98%,transparent),
+      radial-gradient(56px 30px at 98% 96%,var(--blood) 98%,transparent),
+      radial-gradient(20px 9px at 93% 99%,var(--red) 98%,transparent),
+      radial-gradient(6px 5px at 90% 93%,var(--blood) 98%,transparent),
+      radial-gradient(9px 6px at 96% 88%,var(--red) 98%,transparent),
+      radial-gradient(30px 14px at 50% 0%,var(--deep) 98%,transparent),
+      radial-gradient(8px 6px at 53% 2%,var(--blood) 98%,transparent),
+      radial-gradient(5px 5px at 47% 1%,var(--red) 98%,transparent),
+      linear-gradient(var(--blood),var(--blood)) 4% 0/5px 17% no-repeat,
+      linear-gradient(var(--red),var(--red)) 7% 0/3px 9% no-repeat,
+      linear-gradient(var(--red),var(--red)) 95% 0/7px 25% no-repeat,
+      linear-gradient(var(--blood),var(--blood)) 92% 0/3px 12% no-repeat,
+      linear-gradient(var(--blood),var(--blood)) 51% 0/4px 9% no-repeat,
+      linear-gradient(var(--red),var(--red)) 49% 0/2px 5% no-repeat}
+  body.hl h1,body.hl .pc h2,body.hl .mbox h2,body.hl #pick-title,body.hl #pick-name,body.hl #restitle,body.hl #end-title,body.hl #evtitle{
+    font-family:Impact,'Arial Black',sans-serif;font-weight:400;letter-spacing:.05em;color:var(--org);text-shadow:2px 2px 0 var(--deep)}
+  #evtitle{font-size:clamp(30px,8vmin,64px);line-height:1;text-align:center;text-transform:uppercase}
+  #evtitle:empty{display:none}
+  body.hl #evtitle{color:var(--yel);text-shadow:3px 3px 0 var(--red),6px 6px 0 var(--deep)}
+  body.hl .sub,body.hl #pick-note,body.hl #pick-role,body.hl #pick-keys,body.hl #pick-stats,body.hl button.link{color:var(--dim)}
+  body.hl button{background:var(--panel);border-color:var(--line);color:var(--ink)}
+  body.hl button:hover:not(:disabled){background:var(--bg2);border-color:var(--org)}
+  body.hl button.go{background:linear-gradient(90deg,var(--g1),var(--g2),var(--g3));border-color:var(--org);color:var(--bg);
+    font-family:Impact,'Arial Black',sans-serif;font-weight:400;letter-spacing:.08em;text-transform:uppercase}
+  body.hl .pc,body.hl .mbox,body.hl .card,body.hl #pick-view{background:var(--panel);border-color:var(--line)}
+  body.hl .ovl{background:rgba(20,12,10,.84)}
+  body.hl input{background:var(--bg2);border-color:var(--line);color:var(--ink)}
+  body.hl .sides button.on{background:var(--deep);border-color:var(--org);color:var(--yel)}
+  body.hl #pick-cards .sel,body.hl .card.sel{border-color:var(--yel);box-shadow:0 0 0 2px var(--yel)}
+  body.hl #pick-room{color:var(--yel)}
+  body.hl #pick-stats i{background:var(--bg2)}
+  body.hl #hud,body.hl #roomtag{color:var(--ink);font-family:'Courier New',monospace}
+  body.hl #hpbar,body.hl #fuelbar{border-color:var(--frame);background:var(--bg)}
+  body.hl #hpfill{background:linear-gradient(90deg,var(--g3),var(--g2),var(--g1))}
+  #set-vhs,#vhs,#vhs-read{display:none}
+  body.hl #set-vhs{display:inline-block}
+  body.hl:not(.novhs) #vhs-read{display:block}
+  body.hl:not(.novhs) #vhs{display:block;position:fixed;inset:0;z-index:60;pointer-events:none;
+    background:repeating-linear-gradient(0deg,rgba(0,0,0,.24) 0 1px,transparent 1px 3px),radial-gradient(ellipse at center,transparent 58%,rgba(0,0,0,.62) 100%)}
+  #vhs-read b{position:fixed;top:calc(14px + env(safe-area-inset-top));font:700 18px/1 'Courier New',monospace;color:var(--yel);
+    text-shadow:2px 0 var(--red),-2px 0 var(--vcr);letter-spacing:.12em}
+  #vhs-ch{left:calc(18px + env(safe-area-inset-left))}
+  #vhs-tc{right:calc(18px + env(safe-area-inset-right))}
 </style>
 
-<div id="ui"><div id="panel">
+<div id="ui"><div id="vhs-read"><b id="vhs-ch">PLAY &#9654;</b><b id="vhs-tc"></b></div><div id="panel">
   <h1>SUPERKILLERs</h1>
+  <div id="evtitle"></div>
   <div class="sub" id="tag">The Agency's killers against the heroes they're paid to cancel.</div>
   <div class="sub" id="ios-hint" style="margin-top:8px;display:none">
     No fullscreen button in this browser — Share → Add to Home Screen hides the URL bar.
@@ -599,6 +662,7 @@
     <button id="set-sound">Sound: on</button>
     <button id="set-voices" title="Characters speak lines made on this machine: about 700 MB, fetched and run in the background. Needs WebGPU.">AI voices: off</button>
     <button id="set-radio">Car radio: on</button>
+    <button id="set-vhs">VHS: on</button>
     <button id="set-full">Fullscreen</button>
   </div>
   <div class="mrow" style="margin-top:10px">
@@ -635,6 +699,8 @@
   </div>
   <div id="codenote"></div>
 </div></div>
+
+<div id="vhs"></div>
 
 <!-- Libraries from public CDNs, each pinned by Subresource Integrity. To change a version,
      edit the URL and recompute its hash with:
@@ -718,6 +784,12 @@ const SIDES = { killers: { name: 'Superkillers', color: 0xe8a33d, waves: true },
 // TEAMS (CHARS `team`): one player plays any standing member; foes: killer bots added in free-for-all
 const TEAMS = { Rangers: { name: 'Power Rangers', role: 'Colour-coded for your convenience · switch any time', foes: 4 },
   Turtles: { name: 'Ninja Turtles', role: 'Heroes in a half shell · switch any time', foes: 4 } }
+// EVENTS: on from..to [month, day] by the host's local date; while on, CHARS rows with its name as `event` play, `cls`
+//   themes the page and `world` recolours the level: sky (fog and background), sun and hemi [colour, × intensity]
+const EVENTS = [
+  { name: 'HallowLeem', from: [10, 31], to: [11, 2], heroes: ['Xenotype', 'Kaiji'],
+    theme: { cls: 'hl', world: { sky: 0x3a1106, sun: [0xffb070, 1.1], hemi: [0xffa070, 1.7] } } },
+]
 const JETPACK = { thrust:46, fuel:2.4, refuel:1, rise:7.6, fall:11, grav:0.5 }
 const ranger = (c, ends = 0xf2f2f2) => ({ head: c, torso: c, arm: c, hand: ends, leg: c, boot: ends })
 const turtle = m => ({ head: 0x4f9a3f, torso: 0xcfae6a, arm: 0x4f9a3f, hand: 0x4f9a3f,
@@ -2226,8 +2298,11 @@ for (const C of CHARS) C.shift &&= ref(C.shift)
 const START = ref('Sam')
 const MODES = ['ffa', 'waves']
 let gameMode = 'waves'
+// the dated event the room plays, null if none; its rows play only while it is on
+let eventOn = null
+const offEvent = R => !!R.event && R.event !== eventOn?.name
 const picked = pick => BOTS.flatMap((B, i) =>
-  !B.squad && Object.entries(pick).every(([k, v]) => [v].flat().includes(B[k] || false)) ? [i] : [])
+  !B.squad && !offEvent(B) && Object.entries(pick).every(([k, v]) => [v].flat().includes(B[k] || false)) ? [i] : [])
 // [id, cid] for a bot row and its alt
 const botPairs = list => list.flatMap(i => [[BOT_ID0 + i, BOTS[i].cid], ...BOTS[i].altRow ? [[BOT_ID0 + i, BOTS[i].altRow.cid]] : []])
 let waveAt = -1, waveGap = 0
@@ -10857,6 +10932,7 @@ function applySettings() {
     }
   }
   const want = settings.shadows && Q.shadows && !IS_TOUCH
+  document.body?.classList.toggle('novhs', settings.vhs === false)
   if (renderer && renderer.shadowMap.enabled !== want) {
     renderer.shadowMap.enabled = want
     if (sunLight) sunLight.castShadow = want
@@ -10879,6 +10955,7 @@ const SET_BUTTONS = {
   'set-shadows': [Q => 'Shadows: ' + (Q.shadows ? onOff(settings.shadows) : 'off (quality)'), () => { settings.shadows = !settings.shadows }],
   'set-balance': [() => 'Balance teams: ' + onOff(settings.balance), () => { settings.balance = !settings.balance }],
   'set-radio': [() => 'Car radio: ' + onOff(settings.radio), () => { settings.radio = !settings.radio }, () => GAME.audio.radio()],
+  'set-vhs': [() => 'VHS: ' + onOff(settings.vhs !== false), () => { settings.vhs = settings.vhs === false }],
   'set-voices': [() => 'AI voices: ' + onOff(settings.voices) + (settings.voices && !('gpu' in navigator) ? ' (needs WebGPU)' : ''), () => GAME.audio.voicesToggle()],
 }
 
@@ -11590,7 +11667,7 @@ function closeCharPick() {
 // join mode: a guest connected and not yet in; its hello waits for this pick
 const joinPick = () => picking
 const pickSelf = () => joinPick() ? -1 : myId
-const roomName = () => gameMode === 'waves' ? 'Waves' : 'Free-for-all'
+const roomName = () => (eventOn ? eventOn.name + ' · ' : '') + (gameMode === 'waves' ? 'Waves' : 'Free-for-all')
 // the room's sides in one grid: a card selects, Play (or Enter, or a second click) confirms
 const pickSides = () => [...Object.keys(SIDES), ''], sideColor = C => (SIDES[C.side] || C).color
 // a hidden form (a shift) stands for the row it shifts from
@@ -13381,7 +13458,7 @@ const squadWant = () => gameMode === 'ffa' && BOT_COUNT ? [...fieldedTeams()].re
 
 function stepSquad() {
   let want = Math.min(SQUAD.length, squadWant()), moved = false
-  for (const i of SQUAD) {
+  for (const i of SQUAD.filter(i => !offEvent(BOTS[i]))) {
     const c = players.get(BOT_ID0 + i)
     if (want-- > 0) moved = !c && addBot(i) || moved
     else if (c) dropBot(c), moved = true
@@ -13391,7 +13468,7 @@ function stepSquad() {
 
 function addBot(i) {
   const id = BOT_ID0 + i
-  if (!BOTS[i] || players.has(id)) return false
+  if (!BOTS[i] || players.has(id) || offEvent(BOTS[i])) return false
   const b = newBot(i)
   b.id = id
   players.set(id, b)
@@ -13406,7 +13483,7 @@ function spawnBots(n) {
 
 function heroWant() {
   const on = fieldedTeams()
-  return BOTS.flatMap((B, i) => !B.squad && !on.has(B.team) ? [i] : []).sort((a, b) => !!BOTS[a].rare - !!BOTS[b].rare).slice(0, BOT_COUNT)
+  return BOTS.flatMap((B, i) => !B.squad && !on.has(B.team) && !offEvent(B) ? [i] : []).sort((a, b) => !!BOTS[a].rare - !!BOTS[b].rare).slice(0, BOT_COUNT)
 }
 
 function teamsChanged() {
@@ -13580,6 +13657,7 @@ const HOST_PHASES = {
   beforeTick: t => { const { dt } = t
   if (resultsLeft > 0) {
     if ((resultsLeft -= dt) <= 0) {
+      hostEvent()
       if (nextLevel >= 0 && nextLevel !== levelId) setLevel(nextLevel); else resetMatch()
       nextLevel = -1
     }
@@ -13731,6 +13809,7 @@ GAME.schema = PLAYER_STATE
 // serving room empties
 GAME.lifecycle = {
   matchStart() {
+    hostEvent()
     resultsLeft = 0
     fragLimit = settings.frags; timeLimit = settings.mins * 60
     matchLeft = timeLimit
@@ -13748,7 +13827,7 @@ GAME.lifecycle = {
     mo: resultsLeft > 0 ? r2(resultsLeft) : 0,
     ml: timeLimit ? r2(matchLeft) : 0,
     fl: gameMode === 'waves' ? 0 : fragLimit, md: gameMode, bl: settings.balance !== false ? 1 : 0,
-    tw: tornadoNow()?.map(r2),
+    tw: tornadoNow()?.map(r2), ...eventOn && { ev: eventOn.name },
   }),
   takeItems(d) {
     // pk absent = unchanged, not none; unordered, so versioned by packet time
@@ -13767,6 +13846,7 @@ GAME.lifecycle = {
     fragLimit = d.fl | 0
     if (MODES.includes(d.md)) gameMode = d.md
     if (d.bl !== undefined) balanceOn = !!d.bl
+    setEvent(typeof d.ev === 'string' && EVENTS.find(E => E.name === d.ev) || null)
     if (joinPick() && !pickOpen && phase === 'playing') { openCharPick(); if (gameMode === 'waves') prepareRows(botPairs(waveOrder())) }
   },
 }
@@ -13812,7 +13892,7 @@ const moveTo = (c, cid) => { becomeChar(c, cid); const p = roster.get(c.id); if 
 
 function switchChar(c, cid) {
   const C = CHARS[cid]
-  if (!C || C.hidden || cid === c.cid || c.dead > 0 || c.shiftCool > 0) return false
+  if (!C || C.hidden || offEvent(C) || cid === c.cid || c.dead > 0 || c.shiftCool > 0) return false
   if (!sideOffered(C.side) || !c.bot && sideLocked(C.side, c.id).locked) return false
   if (!c.bot && C.team && C.team === CHARS[c.cid].team) {
     const m = onTeam(c).find(m => m.cid === cid && m.dead <= 0)
@@ -13855,7 +13935,7 @@ function setMatchMinutes(n) {
   settings.mins = n; saveSettings()
 }
 // the match's limits and its restart, as chat, settings and a level change set them
-GAME.match = { frags: setFragLimit, minutes: setMatchMinutes, restart: resetMatch, get fragLimit() { return fragLimit }, get timeLimit() { return timeLimit }, bots: spawnBots, mode: setMode, pickNext: i => pickNext(i), get resultsLeft() { return resultsLeft }, get fragSteps() { return FRAG_STEPS }, get minuteSteps() { return MINUTE_STEPS } }
+GAME.match = { frags: setFragLimit, minutes: setMatchMinutes, restart: () => { hostEvent(); resetMatch() }, get fragLimit() { return fragLimit }, get timeLimit() { return timeLimit }, bots: spawnBots, mode: setMode, pickNext: i => pickNext(i), get resultsLeft() { return resultsLeft }, get fragSteps() { return FRAG_STEPS }, get minuteSteps() { return MINUTE_STEPS } }
 // the commands this game adds to the page's own
 GAME.commands = {
   spawn:  { args: '<name|rangers|tmnt|all>', help: 'host only, bring enemies in now', run: a => {
@@ -13911,7 +13991,7 @@ GAME.commands = {
 // why the room refuses character i to this player now, '' if it doesn't
 function refusal(i) {
   const C = CHARS[i], L = sideLocked(C.side, pickSelf())
-  return !sideOffered(C.side) ? roomName() + ': ' + Object.keys(SIDES).filter(sideOffered).map(k => SIDES[k].name).join(', ') + ' only'
+  return offEvent(C) ? C.event + ' only' : !sideOffered(C.side) ? roomName() + ': ' + Object.keys(SIDES).filter(sideOffered).map(k => SIDES[k].name).join(', ') + ' only'
     : L.locked ? 'Balanced: ' + L.mine + ' v ' + L.theirs : taken(C.team, pickSelf()) ? 'Taken' : ''
 }
 // a joining player's row: the one it asked for, unless this room cannot take it (told why), and its team fielded once it stands
@@ -13919,6 +13999,7 @@ GAME.rows = {
   admit(id, asked) {
     let cid = clamp(asked | 0, 0, CHARS.length - 1)
     if (CHARS[cid].hidden) cid = START
+    if (offEvent(CHARS[cid])) cid = START
     if (!sideOffered(CHARS[cid].side)) {
       cid = fallbackRow(id)
       tell(id, '§eThis room plays ' + gameMode + ': ' + Object.keys(SIDES).filter(sideOffered).map(k => SIDES[k].name).join(', ') + ' only')
@@ -13952,12 +14033,49 @@ GAME.msgs = { host: {
 } }
 
 // what a level load, a grown chunk and each tick hand the game: its pads, pickups and bot navigation
-GAME.level = { loaded() { PADS = LV.pads; navQueue.length = 0; initPickups() }, grown(ci, cj) { if (navLevel === levelId) navQueue.push([ci, cj]) }, tick() { for (let n = 0; n < 4 && navQueue.length; n++) navTile(...navQueue.shift()) } }
+GAME.level = { loaded() { eventWorld(); PADS = LV.pads; navQueue.length = 0; initPickups() }, grown(ci, cj) { if (navLevel === levelId) navQueue.push([ci, cj]) }, tick() { for (let n = 0; n < 4 && navQueue.length; n++) navTile(...navQueue.shift()) } }
 // the crater a smash leaves: the row's shape, and the widest any row can make
 GAME.crater = { spec: () => smashRow()?.smash, maxR: () => Math.max(...[...BOTS, ...CHARS].map(R => R.smash?.r || 0)) }
 
 // a new object body: carried ones are swept, so a throw cannot tunnel a thin wall
 GAME.objectBody = (body, K) => { if (K.carry) { body.setCcdMotionThreshold(objR(K)); body.setCcdSweptSphereRadius(0.6 * objR(K)) } }
+
+// the event a local date falls in (the host's decides; a guest takes the host's `ev`)
+function eventAt(d) {
+  const k = (d.getMonth() + 1) * 100 + d.getDate(), n = ([m, day]) => m * 100 + day
+  return EVENTS.find(E => n(E.from) <= n(E.to) ? k >= n(E.from) && k <= n(E.to) : k >= n(E.from) || k <= n(E.to)) || null
+}
+const hostEvent = () => { if (isHost || !connected) setEvent(eventAt(new Date())) }
+let vhsTimer = 0, vhsAt = 0, litBase = null
+function setEvent(E) {
+  if (E === eventOn) return
+  if (eventOn) document.body.classList.remove(eventOn.theme.cls)
+  eventOn = E
+  if (E) document.body.classList.add(E.theme.cls)
+  el('#evtitle').textContent = E ? E.name : ''
+  clearInterval(vhsTimer); vhsAt = now()
+  if (E) vhsTimer = setInterval(vhsTick, 1000), vhsTick()
+  eventWorld()
+}
+function vhsTick() {
+  const s = Math.floor((now() - vhsAt) / 1000), p = n => String(n).padStart(2, '0')
+  el('#vhs-tc').textContent = 'SP ' + p(Math.floor(s / 3600)) + ':' + p(Math.floor(s / 60) % 60) + ':' + p(s % 60)
+}
+// the level's sky and light while an event recolours them; off restores the level's own
+function eventWorld() {
+  const w = eventOn?.theme.world
+  if (!w && !LV.base) return
+  if (w) LV.base ||= LV.theme, LV.theme = { ...LV.base, fog: [w.sky, ...LV.base.fog.slice(1)] }
+  else LV.theme = LV.base, delete LV.base
+  if (scene?.fog?.isFog !== true) return
+  scene.background.set(LV.theme.fog[0]); scene.fog.color.set(LV.theme.fog[0])
+  const hemi = scene.children.find(n => n.isHemisphereLight)
+  litBase ||= [sunLight.color.getHex(), sunLight.intensity, hemi?.color.getHex(), hemi?.intensity]
+  const [sc, si, hc, hi] = w ? [w.sun[0], litBase[1] * w.sun[1], w.hemi[0], litBase[3] * w.hemi[1]] : litBase
+  sunLight.color.setHex(sc); sunLight.intensity = si
+  if (hemi) hemi.color.setHex(hc), hemi.intensity = hi
+}
+hostEvent()
 
 // ---------------------------------------------------------------- loop
 let acc = 0, last = now(), snapAcc = 0, tickAt = 0      // ms: when the last tick fell due
@@ -14906,7 +15024,7 @@ class Arena extends ENABLE3D.Scene3D {
 
 const pickCard = (wrap, d) => { for (const c of wrap.children) c.classList.remove('sel'); d.classList.add('sel') }
 // a team shows as its first member
-const pickEntries = side => PICKABLE.filter(i => (SIDES[CHARS[i].side] ? CHARS[i].side : '') === side && (!CHARS[i].team || CHARS.findIndex(C => C.team === CHARS[i].team) === i))
+const pickEntries = side => PICKABLE.filter(i => !offEvent(CHARS[i]) && (SIDES[CHARS[i].side] ? CHARS[i].side : '') === side && (!CHARS[i].team || CHARS.findIndex(C => C.team === CHARS[i].team) === i))
 const teamOf = i => CHARS[i].team, members = t => CHARS.flatMap((C, i) => C.team === t ? [i] : [])
 let pickedLevel = 0
 // what a Host draws first: the pick and its team, the first wave or the free-for-all's bots
