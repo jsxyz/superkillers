@@ -879,7 +879,7 @@ const CHARS = [
       eye: { color: 0xffd23f, emissive: 0xffb000, emissiveIntensity: 1 } } },
   { name: 'Xenotype', side: 'heroes', event: 'HallowLeem', role: 'Out of the dream · punches, energy whips, beam blast', atk: ['Xeno Punch', 'Energy Whip'], far: 'Beam Blast',
     h: 0.53, r: 0.39, jump: 8.89, color: 0x5fd8ff, speed: 9, hp: 150, costume: 'xeno', shape: { torso: [1.04, 1, 0.98], arm: [0.98, 1, 0.98], leg: [0.96, 1, 0.98] },
-    skin: { head: 0xc9c2bf, torso: 0xd9dee4, arm: 0xd9dee4, hand: 0xd9dee4, leg: 0xd9dee4, boot: 0xd9dee4, armour: 0x3b4b5e, gem: 0x1f6fd8, helm: 0xc3cad3 } },
+    skin: { head: 0xd9dee4, torso: 0xd9dee4, arm: 0xd9dee4, hand: 0xd9dee4, leg: 0xd9dee4, boot: 0xd9dee4, armour: 0x3b4b5e, gem: 0x1f6fd8, helm: 0xc3cad3 } },
 ]
 // rate: s/shot, spread: rad, range: m. Gun 0 never runs dry. look: line|beam|slash|blast; held: glow, heldScale, tether
 // kind: ray|pierce|chain|radius. dive: speed m/s, pull m/s²; dmg, knock × clamp(impact/ref, 1, cap), range × its root
@@ -1388,7 +1388,7 @@ const COSTUMES = {
   dino: { part: dinoPart, loft: UNIFORM_BODY, bare: true, neck: 'head', collar: .5, glove: false },
   lantern: { part: lanternPart, loft: UNIFORM_BODY, legs: 1.2, neck: 'head', collar: .54, plain: true, belt: 'torso', shoulder: true },
   xeno: { part: xenoPart, loft: UNIFORM_BODY, legs: 1.1, neck: 'torso', collar: .54, plain: true, belt: 'torso', glove: false, shoulder: true,
-    metal: ['helm', 'boot', 'torso', 'armour', 'gem'] },
+    metal: ['head', 'helm', 'boot', 'torso', 'armour', 'gem'] },
   hero: { part: heroPart, loft: UNIFORM_BODY, legs: 1.2, neck: 'head', collar: .54, plain: true, belt: 'emblem', glove: false, shoulder: true },      // legs: one-piece suit, leg girth; neck: slot, down to collar
   spider: { part: spiderPart, loft: { make: humanBody, paint: spiderPaint, trim: ['head', 'boot'], join: true }, plain: true, cloth: 'legs' }      // legs in the lofted cloth
 }
