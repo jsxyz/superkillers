@@ -919,6 +919,7 @@ const PARTICLES = {
   flare: { n: 1, life: [0.1, 0.14], speed: [0, 0], size: [0.9, 1.1], cone: 0, grow: 1.8, add: true, cell: 3, hot: 0.3 },
   spark: { n: 12, life: [0.18, 0.4], speed: [5, 12], size: [0.1, 0.16], cone: 1, fall: 12, grow: 0.4, add: true, cell: 0, stretch: 0.07, hot: 0.55 },
   puff: { n: 4, life: [0.35, 0.7], speed: [0.3, 1.2], size: [0.18, 0.3], cone: 1.4, fall: -0.6, grow: 3, cell: 0, color: 0x8a8378 },
+  dust: { n: 6, life: [0.45, 0.85], speed: [0.6, 1.8], size: [0.22, 0.36], cone: 1.2, fall: -0.4, grow: 2.6, cell: 0, color: 0xc9c0ae },
   claw: { n: 9, life: [0.12, 0.26], speed: [6, 11], size: [0.06, 0.1], cone: 0.35, fall: 6, grow: 0.3, add: true, cell: 0, stretch: 0.12, hot: 0.4 },
 }
 const GUN_ROW = { ammo: Infinity, drop: false, pellets: 1, spread: 0 }      // what a GUNS row is unless it says otherwise
@@ -10142,6 +10143,31 @@ function fxBeam(o, G, x, y, z, age, t, hex) {
   for (const kind of kinds) burst(kind, f[3], f[4], f[5], x - f[3], y - f[4], z - f[5], hex, k)
 }
 
+// a gun's shot: a muzzle flash, a bright streak whose head crosses to the end within SHOT_MS and burns out there, and on
+// arriving, once, a flash and sparks on a body, sparks and dust on the world short of its range; heavier rows draw bigger.
+// The viewed player's own shot kicks the camera
+const SHOT_MS = 33
+// a colour halfway to white
+const fxHot = c => ((c >> 16 & 255) + 255 >> 1) << 16 | ((c >> 8 & 255) + 255 >> 1) << 8 | (c & 255) + 255 >> 1
+function fxShot(o, G, t, hex, viewId) {
+  const f = o.f, T = t - o.born, k = Math.min(1.3, Math.max(0.5, Math.sqrt((G.dmg || 0) / 26))), hot = fxHot(hex)
+  const d = Math.hypot(f[3] - f[0], f[4] - f[1], f[5] - f[2]) || 0.001, head = Math.min(1, T / SHOT_MS), tail = Math.max(0, head - Math.min(1, 2.5 / d) + Math.max(0, T - SHOT_MS) / 400)
+  if (tail < head) fxStreak(f[0] + (f[3] - f[0]) * tail, f[1] + (f[4] - f[1]) * tail, f[2] + (f[5] - f[2]) * tail,
+    f[0] + (f[3] - f[0]) * head, f[1] + (f[4] - f[1]) * head, f[2] + (f[5] - f[2]) * head, 0.06 * k, hot, 1 - T / TRACER_MS)
+  const near = camera ? Math.min(1, Math.max(0, (Math.hypot(camera.position.x - f[0], camera.position.y - f[1], camera.position.z - f[2]) - 0.8) / 1.2)) : 1
+  if (T < 60 && near) {
+    fxGlow(f[0], f[1], f[2], (T < 30 ? 1 : 0.5) * k * (1 - T / 150), hot, (1 - T / 60) * near, 3, o.seed ??= fxSeed(f))
+    if (T < 30) fxGlow(f[0], f[1], f[2], 0.35 * k, 0xffffff, (1 - T / 30) * near)
+  }
+  if (!o.kicked && f[8] === viewId) { o.kicked = true; kick(Math.min(0.05, 0.035 * k), f[0], f[1], f[2], 6, 120, o.born) }
+  if (head < 1) return
+  if (f[7] && T < SHOT_MS + 90) { const a = (T - SHOT_MS) / 90; fxGlow(f[3], f[4], f[5], Math.max(0.6 * k, 3.5 * (0.13 + 0.55 * a)), 0xffffff, 1 - a) }
+  if (o.burst) return
+  o.burst = true
+  const kinds = f[7] ? ['flare', 'spark'] : d < (G.range ?? Infinity) - 0.1 ? ['spark', 'dust'] : []
+  for (const kind of kinds) burst(kind, f[3], f[4], f[5], f[0] - f[3], f[1] - f[4], f[2] - f[5], hex, (f[7] ? 0.8 : 1.8) * k)
+}
+
 function fxOrb(x, y, z, r, hex, alpha, tall = 1) {
   const m = fxMesh(orbPool, () => fxSolid(new THREE.SphereGeometry(1, 12, 8)), hex, alpha)
   m.position.set(x, y, z)
@@ -10671,6 +10697,10 @@ function drawTracers(t, me, others, viewId) {
     }
     if (G && G.look === 'beam') {
       fxBeam(o, G, x, y, z, age, t, hex)
+      continue
+    }
+    if (G) {
+      fxShot(o, G, t, hex, viewId)
       continue
     } else {
       const m = fxMesh(tracerPool, () => { const g = new THREE.BufferGeometry()
