@@ -868,6 +868,16 @@ const CHARS = [
 
     shape: { torso: [1.3, 1, 1.12], arm: [1.2, 1, 1.16] },
     skin: { head: 0xe0b08c, torso: 0x1f4fd8, arm: 0x1f4fd8, hand: 0xe0b08c, leg: 0x1f4fd8, boot: 0xc8262a, cape: 0xc8262a, emblem: 0xf2c53d } },
+  { name: 'Kaiji', side: 'heroes', event: 'HallowLeem', role: 'Half man, half dinosaur · talons, stomp, fire breath', costume: 'dino', room: [0.93, 1.08], sitLegs: [0.3, 0.6], atk: ['Talon Rake', 'Ground Slam'], far: 'Extinction Breath', lift: 40,
+    hurl: { speed: 26, dmg: 45, reach: 2.2, seek: 12 }, shove: { mass: 6 }, smash: { speed: 14, r: 4.5, depth: 1.2 }, h: 0.59, r: 0.445, jump: 7.5, color: 0xb8321e, speed: 5.6, sprintSpd: 9, hp: 280,
+    bones: { leg_upper: [1, 1.95, 1], leg_lower: [1, 1.95, 1.25], arm_upper: [1, 1.5, 1], arm_lower: [1, 1.5, 1], head: [0.72, 0.72, 0.72], body_upper: [0.95, 1.1, 1.15], body_lower: [1, 1.15, 1] },
+    stand: [['body_IK', -0.18, 0, 0], ['leg_upper', 0.554, 0, 0], ['leg_lower', -0.647, 0, 0], ['body_upper', 0.55, 0, 0], ['head', -0.45, 0, 0], ['arm_upper', -0.35, 0, 0], ['arm_lower', -0.4, 0, 0]],
+    shape: { torso: [1.45, 1, 1.25], arm: [1.4, 1, 1.3], hand: [1.15, 1, 1.15], leg: [1.25, 1, 1.2] },
+    skin: { head: 0xd9a07c, torso: 0xc9c6c0, arm: 0xd4581f, hand: 0xb8321a, leg: 0x1f2a44, boot: 0xd4581f, scale: 0xb8321a, spike: 0x6e1a0c, claw: 0xe8d8b0, hair: 0x6b2a14,
+      eye: { color: 0xffd23f, emissive: 0xffb000, emissiveIntensity: 1 } } },
+  { name: 'Xenotype', side: 'heroes', event: 'HallowLeem', role: 'Out of the dream · punches, energy whips, beam blast', atk: ['Xeno Punch', 'Energy Whip'], far: 'Beam Blast',
+    h: 0.53, r: 0.39, jump: 8.89, color: 0x5fd8ff, speed: 9, hp: 150, costume: 'xeno', shape: { torso: [1.04, 1, 0.98], arm: [0.98, 1, 0.98], leg: [0.96, 1, 0.98] },
+    skin: { head: 0xc9c2bf, torso: 0xd9dee4, arm: 0xd9dee4, hand: 0xd9dee4, leg: 0xd9dee4, boot: 0xd9dee4, armour: 0x3b4b5e, gem: 0x1f6fd8, helm: 0xc3cad3 } },
 ]
 // rate: s/shot, spread: rad, range: m. Gun 0 never runs dry. look: line|beam|slash|blast; held: glow, heldScale, tether
 // kind: ray|pierce|chain|radius. dive: speed m/s, pull m/s²; dmg, knock × clamp(impact/ref, 1, cap), range × its root
@@ -875,7 +885,7 @@ const CHARS = [
 //   launch: { speed, lift m/s, spin rad/s, mass, credit s (3 if unset) }: each object leaves along the dash at speed, up at lift, rolling at spin; heavier than mass, slower
 //   in proportion; what it runs over is the dasher's kill, with the dash's name, until it rests or credit runs out
 // gate: effect key it needs. dmg or lethal; knock; apply: POWERS effect; extra: the fifth upgrade
-// Append rows only; Beck's 32-bit bag holds no 33rd gun.
+// Append rows only; droppable rows stay below index 32 (the bag is one 32-bit int).
 // ground marks a GUNS row's `scar` names: r m, color centre, edge rim
 const SCARS = { hole: { r:.13, color:0x17191a, edge:0x706a5e }, scorch: { r:.6, color:0x080706, edge:0x151310 },
   dent: { r:2.6, color:0x2b2722, edge:0x4d463c }, blast: { r:2.2, color:0x0b0908, edge:0x1d1a16 } }
@@ -959,6 +969,16 @@ const GUNS = [
   { name:'Ground Slam', kind:'radius', rate:1.40, dmg:10, range: 4, knock:12.0, color:0xf2c53d,
     held:false, punch:'slam', punchMs:600, dive:{ speed:10, pull:40, ref:12, cap:2.5 } },
   { name:'Speed Dash', kind:'dash', speed:80, rate:0, dmg:30, range:0, knock:12.0, launch: { speed: 30, lift: 12, spin: 4, mass: 12, credit: 3 }, color:0xffd23f, held:false },
+  { name:'Talon Rake', rate:1.25, dmg:22, spread:1.05, pellets:9, range: 5.2, knock:24.0, color:0xd8452a,
+    melee:true, held:false, punch:'rake', punchMs:400 },
+  { name:'Extinction Breath', scar:'scorch', rate:1.50, dmg:30, spread:0.01, range:40, knock:10.0, color:0xff8a1f,
+    windup:0.5, look:'beam', held:false },
+  { name:'Xeno Punch', rate:0.45, dmg:17, spread:0.08, pellets:3, range: 2.7, knock:11.0, color:0x5fd8ff,
+    melee:true, held:false, punch:'jab', punchMs:240 },
+  { name:'Beam Blast', scar:'scorch', rate:1.10, dmg:26, spread:0.004, range:55, knock: 9.0, color:0x5fd8ff,
+    look:'beam', held:false },
+  { name:'Energy Whip', rate:0.95, dmg:15, spread:0.12, pellets:3, range: 7.0, knock: 4.0, color:0x5fd8ff,
+    melee:true, held:false, whip:true },
 ].map(G => ({ ...GUN_ROW, ...G }))
 // POWERS: dur s, then scales of move jump rate give take fuel jet reach lift (jet 0 grounds; reach 0 spares melee)
 // drop:false: by `apply` only. look: an EFFECT_LOOKS overlay
@@ -1001,6 +1021,8 @@ const BOTS = [
   { char: 'Spider-Man', cid: 'Sam', alt: ['Black Spider-Man', 10], farAt: 8, range: 4, fireRange: 30, aimErr: 0.04, jumpy: 0.3, rare: true, charge: true, zip: true },
   { char: 'Superman', cid: 'Sam', atk: ['Freeze Breath', 'Ground Slam'], hp: 130, farAt: 9, range: 6, fireRange: 60, aimErr: 0.03, jumpy: 0.3, rare: true,
     air: { alt: 3.5, dive: 3 } },
+  { char: 'Kaiji', cid: 'Vito', farAt: 9, range: 4.5, fireRange: 30, aimErr: 0.05, jumpy: 0.2, turn: 4 },
+  { char: 'Xenotype', cid: 'Sam', farAt: 8, range: 3.5, fireRange: 45, aimErr: 0.045, jumpy: 0.6 },
   { char: 'Artie', cid: 'Artie', squad: true, copies: 3, rare: true, farAt: 0, range: 10, fireRange: 15, aimErr: 0.060, jumpy: 1.0 },
   { char: 'Sam', cid: 'Sam', squad: true, always: 2, rare: true, farAt: 0, range: 14, fireRange: 50, aimErr: 0.050, jumpy: 0.6 },
   { char: 'Beck', cid: 'Beck', squad: true, always: 1, rare: true, farAt: 0, range: 9, fireRange: 18, aimErr: 0.070, jumpy: 0.5 },
@@ -1182,6 +1204,7 @@ const MODELS = {
       climb: { l: [[3.4, -0.3], [1.4]], a: [[1.7], [-0.2]] }, pull: { l: [[4.1, -0.2], [0.8]], a: [[2.1], [-0.5]] },
       dive: { l: [[4.71, 0.04], [0.05]], a: [[1.5, 0.08], [0]] },
       slam: { lL: [[2.15], [1.37]], lR: [[3.5], [1.57]], aR: [[3.3], [0]], aL: [[5.1, 0.3], [0]] },
+      rake: { aR: [[2.7, 1.3], [-0.5]], aL: [[3.7, 0.15], [-0.9]] },
       hover: { lL: [[4.06, 0.05], [1.5]], lR: [[4.61, 0.05], [0.2]], a: [[4.51, -0.15], [-0.35]] },
       descend: { lL: [[4.46, 0.04], [0.5]], lR: [[4.66, 0.04], [0.15]], a: [[4.56, -0.32], [-0.3]] },
       ascend: { lL: [[4.76, 0.04], [0.6]], lR: [[4.81, 0.04], [0.15]], aR: [[1.52, 0.08], [0]], aL: [[4.61, -0.15], [-0.35]] },
@@ -1360,7 +1383,9 @@ const COSTUMES = {
   speedster: { part: speedsterPart, loft: UNIFORM_BODY, legs: 1.2, plain: true, neck: 'head', shoulder: true },
   fighter: { part: fighterPart, loft: UNIFORM_BODY, bare: true, neck: 'head', collar: .5, glove: false },
   turtle: { part: turtlePart, bare: true, band: 'mask' },
+  dino: { part: dinoPart, loft: UNIFORM_BODY, bare: true, neck: 'head', collar: .5, glove: false },
   lantern: { part: lanternPart, loft: UNIFORM_BODY, legs: 1.2, neck: 'head', collar: .54, plain: true, belt: 'torso', shoulder: true },
+  xeno: { part: xenoPart, loft: UNIFORM_BODY, legs: 1.1, neck: 'torso', collar: .54, plain: true, belt: 'torso', glove: false, shoulder: true },
   hero: { part: heroPart, loft: UNIFORM_BODY, legs: 1.2, neck: 'head', collar: .54, plain: true, belt: 'emblem', glove: false, shoulder: true },      // legs: one-piece suit, leg girth; neck: slot, down to collar
   spider: { part: spiderPart, loft: { make: humanBody, paint: spiderPaint, trim: ['head', 'boot'], join: true }, plain: true, cloth: 'legs' }      // legs in the lofted cloth
 }
@@ -1738,6 +1763,12 @@ const SOUNDS = {
   'Ring Blaster': { say: 'a bright, ringing green energy zap', seed: 0 },
   'Heat Vision': { say: 'a searing, crackling heat-ray hum from the eyes', seed: 0 },
   'Speed Dash': { say: 'a crackling electric whoosh as he blurs off at super speed', seed: 0 },
+  'Talon Rake': { say: 'a vicious claw rake tearing through the air in a wide arc, talons ripping', seed: 0 },
+  'Extinction Breath': { say: 'a roaring fiery blast of flame erupting from a monster\'s jaws', seed: 0 },
+  'Extinction Breath charge': { say: 'a deep growl and a rising rush of fire building in a monster\'s throat, to fit its wind-up', seed: 0 },
+  'Xeno Punch': { say: 'two fast fist impacts with a sharp crackle of energy', seed: 0 },
+  'Beam Blast': { say: 'a bright, ringing energy beam fired in one burst', seed: 0 },
+  'Energy Whip': { say: 'a crackling energy whip lashing out and snapping at full length', seed: 0 },
   'Freeze Breath': { say: 'a long icy exhale, crackling into frost', seed: 0 },
   'Spider Strike': { say: 'a fast, springy punch landing with a heavy smack', seed: 0 },
   'Web Shooter': { say: 'a quick sticky thwip of a web line firing', seed: 0 },
@@ -1815,6 +1846,8 @@ const SPEECH = {
   'Green Lantern': ['gruff 900',   'Willpower: one. You: zero.', "Ring's charged. You're not.", "[chuckle] Should've ducked the pie."],
   'Spider-Man': ['gruff 530',   'Friendly neighbourhood reminder: always look up.', '[chuckle] You walked right into that. Literally.'],
   Superman:     ['gruff 628',   '[sigh] Truth. Justice. Overtime.', 'Filed under: resolved.'],
+  Kaiji:        ['gruff 666',   '[angry] RRRAAAWRGH!', 'Extinction is forever.'],
+  Xenotype:     ['gruff 731',   'Sweet dreams.', 'Caught in the dreamcatcher.'],
 }
 
 const TICK = 1 / 60
@@ -2311,7 +2344,7 @@ const WAVE_GAP_S = 4, WAVE_HOLD_S = 10
 
 const RARE_ONE_IN = 20
 // rare: out of free-for-all; visits: in anyway, on its own roll
-const regulars = () => BOTS.filter(b => !b.rare).length
+const regulars = () => BOTS.filter(b => !b.rare && !offEvent(b)).length
 const ENTITY_MAX = MAX_PLAYERS + BOTS.length + CHARS.filter(C => C.team).length - Object.keys(TEAMS).length
 let BOT_COUNT = 3
 
@@ -2419,7 +2452,7 @@ function detachBody(c) {
 }
 
 // bitmask over gun indices: one wire integer
-const bagHas = (c, g) => !!(c.bag & (1 << g))
+const bagHas = (c, g) => g < 32 && !!(c.bag & (1 << g))
 function bagAdd(c, g) {
   if (!CHARS[c.cid].manyGuns) { c.bag = 0; return }
   c.bag |= 1 << g
@@ -5915,6 +5948,45 @@ function turtlePart(K, part, side) {
   }
 }
 
+function dinoPart(K, part, side) {
+  const { add, orb, tube } = K
+  const cone = (m, r, h, p, rot, tag) => add({ g: ['cylinder', 0, r, h, 6], m, p, r: rot, tag })
+  if (part === 'head') {
+    orb('head', [1, 1.08, 0.96], [0, -0.01, 0], 'face')
+    add({ g: ['sphere', 0.5, 16, 12, Math.PI / 2, Math.PI], m: 'scale', s: [1.04, 1.1, 1.0], p: [0, -0.01, 0], tag: 'scaledHalf' })
+    orb('hair', [1.12, 0.72, 1.10], [0, 0.30, 0.06], 'hair')
+    for (let i = -3; i <= 3; i++) add({ g: ['tube', [[i * 0.12, 0.50, 0.02], [i * 0.19, 0.30, -0.30 + Math.abs(i) * 0.06], [i * 0.21, 0.02 - Math.abs(i) * 0.04, -0.40 + Math.abs(i) * 0.10]],
+      [0.11, 0.08, 0], 8, 6], m: 'hair', tag: 'hair' })
+    for (let i = -2; i <= 2; i++) add({ g: ['tube', [[i * 0.2, 0.40, 0.35], [i * 0.24, 0.05, 0.50], [i * 0.26, -0.40, 0.42]], [0.12, 0.09, 0], 8, 6], m: 'hair', tag: 'hair' })
+    for (const s of [-1, 1]) orb('eye', [0.17, 0.08, 0.04], [s * 0.20, -0.04, -0.46], 'eye')
+    orb('ink', [0.62, 0.20, 0.30], [0, -0.33, -0.36], 'mouth')
+    for (let i = 0; i < 7; i++) { const x = (i - 3) * 0.085, z = -0.48 + Math.abs(i - 3) * 0.035
+      const k = x > 0 ? 1.8 : 1
+      cone('ivory', 0.03 * k, 0.10 * k, [x, -0.25, z], [Math.PI, 0, 0], 'tooth'); cone('ivory', 0.028 * k, 0.09 * k, [x, -0.41, z + 0.01], [0, 0, 0], 'tooth') }
+  }
+  if (part === 'torso') {
+    fighterPart(K, 'torso', side)
+    for (const s of [-1, 1]) add({ g: ['outline', [[0, 0], [0.32, 0.06], [0.06, -0.36]], 0.03], m: 'torso', s: [s, 1, 1], p: [s * 0.12, 0.62, -0.44], r: [0.25, 0, 0], tag: 'collar' })
+    for (const [x, y, z, h] of [[-0.62, 0.42, 0.10, 0.34], [-0.52, 0.55, 0.30, 0.28], [-0.30, 0.50, 0.55, 0.30], [0.05, 0.30, 0.66, 0.26], [0.10, 0.02, 0.66, 0.22]])
+      cone('spike', 0.10, h, [x, y, z], [0.9, 0, Math.atan2(x, 0.5) * -1.2], 'spike')
+    for (const [x, y, z] of [[0.48, 0.10, -0.40], [-0.30, -0.25, -0.55], [0.58, 0.35, 0.25]]) orb('scale', [0.26, 0.22, 0.10], [x, y, z], 'scalePatch')
+  }
+  // the shirt untucked over the jeans, its hem ragged
+  const rag = (rows, tag) => add({ g: ['loft', rows.map(([y, r, d], row) => ring(16, (c, s, i) => [c * r, y - (row === rows.length - 1 ? (i % 2) * d : 0), s * r * 1.05])), false], m: 'torso', tag })
+  if (part === 'pelvis') rag([[0.10, 0.55, 0], [-0.16, 0.57, 0.12]], 'shirtHem')
+  if (part === 'arm') fighterPart(K, 'arm', side)
+  if (part === 'hand') {
+    orb('hand', [0.34, 0.38, 0.42], [side * 0.43, -0.30, -0.11], 'thumb')
+    for (const s of [-1, 0, 1]) cone('claw', 0.13, 0.95, [s * 0.24, -0.98, -0.32], [Math.PI - 0.55, 0, 0], 'talon')
+    cone('claw', 0.10, 0.55, [side * 0.58, -0.58, -0.36], [Math.PI - 0.7, 0, -side * 0.5], 'talon')
+  }
+  if (part === 'leg') for (const [y, z] of [[0.10, -0.36], [-0.25, -0.30]]) orb('scale', [0.42, 0.20, 0.12], [0, y, z], 'scalePatch')
+  if (part === 'boot') {
+    fighterPart(K, 'boot', side)
+    for (let i = 0; i < 3; i++) cone('claw', 0.10, 0.42, [side * (i * 0.30 - 0.30), -0.52, -1.10], [-Math.PI / 2 - 0.3, 0, 0], 'claw')
+  }
+}
+
 function costumePart(...a) { return drain(costumeSteps(...a)) }
 function* costumeSteps(key, part, side, skin, joined = false) {
   const K = meshKit({ ...skin, ivory: 0xf2f1e9, ink: 0x171b29, metal: 0xc7d5df, gold: 0xe6b64e,
@@ -6114,6 +6186,51 @@ function heroPart(K, part, side, kind, variant) {
       return [x, y, z + (i ? 0.02 : -0.01) + 0.08 * i + Math.sin(k * Math.PI / 2) * i * 0.003]
     }))
     for (const g of [rows, rows.map(r => [...r].reverse())]) add({ g: ['surface', g], m: 'cape', tag: 'cape' })
+  }
+  uniformPart(K, part, side, kind, variant)
+}
+
+function xenoPart(K, part, side, kind, variant) {
+  const { add, orb } = K
+  const gem = (s, p, r) => add({ g: ['sphere', 0.5, 12, 8], m: 'gem', s, p, r, tag: 'gem' })
+  if (part === 'head') {
+    orb('head', [0.9, 1.02, 0.94], [0, -0.04, -0.02], 'face')
+    orb('helm', [1.06, 1.08, 1.08], [0, 0.06, 0.1], 'helmet')
+    for (const s of [-1, 1]) orb('helm', [0.26, 0.66, 0.6], [s * 0.42, -0.14, 0.0], 'cheek')
+    add({ g: ['outline', [[-0.48, 0.17], [-0.16, 0.12], [0, 0.07], [0.16, 0.12], [0.48, 0.17], [0.42, -0.06], [0.14, -0.13], [0, -0.05], [-0.14, -0.13], [-0.42, -0.06]], 0.05],
+      m: 'ink', p: [0, 0.02, -0.45], tag: 'mask' })
+    add({ mirror: true, g: ['outline', [[0.06, 0.02], [0.27, 0.09], [0.25, 0.0], [0.09, -0.04]], 0.02], m: 'light', p: [0, 0.02, -0.485], tag: 'eye' })
+    add({ g: ['outline', [[0, -0.04], [0.26, 0.1], [0.34, 0.36], [0.24, 0.62], [0.06, 0.9], [0, 1.0], [-0.06, 0.9], [-0.24, 0.62], [-0.34, 0.36], [-0.26, 0.1]], 0.1, 0.03],
+      m: 'helm', p: [0, 0.16, -0.38], r: [-0.15, 0, 0], tag: 'crest', children: [{ g: ['sphere', 0.5, 12, 8], m: 'gem', s: [0.3, 0.52, 0.1], p: [0, 0.38, -0.05], tag: 'gem' }] })
+    for (const [a, b, r] of [[[0.32, 0.34, -0.2], [0.42, 0.85, 0.6], 0.075], [[0.42, 0.18, -0.04], [0.5, 0.48, 0.8], 0.065]])
+      add({ mirror: true, g: ['tube', [a, a.map((v, i) => (v + b[i]) / 2 + (i === 1 ? 0.04 : 0)), b], [r, r * 0.6, 0], 8, 6], m: 'helm', tag: 'spike' })
+    for (const s of [-1, 1]) gem([0.1, 0.2, 0.2], [s * 0.56, -0.06, 0.02])
+    return
+  }
+  if (part === 'torso') {
+    const rows = [0, 0.2, 0.4, 0.6, 0.8, 1].map((t, i) => Array.from({ length: 11 }, (_, k) => {
+      const u = k / 5 - 1, x = u * (0.44 - i * 0.012), y = 0.47 - t * (0.38 + 0.06 * Math.abs(u)), [, , z] = torsoFront(x, y, 0.025)
+      return [x, y, z]
+    }))
+    add({ g: ['surface', rows], m: 'armour', tag: 'chestPlate' })
+    add({ g: ['torus', 0.07, 0.016, 6, 16], m: 'helm', p: [0, 0.24, torsoFront(0, 0.24, 0.04)[2]], tag: 'pendant' })
+    gem([0.1, 0.1, 0.05], [0, 0.24, torsoFront(0, 0.24, 0.045)[2]])
+    for (const x of [-0.3, -0.15, 0.15, 0.3]) gem([0.05, 0.05, 0.03], [x, 0.42, torsoFront(x, 0.42, 0.03)[2]])
+  }
+  if (part === 'arm') {
+    orb('armour', [1.5, 0.6, 1.4], [0, 0.3, 0], 'pad')
+    for (const [w, h, y, z] of [[1.9, 0.42, 0.46, 1.7], [1.8, 0.36, 0.35, 1.62], [1.68, 0.32, 0.24, 1.52]])
+      add({ g: ['sphere', 0.5, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.62], m: 'armour', s: [w, h, z], p: [0, y, 0], tag: 'pad' })
+  }
+  if (part === 'hand') {
+    add({ g: ['lathe', [[0.5, -0.32], [0.56, -0.28], [0.6, 0.3], [0.56, 0.38]], 14], m: 'armour', tag: 'bracer' })
+    for (const y of [-0.2, 0, 0.2]) gem([0.12, 0.12, 0.06], [0, y, -0.6])
+  }
+  if (part === 'leg') gem([0.16, 0.36, 0.12], [-side * 0.5, -0.2, -0.05], [0, side * 1.2, 0])
+  if (part === 'boot') {
+    orb('armour', [0.56, 0.22, 0.5], [0, 0.5, -0.36], 'kneeCap')
+    add({ g: ['round', 0.6, 0.55, 0.1, 0.12], m: 'armour', p: [0, 0.02, -0.5], tag: 'shin' })
+    gem([0.18, 0.3, 0.08], [0, 0.0, -0.58])
   }
   uniformPart(K, part, side, kind, variant)
 }
@@ -8788,7 +8905,7 @@ function posePunch(a, t, restore = false, hold) {
       if (leg && upper) p.hip ||= bone
       const pose = ([x, z = upper ? 0.15 : 0, y = 0]) => new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y * side, z * side))
       const part = { bone, side, leg, base: new THREE.Quaternion(), target: new THREE.Quaternion(),
-        sit: new THREE.Quaternion().setFromEuler(new THREE.Euler(leg ? upper ? 3.05 + lean : 0.45 : upper ? Math.PI + 0.3 + lean : -0.6, 0, leg && upper ? 0.1 - side * 0.08 : upper ? side * 0.15 : 0)) }
+        sit: new THREE.Quaternion().setFromEuler(new THREE.Euler(leg ? upper ? 3.05 + lean - (a.spec.sitLegs?.[0] || 0) : 0.45 + (a.spec.sitLegs?.[1] || 0) : upper ? Math.PI + 0.3 + lean : -0.6, 0, leg && upper ? 0.1 - side * 0.08 : upper ? side * 0.15 : 0)) }
       for (const k in M.poses) { const e = M.poses[k][l + (side > 0 ? 'L' : 'R')] || M.poses[k][l]; if (e) part[k] = pose(e[upper ? 0 : 1]) }
       p.parts.push(part)
     })
@@ -8799,11 +8916,12 @@ function posePunch(a, t, restore = false, hold) {
   const strike = charging ? 0 : Math.sin(Math.PI * Math.min(1, phase / (kind === 'jab' ? 0.7 : 0.45)))
   for (const part of p.parts) {
     part.base.copy(part.bone.quaternion)
-    if (part.neck && hold !== 'ceiling' || part.leg && !(hold ? hold !== 'lift' : kind === 'slam') || part.body && !(hold ? part[hold] : kind === 'slam')) continue
+    const whole = kind === 'slam' || kind === 'rake'
+    if (part.neck && hold !== 'ceiling' || part.leg && !(hold ? hold !== 'lift' : whole && part[kind]) || part.body && !(hold ? part[hold] : whole && part[kind])) continue
     const [to, ms, k] = hold === 'climb' ? ['pull', 110, 1] : hold === 'ceiling' && !part.body && !part.neck ? ['crawl', 180, Math.min(1, a.v / 2)] : []
     if (to) part.target.copy(part[hold]).slerp(part[to], (1 + Math.sin(t / ms) * (part.leg ? -part.side : part.side) * k) / 2)      // a limb swing
     else if (hold) part.target.copy(part[hold])
-    else if (kind === 'slam') part.target.copy(part.slam)
+    else if (whole) part.target.copy(part[kind])
     else part.target.copy(palms ? part.cup : part.guard).slerp(palms ? part.push : kind === 'rise' ? part.rise : part.jab,
       palms || part.side === (kind === 'rise' ? -1 : p.side) ? strike : 0)
     if (hold && p.blend && weight < 1 && part.from) part.bone.quaternion.copy(part.from)
@@ -9780,14 +9898,19 @@ function fxSlash(o, age, hex) {
     return mesh
   })
   const s = m.slash, arc = o.arc, points = s.curve.points
-  points.length = arc.length + 1
+  // a whip runs from the swinger's hand to the swing's middle, waving and sagging until it snaps straight
+  const whip = GUNS[arc[0][6]]?.whip && avatars.get(arc[0][8]), tip = arc[arc.length >> 1], hand = s.across
+  points.length = whip ? 13 : arc.length + 1
+  if (whip) handAt(whip, hand)
   // a landed swing's points drawn SLASH_PULL nearer the swinger, so it ends inside what it struck
-  const by = o.hit && avatars.get(arc[0][8])?.mesh?.position
+  const by = !whip && o.hit && avatars.get(arc[0][8])?.mesh?.position
   let length = 0
   for (let i = 0; i < points.length; i++) {
     const f = arc[Math.max(0, i - 1)], at = i ? 3 : 0
     const p = s.controls[i] || (s.controls[i] = new THREE.Vector3())
-    points[i] = p.set(f[at], f[at + 1], f[at + 2])
+    if (whip) { const u = i / 12, dx = tip[0] - hand.x, dz = tip[2] - hand.z, d = Math.hypot(dx, dz) || 1, e = 0.45 * Math.sin(Math.PI * u) * (1 - age), w = e * Math.sin(4 * Math.PI * u) / d
+      points[i] = p.set(hand.x + dx * u - dz * w, hand.y + (tip[1] - hand.y) * u + e * (Math.cos(4 * Math.PI * u) - 1.5), hand.z + dz * u + dx * w) }
+    else points[i] = p.set(f[at], f[at + 1], f[at + 2])
     if (by) { const d = Math.hypot(p.x - by.x, p.z - by.z), k = Math.max(0.3, d - SLASH_PULL) / (d || 1)
       p.set(by.x + (p.x - by.x) * k, p.y, by.z + (p.z - by.z) * k) }
     if (i) length += p.distanceTo(points[i - 1])
@@ -9814,15 +9937,15 @@ function fxSlash(o, age, hex) {
     s.across.crossVectors(s.view, s.tangent)
     if (s.across.lengthSq() < 0.001) s.across.crossVectors(s.normal, s.tangent)
     s.across.normalize()
-    const width = (o.hit ? 0.46 : 0.32) * Math.pow(Math.sin(Math.PI * u), 0.65) *
-      (0.35 + 0.65 * u) * Math.min(1, (head - tail) * 4)
+    const width = (whip ? 0.26 - 0.12 * u : (o.hit ? 0.46 : 0.32) * Math.pow(Math.sin(Math.PI * u), 0.65) *
+      (0.35 + 0.65 * u)) * Math.min(1, (head - tail) * 4)
     const heat = (o.hit ? 0.85 : 0.22) * u * u
     for (let j = 0; j < 3; j++) {
-      const v = i * 3 + j, w = (j - 1) * width / 2
+      const v = i * 3 + j, w = (j - 1) * width / 2, hot = whip ? 0.7 * (j & 1) : heat
       pos.setXYZ(v, p.x + s.across.x * w, p.y + s.across.y * w, p.z + s.across.z * w)
-      colors.setXYZW(v, s.tint.r + (1 - s.tint.r) * heat,
-        s.tint.g + (1 - s.tint.g) * heat, s.tint.b + (1 - s.tint.b) * heat,
-        j === 1 ? (0.12 + 0.88 * u) * (o.hit ? 1 : 0.65) : 0)
+      colors.setXYZW(v, s.tint.r + (1 - s.tint.r) * hot,
+        s.tint.g + (1 - s.tint.g) * hot, s.tint.b + (1 - s.tint.b) * hot,
+        whip ? j === 1 ? 1 : 0.35 : j === 1 ? (0.12 + 0.88 * u) * (o.hit ? 1 : 0.65) : 0)
     }
   }
   pos.needsUpdate = true
@@ -13483,7 +13606,7 @@ function spawnBots(n) {
 
 function heroWant() {
   const on = fieldedTeams()
-  return BOTS.flatMap((B, i) => !B.squad && !on.has(B.team) && !offEvent(B) ? [i] : []).sort((a, b) => !!BOTS[a].rare - !!BOTS[b].rare).slice(0, BOT_COUNT)
+  return BOTS.flatMap((B, i) => !B.squad && !on.has(B.team) && !offEvent(B) ? [i] : []).sort((a, b) => !!BOTS[a].rare - !!BOTS[b].rare || !BOTS[a].event - !BOTS[b].event).slice(0, BOT_COUNT)
 }
 
 function teamsChanged() {
@@ -14045,7 +14168,7 @@ function eventAt(d) {
   const k = (d.getMonth() + 1) * 100 + d.getDate(), n = ([m, day]) => m * 100 + day
   return EVENTS.find(E => n(E.from) <= n(E.to) ? k >= n(E.from) && k <= n(E.to) : k >= n(E.from) || k <= n(E.to)) || null
 }
-const hostEvent = () => { if (isHost || !connected) setEvent(eventAt(new Date())) }
+const hostEvent = () => { if (!isHost && connected) return; const was = eventOn; setEvent(eventAt(new Date())); if (eventOn !== was && isHost && gameMode === 'ffa' && players.size) spawnBots(BOT_COUNT) }
 let vhsTimer = 0, vhsAt = 0, litBase = null
 function setEvent(E) {
   if (E === eventOn) return
@@ -14811,7 +14934,7 @@ function drawHud(me, others, t) {
   const carry = []
   if (FC.manyGuns) {
     for (let g = 0; g < GUNS.length; g++) {
-      if (g !== 0 && !(me.bag & (1 << g))) continue
+      if (g !== 0 && !bagHas(me, g)) continue
       if (GUNS[g].special) continue
       carry.push([g, GUNS[g].name, g === me.gun])
     }
