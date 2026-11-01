@@ -10820,8 +10820,8 @@ function profPanel(me, G, P) {
 // the picker's art, drawn by the game's renderer in a corner of its canvas and copied out: a card's head and shoulders,
 // built at idle once the rig is in, and the selected row turning once the selection rests. Until then a card shows its
 // colour and initials. The avatars sit under negative ids, outside draw()'s set
-const PICK_VIEW = -214, PICK_SHOT = -215, PICK_REST = 400, PICK_SLOW = 250, pickArts = new Map(), pickCvs = new Map(), pickDue = []
-let pickStage = null, pickIdle = false, pickHeld = -1, pickSlow = false, pickSpent = 0
+const PICK_VIEW = -214, PICK_SHOT = -215, PICK_REST = 400, PICK_SLOW = 250, PICK_LAZY = 600, pickArts = new Map(), pickCvs = new Map(), pickDue = []
+let pickStage = null, pickIdle = false, pickHeld = -1, pickSlow = false, pickSpent = 0, pickLazyT = 0
 function pickHold(cv, i) {
   const g = cv.getContext('2d'), C = CHARS[i], w = cv.width, h = cv.height, f = g.createLinearGradient(0, 0, 0, h)
   f.addColorStop(0, css(C.color) + '55'); f.addColorStop(1, '#151b24')
@@ -10836,11 +10836,11 @@ function pickArt(i, cv) {
   if (P && !P.left) cv.getContext('2d').drawImage(P.c, 0, 0)
   else pickHold(cv, i)
 }
-// the rows the room builds anyway first (the pick, its players), then with the JIT on the rest; once one portrait has
-// taken over PICK_SLOW ms to build (the JIT off and not yet detected, or a slow machine), the free rows only
+// the rows the room builds anyway first (the pick, its players), then with the JIT on the rest; once one portrait has taken
+// over PICK_SLOW ms to build (a slow machine), the rest an idle callback's worth at a time, PICK_LAZY ms apart
 const pickFree = () => new Set([myCid, ...[...roster].filter(([id]) => id < BOT_ID0).map(([, p]) => p.cid)].map(pickEntry))
 function pickPlan() {
-  const free = pickFree(), want = [...free, ...jit.off || pickSlow ? [] : pickAll().filter(i => !free.has(i))]
+  const free = pickFree(), want = [...free, ...jit.off ? [] : pickAll().filter(i => !free.has(i))]
   pickDue.length = 0; pickSpent = 0
   for (const i of want) {
     if (pickArts.get(i)?.left === 0) continue
@@ -10851,11 +10851,16 @@ function pickPlan() {
   }
   pickSoon()
 }
+const pickLazy = () => pickSlow && !pickFree().has(pickDue[0][0])
 const pickReady = cid => { const M = modelFor(PICK_SHOT, cid); return M.kind === 'built' || !!M.proto }
 function pickSoon() {
   if (pickIdle || !pickDue.length) return
   pickIdle = true
-  const go = () => { pickIdle = false; const t0 = now(); try { while (pickOpen && pickDue.length && pickReady(pickDue[0][1]) && now() - t0 < PREP_MS) pickSlice() } finally { pickSoon() } }, rest = PICK_REST - (now() - pickAtT)
+  // a callback works on one kind of row: the free rows, or the rest on their pace
+  const go = () => { pickIdle = false; const t0 = now(), lazy = pickLazy(); try {
+    if (!lazy || now() - pickLazyT >= PICK_LAZY) while (pickOpen && pickDue.length && pickReady(pickDue[0][1]) && now() - t0 < PREP_MS && pickLazy() === lazy) pickSlice()
+  } finally { if (lazy) pickLazyT = now(); pickSoon() } }
+  const rest = Math.max(PICK_REST - (now() - pickAtT), pickLazy() ? PICK_LAZY - (now() - pickLazyT) : 0)
   // never while the selection moves
   !pickReady(pickDue[0][1]) ? setTimeout(go, 500) : rest > 0 ? setTimeout(() => { pickIdle = false; pickSoon() }, rest) : (window.requestIdleCallback || setTimeout)(go)
 }
@@ -10876,11 +10881,7 @@ function pickSlice() {
   pickDue.shift()
   pickShoot(PICK_SHOT, m, P.c, x0, x1, true, 0.35, 0)
   if (!--P.left) pickCvs.get(i)?.getContext('2d').drawImage(P.c, 0, 0)
-  if (pickSpent > PICK_SLOW && !pickSlow) {
-    pickSlow = true
-    const free = pickFree()
-    for (let k = pickDue.length - 1; k >= 0; k--) if (!free.has(pickDue[k][0])) { pickArts.delete(pickDue[k][0]); pickDue.splice(k, 1) }
-  }
+  if (pickSpent > PICK_SLOW) pickSlow = true
   pickSpent = 0
 }
 function pickShoot(id, cid, cv, x0, x1, head, yaw, t) {
