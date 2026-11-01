@@ -9233,7 +9233,7 @@ function setAnim(id, want, dt, t, hold, still, ticks, shift) {
       turn(a.mesh, a.spec.hunch, w * Math.max(0, a.form || 0))      // a two-form row hunches as the beast
       a.swayT = (a.swayT || 0) + (a.actions[a.prof[0].clip]?.paused ? 0 : dt * 1000)
       for (const [p, list] of MODELS[a.spec.model || 'man'].sway || []) turn(a.mesh, list, w * Math.sin(a.swayT / p + a.cid * 1.7))
-      k.position.y += w * (a.ankle - ankleOf(a.mesh)) - a.drop * (1 - w - v)
+      k.position.y += (w && w * (a.ankle - ankleOf(a.mesh))) - a.drop * (1 - w - v)
     }
   }
   if (want === 'crouchRun') { const k = a.mesh.children[0], y = ankleOf(a.mesh); turn(a.mesh, MODELS[a.spec.model || 'man'].crouchRun); k.position.y += y - ankleOf(a.mesh) }
@@ -9418,9 +9418,9 @@ function drawHeld(id, state, t, view = null, fade = 1) {
 
 // O(1) cursor; one hidden behind it means a re-hide: restart
 function poolMesh(pool, group, make) {
-  if (!(pool.at > 0 && pool[pool.at - 1].visible)) pool.at = 0
-  while (pool.at < pool.length && pool[pool.at].visible) pool.at++
-  let m = pool[pool.at++]
+  if (!(pool.cur > 0 && pool[pool.cur - 1].visible)) pool.cur = 0
+  while (pool.cur < pool.length && pool[pool.cur].visible) pool.cur++
+  let m = pool[pool.cur++]
   if (!m) { m = make(); group.add(m); pool.push(m) }
   m.visible = true
   return m
@@ -10078,8 +10078,8 @@ const GLOW = () => ({ map: glowTex(), blending: THREE.AdditiveBlending, side: TH
 // at most GLOW_MAX glow quads a frame; past it a glow is refused, so no flood grows the pool or the batch without bound
 const GLOW_MAX = 6144
 function glowMesh(hex, alpha, cell) {
-  if (!(glowPool.at > 0 && glowPool[glowPool.at - 1].visible)) glowPool.at = 0
-  if (glowPool.at >= GLOW_MAX) return null
+  if (!(glowPool.cur > 0 && glowPool[glowPool.cur - 1].visible)) glowPool.cur = 0
+  if (glowPool.cur >= GLOW_MAX) return null
   const m = fxMesh(glowPool, () => new THREE.Mesh(glowPlane ||= new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ ...FX, ...GLOW() })), hex, alpha)
   m.fxCell = cell
   return m
