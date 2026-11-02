@@ -475,6 +475,8 @@
       <div id="levels" class="cards"></div>
       <label>MODE</label>
       <div class="sides"><button id="mode-waves">Waves</button><button id="mode-ffa">Free-for-all</button></div>
+      <label>EVENT</label>
+      <div class="sides" id="events"></div>
       <button id="host-btn" class="go">Host game</button>
     </section>
     <section id="join-card" class="pc">
@@ -601,6 +603,7 @@
   <label>CITY SIZE</label>
   <div id="host-city" class="cards"></div>
   <div class="row" id="set-mode-row"><button id="set-mode">Enemies: waves</button></div>
+  <div class="row" id="set-event-row"><button id="set-event">Event: Auto</button></div>
   <div class="setrow" id="set-bots-row">
     <label for="set-bots">Bots per side</label>
     <input type="range" id="set-bots" min="0" max="6" step="1">
@@ -2373,6 +2376,8 @@ let gameMode = 'waves'
 // the dated event the room plays, null if none; its rows play only while it is on
 let eventOn = null
 const offEvent = R => !!R.event && R.event !== eventOn?.name
+// the host's Event setting: 'auto' (the date decides), 'off', or an EVENTS name
+const eventPicks = () => ['auto', 'off', ...EVENTS.map(E => E.name)], eventLabel = k => k === 'auto' ? 'Auto' : k === 'off' ? 'Off' : k
 const picked = pick => BOTS.flatMap((B, i) =>
   !B.squad && !offEvent(B) && Object.entries(pick).every(([k, v]) => [v].flat().includes(B[k] || false)) ? [i] : [])
 // [id, cid] for a bot row and its alt
@@ -11559,6 +11564,8 @@ function openHost() {
     d.onclick = () => { settings.city = k; saveSettings(); pickCard(cs, d); if (LEVELS[levelId].gen?.kind === 'city') setLevel(levelId) }
   }
   markLevel(cs, Object.keys(CITY_SIZES).indexOf(settings.city))
+  const ek = settings.event || 'auto'
+  el('#set-event').textContent = 'Event: ' + eventLabel(ek) + (ek === 'auto' ? ' (' + (eventOn ? eventOn.name : 'none') + ')' : '')
   el('#set-mode').textContent =
     'Enemies: ' + (gameMode === 'waves' ? 'waves' : 'free-for-all')
   for (const id of ['bots', 'balance', 'frags', 'time']) el('#set-' + id + '-row').style.display = gameMode === 'ffa' ? '' : 'none'
@@ -11598,6 +11605,11 @@ function initSettings() {
   for (const id in SET_BUTTONS) {
     const [, change, then] = SET_BUTTONS[id]
     el('#' + id).onclick = () => { change(); applySettings(); saveSettings(); if (then) then() }
+  }
+  el('#set-event').onclick = () => {
+    const P = eventPicks()
+    GAME.match.event(P[(P.indexOf(settings.event || 'auto') + 1) % P.length])
+    openHost()
   }
   el('#set-mode').onclick = () => {
     GAME.match.mode(nextOf(MODES, gameMode))
@@ -14493,9 +14505,14 @@ function setMatchMinutes(n) {
   settings.mins = n; saveSettings()
 }
 // the match's limits and its restart, as chat, settings and a level change set them
-GAME.match = { frags: setFragLimit, minutes: setMatchMinutes, restart: () => { hostEvent(); resetMatch() }, get fragLimit() { return fragLimit }, get timeLimit() { return timeLimit }, bots: spawnBots, mode: setMode, pickNext: i => pickNext(i), get resultsLeft() { return resultsLeft }, get fragSteps() { return FRAG_STEPS }, get minuteSteps() { return MINUTE_STEPS } }
+GAME.match = { frags: setFragLimit, minutes: setMatchMinutes, restart: () => { hostEvent(); resetMatch() }, event: k => pickEvent(k), get fragLimit() { return fragLimit }, get timeLimit() { return timeLimit }, bots: spawnBots, mode: setMode, pickNext: i => pickNext(i), get resultsLeft() { return resultsLeft }, get fragSteps() { return FRAG_STEPS }, get minuteSteps() { return MINUTE_STEPS } }
 // the commands this game adds to the page's own
 GAME.commands = {
+  event:  { args: '<name|auto|off>', help: 'host only, the seasonal event', run: a => {
+              if (!isHost) return sysMsg('§cOnly the host picks the event.')
+              const w = String(a || '').trim().toLowerCase(), k = eventPicks().find(p => p.toLowerCase() === w)
+              if (!k) return sysMsg('§7Event: §f' + eventLabel(settings.event || 'auto') + ' §7(' + eventPicks().map(eventLabel).join(', ') + ')')
+              pickEvent(k) } },
   spawn:  { args: '<name|rangers|tmnt|all>', help: 'host only, bring enemies in now', run: a => {
               if (!isHost) return sysMsg('§cOnly the host controls the enemies.')
               const want = String(a || '').trim().toLowerCase()
@@ -14599,11 +14616,21 @@ GAME.crater = { spec: () => smashRow()?.smash, maxR: () => Math.max(...[...BOTS,
 GAME.objectBody = (body, K) => { if (K.carry) { body.setCcdMotionThreshold(objR(K)); body.setCcdSweptSphereRadius(0.6 * objR(K)) } }
 
 // the event a local date falls in (the host's decides; a guest takes the host's `ev`)
-function eventAt(d) {
+function eventAt(d, pick = settings.event) {
+  if (pick === 'off') return null
+  if (EVENTS.some(E => E.name === pick)) return EVENTS.find(E => E.name === pick)
   const k = (d.getMonth() + 1) * 100 + d.getDate(), n = ([m, day]) => m * 100 + day
   return EVENTS.find(E => n(E.from) <= n(E.to) ? k >= n(E.from) && k <= n(E.to) : k >= n(E.from) || k <= n(E.to)) || null
 }
 const hostEvent = () => { if (!isHost && connected) return; const was = eventOn; setEvent(eventAt(new Date())); if (eventOn !== was && isHost && gameMode === 'ffa' && players.size) spawnBots(BOT_COUNT) }
+// a host's pick: in a room, one that flips the event restarts the round as a level switch does
+function pickEvent(k) {
+  settings.event = k; saveSettings()
+  if (!isHost) return hostEvent()
+  if (eventAt(new Date()) === eventOn) return
+  GAME.match.restart()
+  announce('§7Event: §f' + (eventOn ? eventOn.name : 'off'))
+}
 let vhsTimer = 0, vhsAt = 0, litBase = null
 function setEvent(E) {
   if (E === eventOn) return
@@ -15679,6 +15706,12 @@ function wireMenu() {
   el('#host-btn').onclick = go(startHost)
   const modes = () => MODES.forEach(m => el('#mode-' + m).classList.toggle('on', m === gameMode))
   for (const m of MODES) el('#mode-' + m).onclick = () => { gameMode = m; modes() }
+  const evRow = el('#events'), evs = () => [...evRow.children].forEach(b => b.classList.toggle('on', b.ev === (settings.event || 'auto')))
+  for (const k of eventPicks()) {
+    const b = evRow.appendChild(document.createElement('button'))
+    b.ev = k; b.textContent = eventLabel(k); b.onclick = () => { GAME.match.event(k); evs() }
+  }
+  evs()
   modes()
   el('#menu-set').onclick = openSettings
   el('#serve-btn').onclick = go(startServer)
