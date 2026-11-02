@@ -6649,7 +6649,7 @@ function bodyMap(key, skin, L = costumeOf(key).loft, edges = []) {
   const made = [key, L, edges]
   if (L.join) key += ':' + meshDetail
   if (bodyMaps.has(key)) return bodyMaps.get(key)
-  const { parts, paint } = L, size = 1024, cv = document.createElement('canvas'), ctx = cv.getContext('2d')
+  const { parts, paint } = L, size = 1024, cv = document.createElement('canvas'), ctx = cv.getContext('2d', { willReadFrequently: true })
   const hex = c => '#' + new THREE.Color(c).getHexString()
   cv.width = cv.height = size
   for (const { paint: slot, uv: [u0, v0, u1, v1] } of parts) { ctx.fillStyle = hex(skin[slot]); ctx.fillRect(u0 * size, (1 - v1) * size, (u1 - u0) * size, (v1 - v0) * size) }
