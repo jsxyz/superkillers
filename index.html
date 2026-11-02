@@ -1266,6 +1266,7 @@ const MODELS = {
     body: 0.81,           // m, plume below
     sitLift: 0.068,       // m, no sit pose
     build: buildArtie,
+    steps: function* (H, skin) { artieFaceTexture(0); yield; return buildArtie(H, skin) },
     animate: animateArtie,
     slots: ['shell', 'trim', 'face', 'eye'],
   },
@@ -5771,9 +5772,12 @@ function* batchSteps(root, key, { joints = [], live = [], rig = null, shadowEmis
       if (rig) setSkin(geometry, indices, weights)
       geometry.setIndex(faces)
       geometry.userData.parts = parts
+      yield
       geometry.computeBoundingBox()
+      yield
       geometry.computeBoundingSphere()
       if (cache) shareGeo(cache, geometry)
+      yield
     }
     const material = paintable(first.material.clone())
     const merged = rig ? bindCloth(rig, geometry, material, null, rigParent) : anchor.add(new THREE.Mesh(geometry, material)).children.at(-1)
@@ -6618,6 +6622,7 @@ function* loftSteps(inst, skin, key) {
     g.setIndex(index)
     g.userData.parts = ranges
     if (L.join) g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(position.length).fill(1), 3))
+    yield
     g.computeVertexNormals()
     yield
     const N = g.attributes.normal, m = new THREE.Vector3(), o = new THREE.Vector3()
@@ -6628,6 +6633,7 @@ function* loftSteps(inst, skin, key) {
         if (!groups.has(k)) groups.set(k, [])
         groups.get(k).push(i)
       }
+      yield
       for (const ids of groups.values()) if (ids.length > 1) {
         m.set(0, 0, 0); for (const i of ids) m.add(o.fromBufferAttribute(N, i)); m.normalize()
         for (const i of ids) N.setXYZ(i, ...m)
@@ -7146,12 +7152,14 @@ function* vitoSteps(H, skin) {
     return [0.14 + Math.cos(a) * (0.066 * k + gap), y, -0.13 + Math.sin(a) * (0.06072 * k + gap)]
   }))
   add({ mirror: true, g: ['loft', shorts, false], m: 'denim', tag: 'shorts' })
+  yield
   for (const side of [-1, 1]) {
     orb('skin', 0.066, [side * 0.14, 0.245, -0.13], [1, 1.32, 0.92], 'knee')
     box('tyre', [0.085, 0.045, 0.13], [side * 0.14, 0.14, -0.18], 0.012, 'shoe')
   }
   orb('jacket', 0.24, [0, 0.515, 0.02], [1.23, 1.0, 0.87], 'jacket')
   orb('shirt', 0.202, [0, 0.49, -0.08], [1.06, 1.04, 0.81], 'shirt')
+  yield
   const fronts = [[0.715, 0.09, 0.19, -0.12, -0.08], [0.655, 0.12, 0.227, -0.193, -0.10],
     [0.555, 0.15, 0.255, -0.225, -0.088], [0.46, 0.16, 0.246, -0.237, -0.07],
     [0.36, 0.152, 0.218, -0.171, -0.048], [0.30, 0.19, 0.211, -0.092, -0.052]]
@@ -7163,6 +7171,7 @@ function* vitoSteps(H, skin) {
   add({ mirror: true, g: ['tube', fronts.map(([y, x, , z]) => [x, y, z - 0.003]), 0.006], m: 'fold', tag: 'opening' })
   add({ mirror: true, g: ['tube', [[0.075, 0.722, -0.10], [0.12, 0.696, -0.16], [0.159, 0.65, -0.205]], 0.022],
     m: 'jacket', tag: 'collar' })
+  yield
   tube('seam', [[-0.084, 0.674, -0.14], [-0.060, 0.648, -0.18], [0, 0.639, -0.193],
     [0.060, 0.648, -0.18], [0.084, 0.674, -0.14]], 0.005, 'neckline')
   for (const side of [-1, 1]) {
@@ -7171,6 +7180,7 @@ function* vitoSteps(H, skin) {
     tube('fold', [[side * 0.277, 0.539, -0.127], [side * 0.303, 0.497, -0.11], [side * 0.277, 0.459, -0.086]], 0.004, 'cuff')
   }
   tube('seam', [[-0.11, 0.393, -0.194], [0, 0.377, -0.218], [0.10, 0.388, -0.196]], 0.004, 'hem')
+  yield
   for (const side of [-1, 1]) {
     add({ g: ['tube', [[side * 0.15, 0.595, -0.02], [side * 0.26, 0.523, -0.059], [side * 0.252, 0.501, -0.103]], [0.068, 0.048], 12, 12], m: 'jacket', tag: 'sleeve' })
     tube('skin', [[side * 0.255, 0.51, -0.085], [side * 0.235, 0.457, -0.19], [side * 0.16, 0.476, -0.29]], 0.044, 'forearm')
@@ -7204,7 +7214,10 @@ function* vitoSteps(H, skin) {
     return p
   }))
   const beard = rows(0), lining = rows(0.012)
-  strands(add({ g: ['surface', [...beard, ...lining.slice().reverse(), beard[0]]], m: 'hair', tag: 'beard' }), N, r => r < 7 ? r / 6 : r > 12 ? 0 : (13 - r) / 6,
+  yield
+  const beardNode = add({ g: ['surface', [...beard, ...lining.slice().reverse(), beard[0]]], m: 'hair', tag: 'beard' })
+  yield
+  strands(beardNode, N, r => r < 7 ? r / 6 : r > 12 ? 0 : (13 - r) / 6,
     (r, i) => !r || r > 12 ? THREE.MathUtils.smoothstep(Math.abs(i / (N - 1) * 2 - 1), 0.25, 0.5) : 0)
   yield
   const scalp = (a, y, lift) => { const k = Math.sqrt(Math.max(0, 1 - ((y - 0.803) / 0.1252) ** 2)) * (1 + lift)
@@ -7224,6 +7237,7 @@ function* vitoSteps(H, skin) {
     lock([[side * 0.025, 0.885, -0.122], [side * 0.054, 0.893, -0.132], [side * 0.081, 0.882, -0.123]], [0.006, 0.005, 0.002])
     lock([[side * 0.009, 0.792, -0.176], [side * 0.034, 0.784, -0.186],
       [side * 0.061, 0.764, -0.173]], [0.016, 0.013, 0.002], 'moustache')
+    yield
   }
   box('glass', [0.019, 0.01, 0.009], [0, 0.847, -0.164], 0.002)
   orb('skin', 0.022, [0, 0.808, -0.178], [0.85, 1.15, 1.1], 'nose')
@@ -7277,7 +7291,9 @@ function* vitoSteps(H, skin) {
   add({ g: ['cylinder', 0.035, 0.035, 0.008, 12], m: 'ivory', p: [0.06, 0.538, -0.37] })
   tube('ivory', [[0.06, 0.54, -0.37], [0.06, 0.595, -0.37], [0.087, 0.61, -0.37]], 0.004)
   add({ mirror: true, g: ['sphere', 0.027], m: 'basket', p: [0.075, 0.252, -0.37], s: [1.15, 0.88, 0.7], tag: 'headlight' })
+  yield
   scooter(front)
+  yield
   return normaliseBuilt(K.root, H)
 }
 
@@ -10838,11 +10854,11 @@ function pickArt(i, cv) {
   if (P && !P.left) cv.getContext('2d').drawImage(P.c, 0, 0)
   else pickHold(cv, i)
 }
-// the rows the room builds anyway first (the pick, its players), then with the JIT on the rest; once one portrait has taken
-// over PICK_SLOW ms to build (a slow machine), the rest an idle callback's worth at a time, PICK_LAZY ms apart
+// the rows the room builds anyway first (the pick, its players), then the rest; once one portrait has taken over PICK_SLOW ms
+// to build with the JIT on (a slow machine), the rest an idle callback's worth at a time, PICK_LAZY ms apart
 const pickFree = () => new Set([myCid, ...[...roster].filter(([id]) => id < BOT_ID0).map(([, p]) => p.cid)].map(pickEntry))
 function pickPlan() {
-  const free = pickFree(), want = [...free, ...jit.off ? [] : pickAll().filter(i => !free.has(i))]
+  const free = pickFree(), want = [...free, ...pickAll().filter(i => !free.has(i))]
   pickDue.length = 0; pickSpent = 0
   for (const i of want) {
     if (pickArts.get(i)?.left === 0) continue
@@ -10853,7 +10869,7 @@ function pickPlan() {
   }
   pickSoon()
 }
-const pickLazy = () => pickSlow && !pickFree().has(pickDue[0][0])
+const pickLazy = () => pickSlow && !jit.off && !pickFree().has(pickDue[0][0])
 const pickReady = cid => { const M = modelFor(PICK_SHOT, cid); return M.kind === 'built' || !!M.proto }
 function pickSoon() {
   if (pickIdle || !pickDue.length) return
@@ -10872,7 +10888,7 @@ function pickStep(id, cid) {
   if (avatars.get(id)?.cid === cid) return true
   const t0 = now(), B = pickBodies.get(id)?.cid === cid ? pickBodies.get(id) : pickBodies.set(id, { cid }).get(id)
   if (!B.done) B.done = bodyStep(B, modelFor(id, cid), id, cid, GAME.looks.key(id, cid), () => now() - t0 < PREP_MS)
-  else { avatarFor(id, cid, undefined, B.inst).removeFromParent(); pickBodies.delete(id) }
+  else { const r = (B.av ||= avatarSteps(id, cid, undefined, B.inst)).next(); if (r.done) { r.value.removeFromParent(); pickBodies.delete(id) } }
   return false
 }
 function pickSlice() {
