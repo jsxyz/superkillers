@@ -9464,7 +9464,19 @@ function wheelOut(pos, quat, r) {
   T[0].compose(T[1].set(...pos), T[2].set(...quat), T[4].set(r, r, r))   // its own scale: T[3] stays every other object's unit
   wheelBucket[0].setMatrixAt(wheelN++, T[0])
 }
-const objMesh = [], objPool = []
+const objMesh = [], objPool = [], objOf = new Map()
+// a hull view stays with its object while that object is listed, so the list's order never re-dresses one; an object
+// listed again takes back its own view while that is free
+function hullView(key, held, make) {
+  let m = objOf.get(key)
+  if (!m) {
+    m = objPool.find(v => !held.has(v) && v.userData.oid === key) || objPool.find(v => !held.has(v))
+    if (!m) objPool.push(m = make())
+    objOf.set(key, m); held.add(m)
+  }
+  m.visible = true
+  return m
+}
 // a hull row's vertices off a clone, without its wheels and 'wells'
 function objHullPoints(K) {
   const k = OBJECTS.indexOf(K), root = K.drive ? buildProp('object', k) : propModel('object', k).clone(), seen = new Map(), v = new THREE.Vector3()
@@ -9498,10 +9510,13 @@ function drawObjects(list, wheelsAt = () => null) {
   const n = OBJECTS.map(() => 0)
   for (const m of objPool) m.visible = false
   wheelN = 0
+  const listed = new Set(list.map(o => o.id ?? o))          // an entry without an id is its own key
+  for (const key of objOf.keys()) if (!listed.has(key)) objOf.delete(key)
+  const held = new Set(objOf.values())
   for (const o of list) {
     const K = OBJECTS[o.k]
     if (K && K.shape === 'hull') {
-      const H = hullOf(K), m = H && poolMesh(objPool, objGroup, () => Object.assign(new THREE.Group(), { matrixAutoUpdate: false }))
+      const H = hullOf(K), m = H && hullView(o.id ?? o, held, () => Object.assign(new THREE.Group(), { matrixAutoUpdate: false }))
       if (!m) continue
       if (m.parent !== objGroup) objGroup.add(m)
       const paint = K.drive ? variantColor(K, o.seed, o.id) : undefined
