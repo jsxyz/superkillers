@@ -4368,7 +4368,7 @@ function craterClear() {
 
 // host only: guests get bodies from tracks
 function spawnObjects() {
-  objTracks.clear(); objSent.clear(); objHeld.clear(); objSeats.clear(); objFirst.clear(); objVel = null; vehHp = null; wheelState.clear()
+  objTracks.clear(); objSent.clear(); objHeld.clear(); objSeats.clear(); objFirst.clear(); plannedCells.clear(); objVel = null; vehHp = null; wheelState.clear()
   if (!world) return
   for (const o of objs) o.riders?.forEach((id, i) => { const c = id === undefined ? null : id === predicted?.id ? predicted : players.get(id); if (c) leave(c, o, i) })
   objs.forEach(dropObject)
@@ -4393,6 +4393,14 @@ let objSeeds = []
 const seedOf = id => objSeeds[id] ?? parked.get(objFirst.get(id)) ?? 0
 const carHull = new Map()
 const objFirst = new Map()          // guest: first-seen spot of an unseeded object
+// guest: the seeds of a chunk's parked spots from its plan, before that chunk grows here; each chunk once a level
+const plannedCells = new Set()
+function planSpots(x, z) {
+  const G = LV.grow, ci = Math.floor((x + ARENA) / 96), cj = Math.floor((z + ARENA) / 96), cell = ci + ' ' + cj
+  if (!G || !(ci >= 0 && ci < G.S && cj >= 0 && cj < G.S) || grown.has(cell) || plannedCells.has(cell)) return
+  plannedCells.add(cell)
+  for (const [sx, sz, , , seed] of cityChunk(G.seed, G.S, ci, cj, undefined, undefined, undefined, G).spot[3]) parked.set(Math.round(2 * sx) + ' ' + Math.round(2 * sz), seed)
+}
 function addObject(k, at, id, yaw = 0) {
   const K = OBJECTS[k], H = hullOf(K)
   // convex: a triangle mesh pops capsules
@@ -13152,6 +13160,7 @@ function takeObjects(o, t) {
     if (!OBJECTS[k] || !Number.isInteger(id) || id < 0 || id >= OBJ_MAX) continue
     const was = objTracks.get(id)?.at(-1).p[0], V = was !== k && vehicleOf(OBJECTS[was])
     if (was === undefined && objSeeds[id] === undefined) objFirst.set(id, Math.round(2 * x) + ' ' + Math.round(2 * z))
+    if (was === undefined && objFirst.has(id) && !parked.has(objFirst.get(id))) planSpots(x, z)
     if (V && OBJECTS[k].name === V.wreck) GAME.audio.play('boom', { x, y, z }, 'world', 1, 0, 0, OBJECTS[was].name)
     track(objTracks, id, OBJ_MAX, t, [k, clamp(x, -ARENA, ARENA), clamp(y, VOID_Y, ARENA),
       clamp(z, -ARENA, ARENA), ...(n > 1e-9 && n < Infinity ? q.map(v => v / n) : [0, 0, 0, 1])])
