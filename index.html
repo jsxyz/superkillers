@@ -4777,7 +4777,7 @@ function driveStep(c, inp) {
     o.car.getWheelInfo(k).set_m_frictionSlip(slipOf(W, front) * (front ? 1 : 1 - hand * (1 - drive(V, 'handGrip'))))
     if (front) o.car.setSteeringValue(o.steer, k)
   })
-  o.body.activate()
+  if (W.at.some((_, k) => o.car.getWheelInfo(k).get_m_raycastInfo().get_m_isInContact())) o.body.activate()      // its input moves it only through a wheel on something
 }
 
 // Bullet sweeps c's capsule from (x, y, z) to (tx, ty, tz): every body of mask it meets, and how far along
@@ -13905,6 +13905,7 @@ function reconcile(a) {
     if (o.V) seatFrom(o)
     o.was = [o.x, o.y, o.z, o.q, o.off, o.offQ]
     putObject(o, auth[i])
+    if (objVel?.has(o.id) && o.riders?.includes(predicted.id) && auth[i].slice(7).every(v => v === 0)) o.body.setActivationState(CF_SLEEPING)      // the host's is asleep
     if (A.getPointer(o.body.getBroadphaseHandle())) world.updateSingleAabb(o.body)
     const sh = predAt?.sh?.find(e => e[0] === o.id)
     if (sh) { o.steer = sh[1]; o.hand = sh[2] }
