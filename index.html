@@ -8183,6 +8183,7 @@ function rebuildWorld() {
   prepareScars()
   // the new level takes over the old one's programs before they go
   if (!renderHeadless && camera && renderer.compile) renderer.compile(worldGroup, camera, scene)
+  warmEffects()
   for (const m of materials) m.dispose()
 }
 function drawBoxes(list, city, clip = []) {
@@ -9478,11 +9479,12 @@ let objGroup = null, objTmp = null
 // one, or one past the cap, draws its model whole, wheels merged in: one draw, culled as itself.
 let wheelBucket = null, wheelN = 0
 const WHEEL_CAP = OBJ_MAX * 6
+const wheelPart = (w, n) => { const m = new THREE.InstancedMesh(kitGeometry(w.g).clone().rotateZ(Math.PI / 2),
+  meshKit({ [w.m]: PROP_PALETTE[w.m] }).materials[w.m], n)
+  m.castShadow = m.receiveShadow = true; return m }
 function wheelOut(pos, quat, r) {
   if (!wheelBucket) {
-    wheelBucket = WHEEL_PARTS.map(w => { const m = new THREE.InstancedMesh(kitGeometry(w.g).clone().rotateZ(Math.PI / 2),
-      meshKit({ [w.m]: PROP_PALETTE[w.m] }).materials[w.m], WHEEL_CAP)
-      m.count = 0; m.castShadow = m.receiveShadow = true; objGroup.add(m); return m })
+    wheelBucket = WHEEL_PARTS.map(w => wheelPart(w, WHEEL_CAP)); objGroup.add(...wheelBucket)
     wheelBucket[1].instanceMatrix = wheelBucket[0].instanceMatrix          // tyre and hub stand the same: one store
   }
   const T = objTmp
@@ -10088,15 +10090,14 @@ function strikeWeight(arc, t) {
   if (hit) { hit.holdTo = hold; hit.flashAt = t }
   return hit
 }
+const struckMesh = () => { const g = new THREE.RingGeometry(0.001, 1, 16, 3), p = g.attributes.position
+  g.setAttribute('color', new THREE.Float32BufferAttribute(Array.from({ length: p.count }, (_, i) => [1, 1, 1, (1 - Math.hypot(p.getX(i), p.getY(i))) ** 2]).flat(), 4))
+  return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, ...FX, blending: THREE.AdditiveBlending, toneMapped: false })) }
 // the struck one glows: a disc facing the camera just in front of the body, its alpha falling off to nothing at the rim
 function drawStruck(id, t) {
   const a = avatars.get(id), age = t - (a?.flashAt ?? -Infinity)
   if (!(age < FLASH_MS) || !a.mesh.visible) return
-  const m = poolMesh(flashPool, avatarGroup, () => {
-    const g = new THREE.RingGeometry(0.001, 1, 16, 3), p = g.attributes.position
-    g.setAttribute('color', new THREE.Float32BufferAttribute(Array.from({ length: p.count }, (_, i) => [1, 1, 1, (1 - Math.hypot(p.getX(i), p.getY(i))) ** 2]).flat(), 4))
-    return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, ...FX, blending: THREE.AdditiveBlending, toneMapped: false }))
-  }), C = a.spec
+  const m = poolMesh(flashPool, avatarGroup, struckMesh), C = a.spec
   if (m.parent !== avatarGroup) avatarGroup.add(m)
   frontOf(m, a)
   m.scale.set(C.r + 0.35, C.h + C.r + 0.35, 1)
@@ -10529,6 +10530,39 @@ const effectTypes = ['box', 'orb', 'line', 'glow'], effectSources = [boxPool, or
 const groupUsed = group => { for (const list of group) if (list.used) return true; return false }
 const spareEffect = kind => { for (const m of effectPool) if (!m.visible && m.fxKind === kind) return m }
 const byFxDepth = (a, b) => a.fxDepth - b.fxDepth
+function effectBatch(kind, geometry, capacity) {
+  const line = kind === 'line', material = line ? new THREE.LineBasicMaterial({ vertexColors: true, ...FX })
+    : new THREE.MeshBasicMaterial({ vertexColors: true, ...FX, ...kind === 'glow' && GLOW() })
+  const g = line ? new THREE.BufferGeometry() : geometry.clone()
+  let m
+  if (line) {
+    g.setAttribute('position', dyn(capacity * 6, 3))
+    g.setAttribute('color', dyn(capacity * 8, 4))
+    g.boundingSphere = new THREE.Sphere()
+    m = new THREE.LineSegments(g, material)
+  } else {
+    g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 4).fill(1), 4))
+    g.setAttribute('instanceOpacity', dyn(capacity, 1, THREE.InstancedBufferAttribute))
+    material.onBeforeCompile = effectOpacity
+    if (kind === 'glow') { g.setAttribute('instanceCell', dyn(capacity * 2, 2, THREE.InstancedBufferAttribute)); material.onBeforeCompile = glowCells }
+    m = new THREE.InstancedMesh(g, material, capacity)
+    m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.instanceColor = dyn(capacity * 3, 3, THREE.InstancedBufferAttribute)
+  }
+  m.frustumCulled = false
+  m.fx = { box: new THREE.Box3(), point: new THREE.Vector3() }
+  m.fxKind = kind; m.capacity = capacity
+  return m
+}
+// a mesh for each effect program play would link the first time it drew it, built as play builds it: each level and each shadow
+// change compiles them, then draws them a frame under the floor for their shadows' depth programs
+let fxWarmed = null
+function warmEffects() {
+  if (renderHeadless || !camera || !scene.fog || !renderer.compileAsync) return
+  renderer.compileAsync(fxWarmed ||= new THREE.Group().add(fxRibbon(3, [0, 1, 2], { blending: THREE.AdditiveBlending }),
+    fxRibbon(3, [0, 1, 2], { fog: false, blending: THREE.AdditiveBlending }), fxSolid(new THREE.PlaneGeometry()), struckMesh(),
+    ...effectTypes.map(k => effectBatch(k, new THREE.PlaneGeometry(), 1)), ...WHEEL_PARTS.map(w => wheelPart(w, 1))), camera, scene)
+    .then(g => { g.position.y = -30; g.traverse(n => { n.frustumCulled = false }); g.children[0].onAfterRender = () => g.removeFromParent(); avatarGroup.add(g) }).catch(() => {})
+}
 function batchEffects() {
   for (const group of effectGroups.values()) for (const list of group) list.used = 0
   for (let type = 0; type < effectTypes.length; type++) for (const m of effectSources[type]) {
@@ -10565,28 +10599,7 @@ function batchEffects() {
         effectPool.splice(effectPool.indexOf(m), 1)
         m = null
       }
-      if (!m) {
-        const material = line ? new THREE.LineBasicMaterial({ vertexColors: true, ...FX })
-          : new THREE.MeshBasicMaterial({ vertexColors: true, ...FX, ...kind === 'glow' && GLOW() })
-        const g = line ? new THREE.BufferGeometry() : list[0].geometry.clone()
-        if (line) {
-          g.setAttribute('position', dyn(capacity * 6, 3))
-          g.setAttribute('color', dyn(capacity * 8, 4))
-          g.boundingSphere = new THREE.Sphere()
-          m = new THREE.LineSegments(g, material)
-        } else {
-          g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 4).fill(1), 4))
-          g.setAttribute('instanceOpacity', dyn(capacity, 1, THREE.InstancedBufferAttribute))
-          material.onBeforeCompile = effectOpacity
-          if (kind === 'glow') { g.setAttribute('instanceCell', dyn(capacity * 2, 2, THREE.InstancedBufferAttribute)); material.onBeforeCompile = glowCells }
-          m = new THREE.InstancedMesh(g, material, capacity)
-          m.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
-        }
-        m.frustumCulled = false
-        m.fx = { box: new THREE.Box3(), point: new THREE.Vector3() }
-        m.fxKind = kind; m.capacity = capacity
-        effectPool.push(m); tracerGroup.add(m)
-      }
+      if (!m) { m = effectBatch(kind, list[0].geometry, capacity); effectPool.push(m); tracerGroup.add(m) }
       const scratch = m.fx, v = scratch.point
       if (camera) {
         camera.updateWorldMatrix(true, false)
@@ -10767,7 +10780,7 @@ function drawWebs(me, others) {
 function drawTracers(t, me, others, viewId) {
   if (camera) camera.updateMatrixWorld()
   if (fxQ) { fxQ.R.update(fxQ.t === null ? 0 : Math.min(0.1, Math.max(0, t - fxQ.t) / 1000)); fxQ.t = t }
-  else if (renderer && !renderHeadless && typeof self !== 'undefined') fxQLoad ||= (self.THREE = THREE, geoLoad(FX_LIBS)).then(env => { fxQ = particlesOf(env.Q) }, () => {})
+  else if (renderer && !renderHeadless && typeof self !== 'undefined') fxQLoad ||= (self.THREE = THREE, geoLoad(FX_LIBS)).then(env => { fxQ = particlesOf(env.Q); renderer.compileAsync(fxQ.R, camera, scene).catch(() => {}) }, () => {})
   drawScars()
   drawTornado(t)
   for (const pool of fxPools) for (const m of pool) { m.visible = false; m.fxActive = false }
@@ -11539,6 +11552,7 @@ function applySettings() {
     renderer.shadowMap.enabled = want
     if (sunLight) sunLight.castShadow = want
     scene.traverse(o => { if (o.material) o.material.needsUpdate = true })
+    warmEffects()
   }
   if (sunLight && sunLight.shadow.mapSize.width !== Q.shadowMap) {
     sunLight.shadow.mapSize.set(Q.shadowMap, Q.shadowMap)
