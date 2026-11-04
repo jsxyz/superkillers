@@ -8836,7 +8836,15 @@ function drawHealth(id, hp) {
 }
 // sprint lightning: strands at [height, side] × stature; bolts off the limbs, re-struck every RUN_FLICK ms
 const RUN_STRANDS = [[-0.42, 0.1], [-0.2, -0.13], [0.02, 0.14], [0.22, -0.1], [0.4, 0.07]], RUN_FLICK = 60, ORANGE = [1, 0.55, 0.05]
+// a dash row's mark: halfway from its speed to its dash's
+const dashV = a => a.dashV ??= (G => G?.kind === 'dash' ? (a.spec.speed + G.speed) / 2 : Infinity)(a.spec.far && GUNS[gunNamed(a.spec.far)])
+// lit: fast and running, or in the air off a lit run or at a dash's speed (a knock or a plain fall never lights it)
+function runLit(a, want) {
+  const fast = a.v > 1.5 * (a.spec.run ?? a.spec.speed * RUN), D = dashV(a)
+  return a.lit = fast && (want === 1 || (want === 2 || want === 3) && (!!a.lit || a.stepV > D))
+}
 function drawRunTrail(a, moving, t, id = 0, ticked) {
+  if (a.airLit) moving = true
   let trail = a.runTrail
   const early = a.runAt
   a.runAt = null
@@ -8854,7 +8862,7 @@ function drawRunTrail(a, moving, t, id = 0, ticked) {
   }
   const { mesh, points } = trail, p = a.mesh.position, g = mesh.geometry, H = 2 * (a.spec.h + a.spec.r)
   // dashing: a step drawn faster than halfway from its speed to its dash row's, in the last 150 ms (a frame with no new tick steps 0)
-  const D = a.dashV ??= (G => G?.kind === 'dash' ? (a.spec.speed + G.speed) / 2 : Infinity)(a.spec.far && GUNS[gunNamed(a.spec.far)])
+  const D = dashV(a)
   if (a.stepV > D) a.dashSeen = t
   const on = moving && (t - (a.dashSeen ?? -1e9) < 150 || a.dashOn && a.v > D)
   if (on && !a.dashOn) a.dashAt = t
@@ -9214,9 +9222,10 @@ function setAnim(id, want, dt, t, hold, still, ticks, shift) {
     a.stepD = (a.stepD || 0) + (d < 240 * Math.max(h, TICK) ? d : 0); a.stepH = (a.stepH || 0) + h      // drawn speed over two ticks or more
     if (a.stepH >= 2 * TICK) { a.stepV = a.stepD / a.stepH; a.stepD = a.stepH = 0 }
     ;(a.at ||= new THREE.Vector3()).set(x, y, z)
-    if (ticks && a.spec.trail) (a.runAt ||= []).push([x, y, z, tickAt - (n - 1 - i) * TICK * 1000, (s ? s.anim : want) === 1 && a.v > 1.5 * (a.spec.run ?? a.spec.speed * RUN)])
+    if (ticks && a.spec.trail) (a.runAt ||= []).push([x, y, z, tickAt - (n - 1 - i) * TICK * 1000, runLit(a, s ? s.anim : want)])
   }
   if (!n) a.at?.set(m.x + sh[0], m.y + sh[1], m.z + sh[2])
+  if (a.spec.trail) a.airLit = runLit(a, want) && want !== 1
   if (a.spec.trail) drawRunTrail(a, want === 1 && a.v > 1.5 * (a.spec.run ?? a.spec.speed * RUN), ticks ? drawnT() : t, id, !!ticks)
   if (a.spec.sparks !== undefined) throwSparks(a, want === 1, dt, t)
   if (still) return
