@@ -2675,7 +2675,7 @@ function runUpWall(c, inp, spd, wx, wz, dt) {
     const run = GAME.participantOf(c).run ?? c.speed * RUN
     const m = Math.hypot(wx, wz)
     if (!inp.sprint || c.knT > 0 || c.grounded && inp.j || m < 0.5 || spd * m < W.at * run) return null
-    const n = faceTouched(c)
+    const n = c.faceAck !== undefined ? (c.freshBody = false, c.faceAck) : faceTouched(c)      // a replay's first tick: what its live tick read
     if (!n || n[0] * wx + n[1] * wz >= 0) return null
     if (!faceAhead(c.x, c.y - c.h, c.z, -n[0], -n[1], reach) || !faceAhead(c.x, c.y + c.h, c.z, -n[0], -n[1], reach)) return null
     const wy = Math.atan2(wallHit[3], wallHit[5]), V = surfV(Math.sin(wy), 0, Math.cos(wy), wx, wz, spd)
@@ -14875,11 +14875,11 @@ const OWN_PREDICTION = (F => {
   const S = GAME.schema.step, fuelEps = S.fuel + S.fuel / 10
   if (REWIND_EPS < Math.hypot(S.x, S.y, S.z)) throw Error('REWIND_EPS is under the wire step')
   return {
-    take: (c, e = {}) => { e.x = c.x; e.y = c.y; e.z = c.z; e.fuel = c.fuel; e.jl = !!c.jLock; e.fl = !!c.flying; e.sp = c.springT || 0; e.ft = !!c.flyTurn; e.kn = [c.knT || 0, c.knx || 0, c.knz || 0, c.knUp || 0]; e.wh = !!c.wallHeld; e.sl = !!c.slide; e.web = c.web || 0; e.rope = c.tie && [c.web, c.tie.want]; e.vh = c.vehT > 0 && [c.vehT, c.vehO.id, ...c.vehN]
+    take: (c, e = {}) => { e.x = c.x; e.y = c.y; e.z = c.z; e.fuel = c.fuel; e.jl = !!c.jLock; e.fl = !!c.flying; e.sp = c.springT || 0; e.ft = !!c.flyTurn; e.kn = [c.knT || 0, c.knx || 0, c.knz || 0, c.knUp || 0]; e.wh = !!c.wallHeld; c.faceAck = undefined; const f = c.freshBody; c.freshBody = false; e.fc = c.body ? faceTouched(c) : undefined; c.freshBody = f; e.sl = !!c.slide; e.web = c.web || 0; e.rope = c.tie && [c.web, c.tie.want]; e.vh = c.vehT > 0 && [c.vehT, c.vehO.id, ...c.vehN]
       const bh = c.body?.getBroadphaseHandle(); e.dsh = [!!c.dashOn, c.dashRun || 0, c.dashHit && [...c.dashHit], bh && A.getPointer(bh) ? bh.get_m_collisionFilterMask() : null]; return e },
     err: (e, a) => Math.hypot(e.x - a[F.x], e.y - a[F.y], e.z - a[F.z]),
     agrees: (e, a, web) => (e.web || 0) === web && Math.abs(e.fuel - a[F.fuel]) <= fuelEps && e.jl === !!a[F.jLock],
-    carry: (e, c) => { c.flying = e.fl; c.springT = e.sp; c.flyTurn = e.ft; [c.knT, c.knx, c.knz, c.knUp] = e.kn; c.wallHeld = e.wh; c.slide = e.sl; c.rope = e.rope; const o = e.vh && objs.find(o => o.id === e.vh[1]); c.vehT = o ? e.vh[0] : 0; if (o) { c.vehO = o; c.vehN = e.vh.slice(2) }
+    carry: (e, c) => { c.faceAck = reconcileErr < c.r ? e.fc : undefined; c.flying = e.fl; c.springT = e.sp; c.flyTurn = e.ft; [c.knT, c.knx, c.knz, c.knUp] = e.kn; c.wallHeld = e.wh; c.slide = e.sl; c.rope = e.rope; const o = e.vh && objs.find(o => o.id === e.vh[1]); c.vehT = o ? e.vh[0] : 0; if (o) { c.vehO = o; c.vehN = e.vh.slice(2) }
       c.dashOn = e.dsh[0]; c.dashRun = e.dsh[1]; c.dashMask = e.dsh[3]; c.dashHit = e.dsh[2] && new Set(e.dsh[2]) },
     // re-tying the web its own prediction had, it keeps that prediction's reel target (off the wire); the length is the restored distance
     restore: (c, a, web) => { const [x, y, z, vx, vy, vz] = ownExact || [a[F.x], a[F.y], a[F.z], a[F.vx], a[F.vy], a[F.vz]]; restoreChar(c, x, y, z, vx, vy, vz, a[F.fuel])
