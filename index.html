@@ -8767,6 +8767,8 @@ function ribbons(lines, w = 0.04) {
   return g
 }
 // `copies` on a golden-angle spiral round the capsule; one instanced draw per recipe
+const lookMesh = (L, n) => Object.assign(new THREE.InstancedMesh(L.mesh(), new THREE.MeshLambertMaterial({ side: THREE.DoubleSide }), n),
+  { frustumCulled: false, count: 0, instanceColor: dyn(n * 3, 3, THREE.InstancedBufferAttribute) })
 const EFFECT_LOOKS = { web: { copies: 10, size: 1.2, mesh: () => ribbons(webLines()) } }, lookMeshes = {}
 let lookT = null
 function drawLooks() {
@@ -8775,8 +8777,7 @@ function drawLooks() {
     const P = a.look, L = P && EFFECT_LOOKS[P.look], { h, r } = a.spec
     if (!L || !a.mesh.visible) continue
     const { O, u, c } = lookT ||= { O: new THREE.Object3D(), u: new THREE.Vector3(), c: new THREE.Color() }
-    const m = lookMeshes[P.look] ||= Object.assign(new THREE.InstancedMesh(L.mesh(), new THREE.MeshLambertMaterial({ side: THREE.DoubleSide }),
-      16 * L.copies), { frustumCulled: false, count: 0 })
+    const m = lookMeshes[P.look] ||= lookMesh(L, 16 * L.copies)
     if (!m.parent) avatarGroup.add(m)
     for (let k = 0; k < L.copies && m.count < m.instanceMatrix.count; k++) {
       const y = 1 - 2 * (k + 0.5) / L.copies, e = Math.sqrt(1 - y * y)
@@ -9672,6 +9673,7 @@ const geoSource = () => ['const genRng = ' + genRng, geoLoad, craterCutter, crat
 // CRATER_CUT: cutter lathe (rings, segments, rim noise, lip), rim [r, y] profile, colour
 const CRATER_CUT = { seg: 22, rings: 7, jag: 0.18, lip: 0.6, rim: [[0.9, -0.12], [1.02, 0.2], [1.1, -0.04], [0.9, -0.12]], color: 0x7a6d5c }
 let craterMat
+const craterLook = () => new THREE.MeshStandardMaterial({ color: CRATER_CUT.color, vertexColors: true, roughness: 1, flatShading: true })
 function craterWork(R, craters, done) {
   const slots = [], { a0, a1, b0, b1 } = R.rect
   worldGroup.traverse(m => { const g = m.geometry, bs = g?.boundingSphere || g?.computeBoundingSphere() || g?.boundingSphere
@@ -9696,7 +9698,7 @@ function craterWork(R, craters, done) {
           g.setAttribute(k, dyn(o, s)) }
         g.setDrawRange(0, keep * 3); m.userData.cut = true
         groundAdd(m, { p: data.parts[i][0].map((v, k) => k % 3 === 1 ? v + R.y : v), uv: data.parts[i][1] }) })
-      const S = data.surface, tris = [], mesh = new THREE.Mesh(new THREE.BufferGeometry(), craterMat ||= new THREE.MeshStandardMaterial({ color: CRATER_CUT.color, vertexColors: true, roughness: 1, flatShading: true }))
+      const S = data.surface, tris = [], mesh = new THREE.Mesh(new THREE.BufferGeometry(), craterMat ||= craterLook())
       for (let i = 0; i < S.length; i += 9) tris.push([0, 3, 6].map(k => [S[i + k], S[i + k + 1] + R.y, S[i + k + 2]]))
       mesh.geometry.setAttribute('position', new THREE.BufferAttribute(Float32Array.from([...data.bowl, ...data.rims]), 3))
       mesh.geometry.setAttribute('color', new THREE.BufferAttribute(Float32Array.from([...data.shade, ...Array(data.rims.length).fill(1.3)]), 3))
@@ -10428,6 +10430,25 @@ for (let i = 0; i < 48; i++) {
   snowTurns.set([Math.cos(a), Math.sin(a), Math.cos(b), Math.sin(b)], i * 4)
 }
 let snowMesh = null
+function snowOf(n) {
+  const g = new THREE.PlaneGeometry(1, 1), data = new Uint8Array(32 * 32 * 4)
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
+    const k = (y * 32 + x) * 4
+    data[k] = data[k + 1] = data[k + 2] = 255
+    data[k + 3] = 255 * Math.max(0, 1 - Math.hypot(x - 15.5, y - 15.5) / 16) ** 2
+  }
+  const map = new THREE.DataTexture(data, 32, 32)
+  map.magFilter = map.minFilter = THREE.LinearFilter; map.needsUpdate = true
+  const m = new THREE.MeshBasicMaterial({ map, vertexColors: true, ...FX })
+  g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(16).fill(1), 4))
+  g.setAttribute('instanceOpacity', dyn(n, 1, THREE.InstancedBufferAttribute))
+  m.onBeforeCompile = effectOpacity
+  const s = new THREE.InstancedMesh(g, m, n)
+  s.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+  s.instanceColor = dyn(n * 3, 3, THREE.InstancedBufferAttribute)
+  s.frustumCulled = false; s.boundingSphere = new THREE.Sphere()
+  return s
+}
 function drawSnow(t, viewId) {
   snowRows.length = 0
   let aims, fresh = 0
@@ -10448,24 +10469,7 @@ function drawSnow(t, viewId) {
   if (aims) for (const aim of aims.values()) aim.normalize()
   if (snowMesh) { snowMesh.visible = false; snowMesh.count = 0 }
   if (!snowRows.length) return
-  if (!snowMesh) {
-    const g = new THREE.PlaneGeometry(1, 1), data = new Uint8Array(32 * 32 * 4)
-    for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) {
-      const k = (y * 32 + x) * 4
-      data[k] = data[k + 1] = data[k + 2] = 255
-      data[k + 3] = 255 * Math.max(0, 1 - Math.hypot(x - 15.5, y - 15.5) / 16) ** 2
-    }
-    const map = new THREE.DataTexture(data, 32, 32)
-    map.magFilter = map.minFilter = THREE.LinearFilter; map.needsUpdate = true
-    const m = new THREE.MeshBasicMaterial({ map, vertexColors: true, ...FX })
-    g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(16).fill(1), 4))
-    g.setAttribute('instanceOpacity', dyn(SNOW_MAX, 1, THREE.InstancedBufferAttribute))
-    m.onBeforeCompile = effectOpacity
-    snowMesh = new THREE.InstancedMesh(g, m, SNOW_MAX)
-    snowMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
-    snowMesh.instanceColor = dyn(SNOW_MAX * 3, 3, THREE.InstancedBufferAttribute)
-    snowMesh.frustumCulled = false; snowMesh.boundingSphere = new THREE.Sphere()
-  }
+  snowMesh ||= snowOf(SNOW_MAX)
   snowMesh.count = 0
   if (snowMesh.parent !== tracerGroup) tracerGroup.add(snowMesh)
   const matrix = snowMesh.instanceMatrix.array, colors = snowMesh.instanceColor.array, alpha = snowMesh.geometry.attributes.instanceOpacity
@@ -10556,11 +10560,13 @@ function effectBatch(kind, geometry, capacity) {
 // a mesh for each effect program play would link the first time it drew it, built as play builds it: each level and each shadow
 // change compiles them, then draws them a frame under the floor for their shadows' depth programs
 let fxWarmed = null
+const fxBare = m => new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', dyn(9, 3)), m)
 function warmEffects() {
   if (renderHeadless || !camera || !scene.fog || !renderer.compileAsync) return
   renderer.compileAsync(fxWarmed ||= new THREE.Group().add(fxRibbon(3, [0, 1, 2], { blending: THREE.AdditiveBlending }),
     fxRibbon(3, [0, 1, 2], { fog: false, blending: THREE.AdditiveBlending }), fxSolid(new THREE.PlaneGeometry()), struckMesh(),
-    ...effectTypes.map(k => effectBatch(k, new THREE.PlaneGeometry(), 1)), ...WHEEL_PARTS.map(w => wheelPart(w, 1))), camera, scene)
+    ...effectTypes.map(k => effectBatch(k, new THREE.PlaneGeometry(), 1)), ...WHEEL_PARTS.map(w => wheelPart(w, 1)), snowOf(1),
+    ...Object.values(EFFECT_LOOKS).map(L => lookMesh(L, 1)), fxBare(tornadoEdge()), fxBare(craterLook())), camera, scene)
     .then(g => { g.position.y = -30; g.traverse(n => { n.frustumCulled = false }); g.children[0].onAfterRender = () => g.removeFromParent(); avatarGroup.add(g) }).catch(() => {})
 }
 function batchEffects() {
@@ -10640,7 +10646,8 @@ function batchEffects() {
   }
 }
 
-const tornadoViews = []
+const tornadoViews = [], tornadoEdge = () => new THREE.MeshBasicMaterial({ color: 0xe8b56c, transparent: true, opacity: 0.65, depthWrite: false,
+  side: THREE.DoubleSide, forceSinglePass: true })
 function tornadoGeometry(coarse) {
   const rings = coarse ? 12 : 24, sides = coarse ? 20 : 40, profile = []
   for (let i = 0; i <= rings; i++) {
@@ -10745,8 +10752,7 @@ function drawTornado(t) {
       const g = new THREE.BufferGeometry()
       g.setAttribute('position', dyn(2048 * 3, 3))
       g.setDrawRange(0, 0); g.boundingSphere = new THREE.Sphere()
-      const boundary = new THREE.Mesh(g, shared ? shared.boundary.material : new THREE.MeshBasicMaterial({ color: 0xe8b56c, transparent: true,
-        opacity: 0.65, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true }))
+      const boundary = new THREE.Mesh(g, shared ? shared.boundary.material : tornadoEdge())
       root.add(funnel, boundary)
       v = { root, funnel, boundary, fine, coarse, clipA: Array(24).fill(0), clipB: Array(24).fill(0),
         circle: shared ? shared.circle : Array.from({ length: 64 }, (_, j) => [Math.cos(j * Math.PI / 32), Math.sin(j * Math.PI / 32)]) }
