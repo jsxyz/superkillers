@@ -13879,7 +13879,8 @@ function reconcile(a) {
   predicted.ack = ack
   predicted.ackTurn = [a[F.anim] === 4 && !!GAME.participantOf(predicted)?.wallRun, +a[F.yaw] || 0,
     a[F.anim] === 4 && !GAME.participantOf(predicted)?.wallRun && !!GAME.participantOf(predicted)?.climb && ceilAbove(a[F.x], a[F.y], a[F.z], predicted.r),
-    a[F.anim] === 4 && GAME.participantOf(predicted)?.wallRun ? wallYawAt(a[F.x], a[F.y], a[F.z], predicted.h + predicted.r + 0.4) : undefined]
+    a[F.anim] === 4 && GAME.participantOf(predicted)?.wallRun ? pending.find(e => e.seq === ack)?.wy ?? wallYawAt(a[F.x], a[F.y], a[F.z], predicted.h + predicted.r + 0.4) ??
+      wallYawAt(a[F.x] - a[F.vx] * TICK, a[F.y] - a[F.vy] * TICK, a[F.z] - a[F.vz] * TICK, predicted.h + predicted.r + 0.4) : undefined]      // its own run's wall, else the nearest face, else where its tick began
 
   let predAt = null
   while (pending.length && pending[0].seq <= ack) {
@@ -14875,7 +14876,7 @@ const OWN_PREDICTION = (F => {
   const S = GAME.schema.step, fuelEps = S.fuel + S.fuel / 10
   if (REWIND_EPS < Math.hypot(S.x, S.y, S.z)) throw Error('REWIND_EPS is under the wire step')
   return {
-    take: (c, e = {}) => { e.x = c.x; e.y = c.y; e.z = c.z; e.fuel = c.fuel; e.jl = !!c.jLock; e.fl = !!c.flying; e.sp = c.springT || 0; e.ft = !!c.flyTurn; e.kn = [c.knT || 0, c.knx || 0, c.knz || 0, c.knUp || 0]; e.wh = !!c.wallHeld; c.faceAck = undefined; const f = c.freshBody; c.freshBody = false; e.fc = c.body ? faceTouched(c) : undefined; c.freshBody = f; e.sl = !!c.slide; e.web = c.web || 0; e.rope = c.tie && [c.web, c.tie.want]; e.vh = c.vehT > 0 && [c.vehT, c.vehO.id, ...c.vehN]
+    take: (c, e = {}) => { e.x = c.x; e.y = c.y; e.z = c.z; e.fuel = c.fuel; e.jl = !!c.jLock; e.fl = !!c.flying; e.sp = c.springT || 0; e.ft = !!c.flyTurn; e.kn = [c.knT || 0, c.knx || 0, c.knz || 0, c.knUp || 0]; e.wh = !!c.wallHeld; e.wy = c.wallRun ? c.wy : undefined; c.faceAck = undefined; const f = c.freshBody; c.freshBody = false; e.fc = c.body ? faceTouched(c) : undefined; c.freshBody = f; e.sl = !!c.slide; e.web = c.web || 0; e.rope = c.tie && [c.web, c.tie.want]; e.vh = c.vehT > 0 && [c.vehT, c.vehO.id, ...c.vehN]
       const bh = c.body?.getBroadphaseHandle(); e.dsh = [!!c.dashOn, c.dashRun || 0, c.dashHit && [...c.dashHit], bh && A.getPointer(bh) ? bh.get_m_collisionFilterMask() : null]; return e },
     err: (e, a) => Math.hypot(e.x - a[F.x], e.y - a[F.y], e.z - a[F.z]),
     agrees: (e, a, web) => (e.web || 0) === web && Math.abs(e.fuel - a[F.fuel]) <= fuelEps && e.jl === !!a[F.jLock],
