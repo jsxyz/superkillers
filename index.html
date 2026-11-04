@@ -4852,6 +4852,7 @@ function tickChars(list, inputFor, dt, P, t) {
   postTick(list)
   if (P) P.afterPhysics(t)
   else holdOff(list, touchOf(list))
+  if (!P) GAME.guest.afterPhysics(list)
   return ms
 }
 
@@ -4942,7 +4943,7 @@ function initPickups() {
 const wallAt = staticRay
 
 function strikeObject(c, o, G, ux, uy, uz, px = o.x, py = o.y, pz = o.z) {
-  if (o.V) { o.hp -= G.dmg * profDmg(c, G.name); o.by = c.id }
+  if (o.V && isHost) { o.hp -= G.dmg * profDmg(c, G.name); o.by = c.id }
   const m = G.knock * o.K.hit
   impVec.setValue(ux * m, uy * m, uz * m); relVec.setValue(px - o.x, py - o.y, pz - o.z)
   o.body.activate(); o.body.applyImpulse(impVec, relVec)
@@ -14226,15 +14227,16 @@ function strikeObjects(list, dt, touch, credit) {
   for (const [o, c, , hit] of touch) if (hit && o.thrownBy !== undefined && list.includes(c) && !o.struck.has(c.id) && c.dead <= 0) { o.struck.add(c.id); objectStrikes(o, c, credit) }
 }
 
-// host, after the step: Bullet sweeps a dasher's capsule over this tick's run; each person and object it passes is struck once a hold, each object launched
+// after the step, Bullet sweeps a dasher's capsule over this tick's run: on the host each person and object it passes is struck once
+// a hold, each object launched; in a guest's own prediction (no credit) only the objects, launched as the host launches them
 function dashStrikes(list, credit) {
   for (const c of list) {
     if (!c.dashing || !c.dashFrom || c.dead > 0 || seatOf(c)) continue
     const [x, y, z] = c.dashFrom, d = Math.hypot(c.x - x, c.z - z)
     if (d < 1e-3) continue
     const at = new Map(list.map(v => [A.getPointer(v.body), v]))
-    const hits = sweepHits(c, x, y, z, c.x, c.y, c.z, G_CAPSULE).get_m_hitCollisionObjects(), G = GUNS[c.dashing], ux = (c.x - x) / d, uz = (c.z - z) / d
-    for (let i = 0; i < hits.size(); i++) {
+    const hits = credit && sweepHits(c, x, y, z, c.x, c.y, c.z, G_CAPSULE).get_m_hitCollisionObjects(), G = GUNS[c.dashing], ux = (c.x - x) / d, uz = (c.z - z) / d
+    for (let i = 0; i < (hits ? hits.size() : 0); i++) {
       const v = at.get(A.getPointer(hits.at(i)))
       if (!v || v === c || v.dead > 0 || v.prot > 0 || seatOf(v) || (c.dashHit ??= new Set()).has(v.id)) continue
       c.dashHit.add(v.id); strike(c, v, G, ux, 0.3, uz)
@@ -14243,10 +14245,10 @@ function dashStrikes(list, credit) {
     const L = G.launch, B = L && sweepHits(c, x, y, z, c.x, c.y, c.z, G_OBJ).get_m_hitCollisionObjects()
     for (let i = 0; i < (B?.size() ?? 0); i++) {
       const o = objs.find(o => A.getPointer(o.body) === A.getPointer(B.at(i)))
-      if (!o || o.heldBy !== undefined || (c.dashHit ??= new Set()).has(o)) continue
+      if (!o || o.heldBy !== undefined || (c.dashHit ??= new Set()).has('o' + o.id)) continue
       const sx = o.x - c.x, sz = o.z - c.z, al = sx * ux + sz * uz, px = sx - al * ux, pz = sz - al * uz, pn = Math.hypot(px, pz)
-      c.dashHit.add(o); launchObject(o, L, pn > 0.2 ? px / pn : -uz, pn > 0.2 ? pz / pn : ux); strikeObject(c, o, G, ux, 0.3, uz)
-      Object.assign(o, { launchBy: c.id, launchG: c.dashing, launchT: L.credit ?? 3 })
+      c.dashHit.add('o' + o.id); launchObject(o, L, pn > 0.2 ? px / pn : -uz, pn > 0.2 ? pz / pn : ux); strikeObject(c, o, G, ux, 0.3, uz)
+      if (credit) Object.assign(o, { launchBy: c.id, launchG: c.dashing, launchT: L.credit ?? 3 })
     }
   }
 }
@@ -14377,6 +14379,8 @@ const HOST_PHASES = {
   },
 }
 GAME.host = HOST_PHASES
+// a guest's own prediction, after its step: its dash launches what it passes
+GAME.guest = { afterPhysics: list => dashStrikes(list) }
 // a bot's input for this tick, from what it sees
 GAME.think = botThink
 
