@@ -888,7 +888,7 @@ const CHARS = [
 // rate: s/shot, spread: rad, range: m. Gun 0 never runs dry. look: line|beam|slash|blast; held: glow, heldScale, tether
 // kind: ray|pierce|chain|radius. dive: speed m/s, pull m/s²; dmg, knock × clamp(impact/ref, 1, cap), range × its root
 // kind dash: held, runs along the aim at speed m/s through people and objects; each it passes takes dmg and knock once a hold
-//   launch: { speed, lift m/s, spin rad/s, mass, credit s (3 if unset) }: each object leaves along the dash at speed, up at lift, rolling at spin; heavier than mass, slower
+//   launch: { speed, lift m/s, spin rad/s, mass, credit s (3 if unset) }: each object leaves across the dash, away from his line, at speed, up at lift, rolling at spin; heavier than mass, slower
 //   in proportion; what it runs over is the dasher's kill, with the dash's name, until it rests or credit runs out
 // gate: effect key it needs. dmg or lethal; knock; apply: POWERS effect; extra: the fifth upgrade
 // Append rows only; droppable rows stay below index 32 (the bag is one 32-bit int).
@@ -2870,6 +2870,7 @@ function tiltFits(c, yaw) {
   tiltHit = false; world.contactTest(tiltGhost, tiltCb)
   return !tiltHit
 }
+const DASH_RUN = 30
 function insideObject(c) {
   if (!inCb) {
     inCb = new A.ConcreteContactResultCallback()
@@ -2881,8 +2882,11 @@ function insideObject(c) {
 }
 function applyIntent(c, inp, dt) {
   if (!c.body) attachBody(c)
-  // held, a dash row runs him along the aim at its speed; Bullet pairs him with no person or object meanwhile, nor with an object he is still in after
+  // held, a dash row runs him along the aim at its speed, and on while he is still inside an object (DASH_RUN ticks at most);
+  // Bullet pairs him with no person or object meanwhile, nor after with an object he is still in
   c.dashing = inp.alt && !(c.dead > 0) && !seatOf(c) && primaryOf(c)?.kind === 'dash' ? primaryId(c) : 0
+  if (inp.alt) c.dashRun = 0
+  else if (c.dashOn && (c.dashRun = (c.dashRun || 0) + 1) <= DASH_RUN && !(c.dead > 0) && !seatOf(c) && primaryOf(c)?.kind === 'dash' && insideObject(c)) c.dashing = primaryId(c)
   if (c.dashing || c.dashOn) { const bh = c.body.getBroadphaseHandle(), m = A.getPointer(bh) && bh.get_m_collisionFilterMask(), inside = !c.dashing && insideObject(c)
     if (A.getPointer(bh)) bh.set_m_collisionFilterMask(c.dashing ? m & ~(G_CAPSULE | G_OBJ) : m | G_CAPSULE | (inside ? 0 : G_OBJ)); c.dashOn = !!c.dashing || inside }
   if (c.dashing) c.dashFrom = [c.x, c.y, c.z]; else c.dashHit = null
@@ -14240,7 +14244,8 @@ function dashStrikes(list, credit) {
     for (let i = 0; i < (B?.size() ?? 0); i++) {
       const o = objs.find(o => A.getPointer(o.body) === A.getPointer(B.at(i)))
       if (!o || o.heldBy !== undefined || (c.dashHit ??= new Set()).has(o)) continue
-      c.dashHit.add(o); launchObject(o, L, ux, uz); strikeObject(c, o, G, ux, 0.3, uz)
+      const sx = o.x - c.x, sz = o.z - c.z, al = sx * ux + sz * uz, px = sx - al * ux, pz = sz - al * uz, pn = Math.hypot(px, pz)
+      c.dashHit.add(o); launchObject(o, L, pn > 0.2 ? px / pn : -uz, pn > 0.2 ? pz / pn : ux); strikeObject(c, o, G, ux, 0.3, uz)
       Object.assign(o, { launchBy: c.id, launchG: c.dashing, launchT: L.credit ?? 3 })
     }
   }
