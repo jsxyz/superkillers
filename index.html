@@ -2888,7 +2888,10 @@ function applyIntent(c, inp, dt) {
   if (inp.alt) c.dashRun = 0
   else if (c.dashOn && (c.dashRun = (c.dashRun || 0) + 1) <= DASH_RUN && !(c.dead > 0) && !seatOf(c) && primaryOf(c)?.kind === 'dash' && insideObject(c)) c.dashing = primaryId(c)
   if (c.dashing || c.dashOn) { const bh = c.body.getBroadphaseHandle(), m = A.getPointer(bh) && bh.get_m_collisionFilterMask(), inside = !c.dashing && insideObject(c)
-    if (A.getPointer(bh)) bh.set_m_collisionFilterMask(c.dashing ? m & ~(G_CAPSULE | G_OBJ) : m | G_CAPSULE | (inside ? 0 : G_OBJ)); c.dashOn = !!c.dashing || inside }
+    // a changed mask re-adds the body: Bullet keeps a pair it made under the old one
+    const nm = c.dashing ? m & ~(G_CAPSULE | G_OBJ) : m | G_CAPSULE | (inside ? 0 : G_OBJ)
+    if (A.getPointer(bh) && nm !== m) { const g = bh.get_m_collisionFilterGroup(); world.removeRigidBody(c.body); world.addRigidBody(c.body, g, nm) }
+    c.dashOn = !!c.dashing || inside }
   if (c.dashing) c.dashFrom = [c.x, c.y, c.z]; else c.dashHit = null
 
   if (c.prot > 0) c.prot -= dt
