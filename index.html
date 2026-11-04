@@ -14752,10 +14752,10 @@ function drawnObj(o) {
   return d
 }
 // a tick's aim: the angles (and reticle distance) that take this tick's sim camera ray, or eye, to what the crosshair
-// is on as drawn at the last frame's drawn pose; as input on a frame's first tick when the view was drawn at it
+// is on as drawn at the last frame's drawn pose; as input on a frame's first tick when the view was drawn at it, and while he dashes
 function aimed(inp) {
   const v = inp.view, me = isHost ? players.get(0) : predicted
-  if (!(inp.fire || inp.alt || inp.descend) || !v || !v.moved && !tickSamples.get(myId)?.length || !me || (v.at[0] - me.x) ** 2 + (v.at[1] - me.y) ** 2 + (v.at[2] - me.z) ** 2 > 25) return inp
+  if (!(inp.fire || inp.alt || inp.descend) || me?.dashing || !v || !v.moved && !tickSamples.get(myId)?.length || !me || (v.at[0] - me.x) ** 2 + (v.at[1] - me.y) ** 2 + (v.at[2] - me.z) ** 2 > 25) return inp
   if (inp.aimAt === tickAt) return inp.aimed
   const viaCam = v.cam, from = { ...me, x: v.at[0], y: v.at[1], z: v.at[2] }
   const [fx, fy, fz] = aimDir(inp.yaw, inp.pitch), f = viaCam ? camRay(from, inp.yaw, inp.pitch) : { x: from.x, y: eyeOf(from), z: from.z, dx: fx, dy: fy, dz: fz }
