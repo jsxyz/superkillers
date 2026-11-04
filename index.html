@@ -13220,7 +13220,7 @@ function takeHeld(h) {
 function takeSeats(s) {
   if (s === undefined) return
   objSeats.clear()
-  if (!flatList(s, 3, MAX_PLAYERS * 3, true)) return
+  if (!flatList(s, 3, ENTITY_MAX * 3, true)) return
   const who = new Set()
   for (let i = 0; i < s.length; i += 3) {
     const [o, k, c] = s.slice(i, i + 3)
