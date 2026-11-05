@@ -13379,6 +13379,8 @@ const nlerp = (a, b, w) => { const s = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] +
 function easeHolds(list, t) {
   const next = new Map(), out = list.map(o => {
     const held = !!o.held || o.heldBy !== undefined, e = holdEase.get(o.id)
+    if (e?.off === null && e.held === held && e.x === o.x && e.y === o.y && e.z === o.z && e.q === o.q &&
+      e.by === (held ? o.heldBy ?? objHeld.get(o.id) : e.by)) { next.set(o.id, e); return o }
     let d = o
     if (e && !o.K.carry) {
       if (e.held !== held) { const f = [e.x - o.x, e.y - o.y, e.z - o.z]; Object.assign(e, { off: f, q0: e.q, at: t, ms: Math.max(150, Math.hypot(...f) * 110) }) }
