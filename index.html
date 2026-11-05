@@ -4453,13 +4453,13 @@ function putObject(o, s) {
 }
 
 // guest: local bodies only for objects near it
-// seated per the host (mine: me; else: another)
-const seated = (id, mine) => [...objSeats].some(([s, p]) => s >> 3 === id && (p === myId) === mine)
 // driven by another player: not predicted, by its passengers either
 const ridden = id => (p => p !== undefined && p !== myId)(objSeats.get(id * 8))
 const rideOf = c => (r => r && { ...r, V: vehicleOf(r.K), R: objR(r.K), at0: hullAt(r.K), low: Math.min(...carPts(r.K, vehicleOf(r.K).wheels, hullAt(r.K)).map(p => p[1])),
   vs: (w => w ? Math.hypot(w[7], w[9]) : 0)(objVel?.get(r.id)) })(c.ride && objectsAt(renderT).find(o => o.id === c.ride[0]))
 function predictObjects(c, lead = 0) {
+  // seated per the host (mine: me; else: another)
+  const seats = new Set([...objSeats].map(([s, p]) => 2 * (s >> 3) + (p === myId))), seated = (id, mine) => seats.has(2 * id + mine)
   const B = seatOf(c)?.[0] || c, v = B.body?.getLinearVelocity(), reach = v ? Math.hypot(v.x(), v.z()) * lead : 0, Br = B === c ? c.r : B.R
   // near what the player rides, else the player, by as far as that goes in `lead` s
   const near = (x, y, z, R, pad) => Math.hypot(x - B.x, y - B.y, z - B.z) < Br + R + pad + reach
@@ -4526,8 +4526,8 @@ function fits(c, o, i) {
 }
 const canLift = (c, p) => !p.K.carry && p.K.mass <= liftOf(c)
 const takeable = (c, p) => p.K.carry ? p.heldBy === undefined && objGap(c, p) <= p.K.carry.reach && inSight(c, p) :
-  p.V && !canLift(c, p) && p.riders.some((r, i) => r === undefined && fits(c, p, i)) && objGap(c, p) <= 1.5 && inSight(c, p) ||
-  p.heldBy === undefined && canLift(c, p) && objGap(c, p) <= (hurlOf(c)?.reach ?? 1.5) && inSight(c, p)
+  p.V && objGap(c, p) <= 1.5 && !canLift(c, p) && p.riders.some((r, i) => r === undefined && fits(c, p, i)) && inSight(c, p) ||
+  p.heldBy === undefined && objGap(c, p) <= (hurlOf(c)?.reach ?? 1.5) && canLift(c, p) && inSight(c, p)
 function inSight(c, o) {
   const y = c.y + c.h * 0.55, x = o.x - c.x, u = o.y - y, z = o.z - c.z, d = Math.hypot(x, u, z) || 1
   return castRay(c.x, y, c.z, x / d, u / d, z / d, d, RAY_GROUP | G_OBJ) < 1 && A.getPointer(rayCb.get_m_collisionObject()) === A.getPointer(o.body)
@@ -4819,10 +4819,11 @@ function touching(list) {
 let shotSkip = null
 function rayObject(ox, oy, oz, dx, dy, dz, o) {
   if (o.id === shotSkip) return Infinity
-  const K = o.K, [a, b, c] = o.q.map(v => -v), w = o.q[3], H = hullOf(K)
+  const K = o.K, H = hullOf(K)
   if (K.shape === 'hull' && !H || o.heldBy !== undefined || o.held) return Infinity
   if (!H && K.r) return raySphere(ox, oy, oz, dx, dy, dz, o.x, o.y, o.z, K.r)
   if (H && raySphere(ox, oy, oz, dx, dy, dz, o.x, o.y, o.z, H.R) === Infinity) return Infinity
+  const [a, b, c] = o.q.map(v => -v), w = o.q[3]
   const rot = (x, y, z) => {
     const u = 2 * (b * z - c * y), v = 2 * (c * x - a * z), s = 2 * (a * y - b * x)
     return [x + w * u + b * s - c * v, y + w * v + c * u - a * s, z + w * s + a * v - b * u]
@@ -13306,18 +13307,23 @@ function seatFrom(o) {
   if (i >= 0) predicted.seat = [o, i]
 }
 
-// a track not sent lately: settled at its last row
+// a track not sent lately: settled at its last row, the same record each call while that row, held and seed stand
+const settledAt = new Map()
 function objectsAt(t) {
   const out = []
   for (const [id, tr] of objTracks) {
     if (objs.some(o => o.id === id)) continue          // predicted
+    const last = tr[tr.length - 1], held = objHeld.has(id), seed = seedOf(id), was = settledAt.get(id)
+    if (last.t < t && was?.at === last && was.r.held === held && was.r.seed === seed) { out.push(was.r); continue }
     let j = 0
     while (j < tr.length && tr[j].t < t) j++
     const a = tr[Math.max(0, j - 1)], b = tr[Math.min(j, tr.length - 1)], P = a.p, Q = b.p
     const u = b.t === a.t ? 1 : (t - a.t) / (b.t - a.t)
     const s = P[4] * Q[4] + P[5] * Q[5] + P[6] * Q[6] + P[7] * Q[7] < 0 ? -1 : 1   // the short way round
     const v = P.map((x, i) => lerp(x, (i > 3 ? s : 1) * Q[i], u)), q = v.slice(4), n = Math.hypot(...q)
-    out.push({ id, held: objHeld.has(id), k: Q[0], K: OBJECTS[Q[0]], x: v[1], y: v[2], z: v[3], q: q.map(x => x / n), seed: seedOf(id) })
+    const r = { id, held, k: Q[0], K: OBJECTS[Q[0]], x: v[1], y: v[2], z: v[3], q: q.map(x => x / n), seed }
+    if (last.t < t) settledAt.set(id, { at: last, r })
+    out.push(r)
   }
   return out
 }
