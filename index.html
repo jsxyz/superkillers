@@ -4179,7 +4179,14 @@ function dropChunk(c) {
 // chunk = f(seed, cell): grown alike on host and guest, never sent nor dropped; host reach is Normal's view end
 let grown = new Set(), parked = new Map()
 const growReach = () => (isHost ? viewEnd(1) : viewEnd()) + 96
-function growNear(points, all, R = growReach()) {
+// fogGrown.x: the fog's reach past its end, to the nearest cell not grown less how far the camera strays from the player growth
+// follows (a first-person eye anywhere on the largest vehicle from its seat, and a tick drawn ahead); none while nothing grows
+GAME.fogGrown = { x: 1e9, y: 0 }
+const CAM_STRAY = 2 + Math.max(...VEHICLES.map(V => Math.hypot(V.l, V.w)))
+GAME.fogClamp = () => { const me = isHost ? players.get(0) : predicted
+  return LV.grow && me ? Math.min(growReach(), growNear([[me.x, me.z]], false, undefined, true)) - CAM_STRAY - viewEnd() : 1e9 }
+// look: the nearest cell not grown within R, growing none
+function growNear(points, all, R = growReach(), look) {
   const G = LV.grow, lo = v => Math.max(0, Math.floor((v - R + ARENA) / 96)), hi = v => Math.min(G.S - 1, Math.floor((v + R + ARENA) / 96))
   let best = null, bd = Infinity
   for (const [x, z] of points) for (let ci = lo(x); ci <= hi(x); ci++) for (let cj = lo(z); cj <= hi(z); cj++) {
@@ -4187,7 +4194,8 @@ function growNear(points, all, R = growReach()) {
     if (d > R || grown.has(ci + ' ' + cj)) continue
     if (all) growChunk(ci, cj); else if (d < bd) { bd = d; best = [ci, cj] }
   }
-  if (best) growChunk(...best)
+  if (best && !look) growChunk(...best)
+  return bd
 }
 const chunkBoxes = (G, A, pad, ci, cj, c = cityChunk(G.seed, G.S, ci, cj, undefined, undefined, undefined, G)) =>
   [c, levelRows(c.brushes, A / 72).map(r => Object.assign({ cx: r[0], cy: r[1], cz: r[2], ex: r[3], ey: r[4], ez: r[5] }, tagged(r[6], pad)))]
@@ -4216,6 +4224,7 @@ function growTick() {
   if (me) growNear([[me.x, me.z]], true, growReach() - 96)
   if (isHost) growNear(pts, true, 96)
   growNear(me ? [[me.x, me.z], ...pts] : pts, false)
+  GAME.fogGrown.x = GAME.fogClamp()
   parkFar()
 }
 // far chunks' bodies leave the world (step cost): in within 1 cell of anything awake, out past 2; ray copies stay
@@ -7744,6 +7753,11 @@ function fitCeiling(a, t) {
 }
 
 // ---------------------------------------------------------------- render
+// fog depth: the view depth or, if more, the distance less fogGrown.x (growTick), so the city not grown stays fogged at any lens;
+// one plain {x, y}, which three copies by reference into every fogged material: a new x relinks nothing
+THREE.ShaderChunk.fog_pars_vertex = THREE.ShaderChunk.fog_pars_vertex.replace('varying float vFogDepth;', 'varying float vFogDepth;\n\tuniform vec2 fogGrown;')
+THREE.ShaderChunk.fog_vertex = THREE.ShaderChunk.fog_vertex.replace('- mvPosition.z', 'max( - mvPosition.z, length( mvPosition.xyz ) - fogGrown.x )')
+for (const U of [THREE.UniformsLib.fog, ...Object.values(THREE.ShaderLib).map(s => s.uniforms)]) if (U.fogNear) U.fogGrown = { value: GAME.fogGrown ||= { x: 1e9, y: 0 } }
 let renderer, scene, camera, scene3d, sunLight, avatarGroup, pickGroup, tracerGroup, worldGroup
 const avatars = new Map()
 const pickPool = [], tracerPool = [], boxPool = [], orbPool = [], slashPool = [], whipPool = [], ringPool = [], flashPool = [], effectPool = [], glowPool = []
@@ -8174,6 +8188,7 @@ function applyView() {
   const end = viewEnd()
   if (scene?.fog) { scene.fog.far = end; scene.fog.near = Math.min(ARENA * LV.theme.fog[1] * viewScale, end) }
   if (camera) { camera.far = end; camera.updateProjectionMatrix() }
+  GAME.fogGrown.x = GAME.fogClamp?.() ?? 1e9
 }
 function rebuildWorld() {
   if (!worldGroup) return
