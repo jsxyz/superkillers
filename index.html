@@ -4227,7 +4227,8 @@ function growTick() {
   GAME.fogGrown.x = GAME.fogClamp()
   parkFar()
 }
-// far chunks' bodies leave the world (step cost): in within 1 cell of anything awake, out past 2; ray copies stay
+// far chunks' bodies leave the world (step cost): in within 1 cell of anything awake, out past 2; ray copies stay. So does a parked
+// car asleep with nobody in, on or after it, back (inWorld) before anything acts on it
 function parkFar() {
   const cell = v => Math.floor((v + ARENA) / 96), at = []
   for (const c of [...players.values(), predicted, ...objs]) if (c?.body && (!c.K || c.body.isActive())) at.push(cell(c.x), cell(c.z))
@@ -4241,6 +4242,17 @@ function parkFar() {
     if (c.away && near(c, 1)) { c.away = false; for (const b of c.bodies) { b.out = false; world.addRigidBody(b.body, ...padBodies.has(A.getPointer(b.body)) ? COLLIDE.pad : COLLIDE.static) } }
     else if (!c.away && !near(c, 2)) if (out-- > 0) { c.away = true; for (const b of c.bodies) { b.out = true; world.removeRigidBody(b.body) } } else awaySig = ''
   }
+  for (const o of objs) {
+    const c = { cell: [cell(o.x), cell(o.z)] }
+    if (o.away) { if (near(c, 1)) inWorld(o) }
+    else if (o.V && o.parked && !o.body.isActive() && o.riders.every(id => id === undefined) && o.heldBy === undefined && o.thrownBy === undefined &&
+      o.launchBy === undefined && o.fuse === undefined && o.hp > o.V.hp * o.V.boom.burn && !near(c, 2)) { o.away = true; world.removeRigidBody(o.body) }
+  }
+}
+// a parked car out of the world back in, without the forces anything gathered on it out there (Bullet clears them only in the world)
+function inWorld(o) {
+  if (!o.away) return
+  o.away = false; o.body.clearForces(); world.addRigidBody(o.body, ...COLLIDE.object); awaySig = ''
 }
 
 // rays hit per-chunk triangle copies of the boxes: Bullet's float32 ray vs a box can pass through near a face
@@ -4373,7 +4385,7 @@ function craterTake({ regions, replaces }) {
     const c = statics.find(c => c.src.includes(b)); craterReplaced.add(b); dropChunk(c); addChunk(c.src.filter(o => o !== b), c.cell, [], c.slim, false, c.crowns)
   }
   // an object over a crater loses its ground; all else dropped here is back where it was
-  for (const o of objs) if (regions.some(g => g.rect && over(g.rect, { a0: o.x - o.R, a1: o.x + o.R, b0: o.z - o.R, b1: o.z + o.R }))) o.body.activate()
+  for (const o of objs) if (regions.some(g => g.rect && over(g.rect, { a0: o.x - o.R, a1: o.x + o.R, b0: o.z - o.R, b1: o.z + o.R }))) { inWorld(o); o.body.activate() }
 }
 function craterClear() {
   for (const k of craterRegions.keys()) { const c = statics.find(c => c.cell === k); if (c) dropChunk(c) }
@@ -4439,6 +4451,7 @@ function addObject(k, at, id, yaw = 0) {
   return o
 }
 function dropObject(o) {
+  inWorld(o)
   if (o.car) dropCar(o)
   dropBody({ body: o.body, ms: o.body.getMotionState(), shape: o.shape })
 }
@@ -4447,6 +4460,7 @@ function objState(o) {
   return [o.x, o.y, o.z, ...o.q, v.x(), v.y(), v.z(), w.x(), w.y(), w.z()]
 }
 function putObject(o, s) {
+  inWorld(o)
   teleportBody(o.body, s[0], s[1], s[2], s.slice(3, 7), s.slice(7, 10), s.slice(10, 13))
   o.body.activate()
   o.x = s[0]; o.y = s[1]; o.z = s[2]; o.q = s.slice(3, 7)
@@ -4503,7 +4517,7 @@ function stepObjects() {
     o.body.getMotionState().getWorldTransform(tmpTrans)
     const p = tmpTrans.getOrigin(), q = tmpTrans.getRotation(), x = p.x(), y = p.y(), z = p.z()
     if (!(y >= VOID_Y && Math.abs(x) <= ARENA && Math.abs(z) <= ARENA)) {
-      teleportBody(o.body, ...o.at, null, [0, 0, 0], [0, 0, 0]); o.body.activate()
+      inWorld(o); teleportBody(o.body, ...o.at, null, [0, 0, 0], [0, 0, 0]); o.body.activate()
       continue
     }
     Object.assign(o, { x, y, z, q: [q.x(), q.y(), q.z(), q.w()] })
@@ -4556,6 +4570,7 @@ function handOf(c, o, out) {
   return [c.x - s * f + k * h[0], Math.max(c.y + c.h * 0.2 + h[1], c.y - c.h - c.r + (under || 0) + 0.02), c.z - k * f - s * h[0]]
 }
 function holdBy(o, c) {
+  inWorld(o)
   if (c && o.heldBy === undefined) world.removeRigidBody(o.body)
   if (!c && o.heldBy !== undefined) world.addRigidBody(o.body, ...COLLIDE.object)
   o.heldBy = c ? c.id : undefined
@@ -4726,6 +4741,7 @@ function makeCar(o, V, at0) {
 }
 function setParked(o, parked) {
   if (!o.car || o.parked === parked || !o.parkShape) return
+  inWorld(o)
   const s = parked ? o.parkShape : o.shape, inertia = new A.btVector3(0, 0, 0)
   world.removeRigidBody(o.body)
   o.body.setCollisionShape(s); if (!parked && o.V.inertia) inertia.setValue(...o.V.inertia); else s.calculateLocalInertia(o.K.mass, inertia)
@@ -4956,12 +4972,14 @@ function initPickups() {
 const wallAt = staticRay
 
 function strikeObject(c, o, G, ux, uy, uz, px = o.x, py = o.y, pz = o.z) {
+  inWorld(o)
   if (o.V && isHost) { o.hp -= G.dmg * profDmg(c, G.name); o.by = c.id }
   const m = G.knock * o.K.hit
   impVec.setValue(ux * m, uy * m, uz * m); relVec.setValue(px - o.x, py - o.y, pz - o.z)
   o.body.activate(); o.body.applyImpulse(impVec, relVec)
 }
 function launchObject(o, L, ux, uz) {
+  inWorld(o)
   const k = Math.min(1, L.mass / o.K.mass), v = o.body.getLinearVelocity(), a = Math.max(v.x() * ux + v.z() * uz, L.speed * k)
   impVec.setValue(ux * a, Math.max(v.y(), L.lift * k), uz * a); o.body.setLinearVelocity(impVec)
   impVec.setValue(uz * L.spin * k, 0, -ux * L.spin * k); o.body.setAngularVelocity(impVec); o.body.activate()
@@ -14290,6 +14308,7 @@ function vehicleTick(list, credit, touch, dt) {
 
 function boom(o, list, credit) {
   if (o.heldBy !== undefined) holdBy(o, null)
+  inWorld(o)
   const B = o.V.boom, by = players.get(o.by), at = [o.x, o.y, o.z]
   o.riders.forEach((id, i) => { const c = id !== undefined && players.get(id); if (c) leave(c, o, i) })
   for (const c of list) {
