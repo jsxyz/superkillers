@@ -10728,13 +10728,10 @@ function tornadoGeometry(coarse) {
 
 // Draw the hazard boundary on every exposed deck; top-only projection hides it from players below.
 function tornadoBoundary(v, x, z, radius) {
-  if (v.boxes !== BOXES || v.nBoxes !== BOXES.length) {
-    // grown chunks: add only their decks
-    const cached = tornadoViews.find(n => n.boxes === BOXES && n.nBoxes === BOXES.length), grew = v.boxes === BOXES && v.nBoxes < BOXES.length && v.floors
-    const decks = list => solidFaces(list.filter(b => b.vis !== false)).filter(f => f.axis === 1 && f.dir === 1 && (!grew || f.box !== BOXES[0]))
-    v.floors = cached ? cached.floors : grew ? v.floors.concat(decks([BOXES[0], ...BOXES.slice(v.nBoxes)])) : decks(BOXES)
-    v.boxes = BOXES; v.nBoxes = BOXES.length
-  } else if (v.x === x && v.z === z && v.radius === radius) return
+  if (v.boxes === BOXES && v.nBoxes === BOXES.length && v.x === x && v.z === z && v.radius === radius) return
+  const near = BOXES.filter(b => b.vis !== false && b.cx + b.ex >= x - radius && b.cx - b.ex <= x + radius && b.cz + b.ez >= z - radius && b.cz - b.ez <= z + radius)
+  v.floors = solidFaces(near).filter(f => f.axis === 1 && f.dir === 1)
+  v.boxes = BOXES; v.nBoxes = BOXES.length
   v.x = x; v.z = z; v.radius = radius
   let count = 0, minY = FLOOR_TOP
   const inner = Math.max(0, radius - Math.min(0.22, radius * 0.07))
