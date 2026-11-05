@@ -8386,10 +8386,16 @@ function prepareDamage(id, cid) {
   })
 }
 function prepareStep() {
-  const t0 = now(), more = () => now() - t0 < PREP_MS
+  const t0 = now(), idle = offPlay(), more = () => now() - t0 < (idle ? PREP_MS : 1)
   for (let i = prepShown.length - 1; i >= 0; i--) if (--prepShown[i][1] < 0) avatarGroup.remove(prepShown.splice(i, 1)[0][0])
+  if (!idle && chunkDraws.length) return // in play, queued chunks go first
   let fresh = true
   while (prepQueue.length && more()) {
+    if (!offPlay() && !Array.isArray(prepQueue[0])) {
+      const i = prepQueue.findIndex(Array.isArray)
+      if (i < 0) return
+      prepQueue.unshift(...prepQueue.splice(i, 1))
+    }
     if (!Array.isArray(prepQueue[0])) { if (!offPlay()) return; const E = prepQueue[0]; if ((E.gen ||= E.steps()).next().done) prepQueue.shift(); fresh = false; continue }
     const [id, cid] = prepQueue[0], M = modelFor(id, cid), key = GAME.looks.key(id, cid)
     if (M.kind !== 'built' && !M.proto) return
@@ -8405,7 +8411,7 @@ function prepareStep() {
       let mesh = r.value
       prepAt = null
       avatarGroup.remove(mesh)
-      if (offPlay()) {
+      if (offPlay() || !had) {
         prepReady.set(key, { id, proto: M.proto, a: avatars.get(id) })
         mesh = cloneSkinned(mesh)
         ownMaterials(mesh)
@@ -8421,9 +8427,11 @@ function prepareStep() {
   }
 }
 
-function clearPrepared() {
-  for (const { a } of prepReady.values()) { a.mixer?.stopAllAction(); freeMaterials(a.mesh) }
-  prepReady.clear()
+function clearPrepared(keepRoster = false) {
+  for (const [key, { a }] of prepReady) {
+    if (keepRoster && (GAME.rows.visitors().some(p => GAME.looks.key(...p) === key) || [...roster].some(([id, p]) => !avatars.has(id) && GAME.looks.key(id, p.cid) === key))) continue
+    a.mixer?.stopAllAction(); freeMaterials(a.mesh); prepReady.delete(key)
+  }
 }
 function rebuildAvatars() {
   clearPrepared()
@@ -8487,7 +8495,7 @@ function* avatarSteps(id, cid, cap, body) {
   let mesh, mixer = null, actions = null, drop = 0, walkDrop = 0, sprintDrop = 0, ankle = 0, turned = new Map()
 
   const key = GAME.looks.key(id, cid), built = M.kind === 'built', ready = prepReady.get(key)
-  if (id >= 0 && !body && ready && !offPlay() && ready.id === id && ready.a.cid === cid && ready.proto === M.proto) {
+  if (id >= 0 && !body && ready && !offPlay() && ready.a.cid === cid && ready.proto === M.proto) {
     prepReady.delete(key)
     avatars.set(id, ready.a)
     avatarGroup.add(ready.a.mesh)
@@ -13466,6 +13474,7 @@ function applyRoster(list) {
     tracks.delete(id)
     lastChatSeq.delete('p' + id)
   }
+  prepareRows([...roster].map(([id, p]) => [id, p.cid]))
 }
 
 function startHost() {
@@ -14545,7 +14554,7 @@ GAME.lifecycle = {
     if (MODES.includes(d.md)) gameMode = d.md
     if (d.bl !== undefined) balanceOn = !!d.bl
     setEvent(typeof d.ev === 'string' && EVENTS.find(E => E.name === d.ev) || null)
-    if (joinPick() && !pickOpen && phase === 'playing') { openCharPick(); if (gameMode === 'waves') prepareRows(botPairs(waveOrder())) }
+    if (joinPick() && !pickOpen && phase === 'playing') { openCharPick(); prepareRows(gameMode === 'waves' ? botPairs(waveOrder()) : GAME.rows.visitors()) }
   },
 }
 
@@ -14698,7 +14707,9 @@ function refusal(i) {
     : L.locked ? 'Balanced: ' + L.mine + ' v ' + L.theirs : taken(C.team, pickSelf()) ? 'Taken' : ''
 }
 // a joining player's row: the one it asked for, unless this room cannot take it (told why), and its team fielded once it stands
+const visitors = () => gameMode === 'ffa' ? picked({ visits: true }) : []
 GAME.rows = {
+  visitors: () => botPairs(visitors()),
   admit(id, asked) {
     let cid = clamp(asked | 0, 0, CHARS.length - 1)
     if (CHARS[cid].hidden) cid = START
@@ -14719,7 +14730,7 @@ GAME.rows = {
   // what the pick screen's room note adds
   pickNote: () => balanced() ? ' · sides balanced' : '',
   // the bots whose looks the menu prepares for a player on this row
-  menuBots: cid => gameMode === 'ffa' || !sideOffered(CHARS[cid].side) ? [...heroWant(), ...SQUAD] : waveOrder(),
+  menuBots: cid => gameMode === 'ffa' || !sideOffered(CHARS[cid].side) ? [...heroWant(), ...SQUAD, ...visitors()] : waveOrder(),
   cid: v => clamp(v | 0, 0, CHARS.length - 1),
   of: cid => CHARS[cid],
 }
@@ -15315,7 +15326,7 @@ function draw(dt, t) {
     drawHeld(o.id, (!sits.has(o.id) || armed) && o, t)        // cosmetic, never a capsule
   }
   for (const id of [...avatars.keys()]) if (id >= 0 && !live.has(id)) dropAvatar(id)
-  if (!offPlay()) clearPrepared()
+  if (!offPlay()) clearPrepared(true)
 
   drawPickups(pkl, t)
   drawObjects(obl, d => wheelsOf(d, isHost ? now() : renderT, camera.position))      // null: its own stand
