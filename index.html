@@ -4204,7 +4204,7 @@ function growChunk(ci, cj) {
     const k = OBJECTS.findIndex(K => K.name === name)
     if (isHost && k >= 0 && objs.length < OBJ_MAX - 64) { objSeeds[objs.length] = seed; placeObject(k, [x, 0, z], yaw) }
   }
-  onChunk({ cell: [ci, cj], boxes, scenery })
+  onChunk({ cell: [ci, cj], boxes, scenery, ahead: true })
   const cell = { a0: ci * 96 - ARENA, a1: ci * 96 + 96 - ARENA, b0: cj * 96 - ARENA, b1: cj * 96 + 96 - ARENA }
   if (craters.some(([x, z, r]) => over(cell, craterSquare(x, z, r)))) { (crb.regrow ||= []).push(cell); buildCrater() }
 }
@@ -7873,6 +7873,8 @@ function cityCrown(family, far) {
   }
   return cityTrees.get(key)
 }
+// a tree row's crown as citySteps poses cityCrown's unit box: from base + bottom up to base + r.h, width across
+const crownOf = r => { const b = r.box; return { base: b.cy - b.ey, bottom: b.ey * 1.4, width: r.h * (r.family === 'conifer' ? 0.52 : 0.70) } }
 function cityInstances(g, material, rows, pose) {
   const m = new THREE.InstancedMesh(g, material, rows.length), t = new THREE.Object3D(), color = new THREE.Color()
   rows.forEach((row, i) => {
@@ -7974,10 +7976,12 @@ function flatLOD(camera) {
   m[13] = camera.matrixWorld.elements[13]
   try { THREE.LOD.prototype.update.call(this, camera) } finally { m[13] = y }
 }
-function buildCityScenery(rows, faces) {
+function buildCityScenery(rows, faces) { return drain(citySteps(rows, faces)) }
+function* citySteps(rows, faces) {
   const root = new THREE.Group(), chunks = new Map(), walks = new Set(rows.filter(r => r.kind === 'walk').map(r => r.box)), street = rows.find(r => r.kind === 'street')
   const wf = faces.filter(f => walks.has(f.box) && (f.axis !== 1 || f.dir > 0))
   if (street) root.add(...cityGround = streetGround(street, wf)); else if (walks.size && cityGround) streetGround(null, wf, cityGround)
+  yield
   for (const row of rows) {
     if (row.kind === 'street' || row.kind === 'walk') continue
     const b = row.kind === 'tree' ? row.box : row.boxes[0]
@@ -7993,6 +7997,7 @@ function buildCityScenery(rows, faces) {
     near.position.set(-chunk.x, 0, -chunk.z); far.position.copy(near.position)
     lod.addLevel(near, 0); lod.addLevel(far, 120, 0.12); far.visible = false; lod.update = flatLOD
     group.add(lod); root.add(group)
+    yield
     if (!trees.length) continue
     const trunk = cityInstances(kitGeometry(['lathe', [[0, 0], [1, 0], [0.68, 1], [0, 1]], 8]),
       new THREE.MeshStandardMaterial({ color: 0x725440, roughness: 1 }), trees, (t, r) => {
@@ -8005,8 +8010,7 @@ function buildCityScenery(rows, faces) {
       if (!list.length) continue
       for (const coarse of [false, true]) {
         const proto = cityCrown(family, coarse), m = cityInstances(proto.geometry, proto.material.clone(), list, (t, r) => {
-          const b = r.box, base = b.cy - b.ey, bottom = b.ey * 1.4
-          const width = r.h * (family === 'conifer' ? 0.52 : 0.70)
+          const b = r.box, { base, bottom, width } = crownOf(r)
           t.position.set(b.cx, base + bottom, b.cz); t.rotation.y = (cityHash(r.seed) & 3) * Math.PI / 2
           t.scale.set(width, r.h - bottom, width)
         })
@@ -8083,6 +8087,7 @@ const culled = [], reaches = new Map()
 function cullView(cam) {
   for (const o of culled.splice(0)) o.visible = true
   cullFrom(cam)
+  drawSeen()
   if (!culling) return
   const { v, s, b } = cullT, lit = renderer.shadowMap.enabled && sunLight.castShadow
   const hide = (o, x, test = x.isBox3 ? 'intersectsBox' : 'intersectsSphere') => { if (!v[test](x) && !(lit && s[test](x))) { o.visible = false; culled.push(o) } }
@@ -8119,9 +8124,42 @@ const sharedMats = new Map(), matKey = m => JSON.stringify(Object.entries(m).map
   : [k, v?.isTexture ? v.uuid : v?.isColor ? [v.r, v.g, v.b] : v?.toArray ? v.toArray() : v?.map ? v.map(p => p?.isPlane ? [p.normal.toArray(), p.constant] : p) : v]))
 const shareMaterials = g => g.traverse(o => { const m = o.material
   if (m?.isMaterial && !Object.hasOwn(m, 'onBeforeCompile')) { const k = matKey(m); o.material = sharedMats.get(k) ?? (sharedMats.set(k, m), m) } })
-function onChunk({ cell, boxes, scenery }) {
+// grown chunks still being drawn, oldest first; a frame that grew one builds none
+const chunkDraws = [], CHUNK_MS = 3
+let chunkGrew = false
+// the frame's frusta take it in, as cullView tests a drawn chunk (none yet: every chunk)
+const seenJob = j => !culling || cullT.v.intersectsBox(j.box) || renderer.shadowMap.enabled && sunLight.castShadow && cullT.s.intersectsBox(j.box)
+function onChunk({ cell, boxes, scenery, ahead }) {
   if (!worldGroup) return
-  const g = drawBoxes(boxes, scenery, [BOXES[0]]), mine = []
+  chunkGrew = true
+  const gen = drawSteps(boxes, scenery, [BOXES[0]]), box = new THREE.Box3(), v = new THREE.Vector3()
+  // what it draws: its boxes, and its trees' crowns above them
+  for (const b of boxes) box.expandByPoint(v.set(b.cx - b.ex, b.cy - b.ey, b.cz - b.ez)).expandByPoint(v.set(b.cx + b.ex, b.cy + b.ey, b.cz + b.ez))
+  for (const r of scenery) if (r.kind === 'tree') { const { base, bottom, width } = crownOf(r), { cx, cz } = r.box
+    box.expandByPoint(v.set(cx - width / 2, base + bottom, cz - width / 2)).expandByPoint(v.set(cx + width / 2, base + r.h, cz + width / 2)) }
+  if (ahead && !seenJob({ box: box.expandByScalar(2) })) return void chunkDraws.push({ cell, gen, box })
+  placeChunk(cell, drain(gen))
+}
+// the queued chunks the frame's frusta take in (all: every one) drawn now
+function drawSeen(all) {
+  for (let i = chunkDraws.length; i--;) if (all || seenJob(chunkDraws[i])) drawJob(i)
+}
+// a queued chunk built and placed, then dropped: a failing one drops only itself
+function drawJob(i, r) {
+  const j = chunkDraws[i]
+  try { placeChunk(j.cell, r ? r.value : drain(j.gen)) } catch (e) { frameFailed('chunk', e) } finally { chunkDraws.splice(i, 1) }
+}
+function drawSlices() {
+  if (chunkGrew) return void (chunkGrew = false)
+  const t0 = now()
+  while (chunkDraws.length && now() - t0 < CHUNK_MS) {
+    let r
+    try { r = chunkDraws[0].gen.next() } catch (e) { frameFailed('chunk', e); chunkDraws.shift(); continue }
+    if (r.done) drawJob(0, r)
+  }
+}
+function placeChunk(cell, g) {
+  const mine = []
   g.userData.cell = cell
   worldGroup.add(g)
   still(g); shareMaterials(g)
@@ -8139,6 +8177,7 @@ function applyView() {
 }
 function rebuildWorld() {
   if (!worldGroup) return
+  chunkDraws.length = 0
   clearScars(); sharedMats.clear()
   const geometries = new Set(), materials = new Set()
   worldGroup.traverse(n => {
@@ -8186,7 +8225,8 @@ function rebuildWorld() {
   warmEffects()
   for (const m of materials) m.dispose()
 }
-function drawBoxes(list, city, clip = []) {
+function drawBoxes(list, city, clip = []) { return drain(drawSteps(list, city, clip)) }
+function* drawSteps(list, city, clip = []) {
   const group = new THREE.Group(), surfaces = { floor: [], wall: [] }, decorated = []
   const cityBoxes = new Set(city.flatMap(r => r.kind === 'building' ? r.boxes : [r.box]))
   for (const b of list) {
@@ -8204,6 +8244,7 @@ function drawBoxes(list, city, clip = []) {
     }
     surfaces[b.ey > 1.5 ? 'wall' : 'floor'].push(b)
   }
+  yield
   // Clip floor and wall faces together or overlaps across material kinds still z-fight.
   const solids = new Set(surfaces.floor.concat(surfaces.wall, [...cityBoxes]))
   const faces = solidFaces(clip.filter(b => b && b.vis !== false && !list.includes(b))
@@ -8215,9 +8256,10 @@ function drawBoxes(list, city, clip = []) {
                                        roughness: kind === 'wall' ? 0.9 : 0.95 }))
     m.receiveShadow = true; m.castShadow = true
     group.add(m)
+    yield
   }
   group.add(buildScenery(decorated))
-  if (city.length) group.add(buildCityScenery(city, faces))
+  if (city.length) group.add(yield* citySteps(city, faces))
   return group
 }
 
@@ -9675,6 +9717,7 @@ const CRATER_CUT = { seg: 22, rings: 7, jag: 0.18, lip: 0.6, rim: [[0.9, -0.12],
 let craterMat
 const craterLook = () => new THREE.MeshStandardMaterial({ color: CRATER_CUT.color, vertexColors: true, roughness: 1, flatShading: true })
 function craterWork(R, craters, done) {
+  drawSeen(true)
   const slots = [], { a0, a1, b0, b1 } = R.rect
   worldGroup.traverse(m => { const g = m.geometry, bs = g?.boundingSphere || g?.computeBoundingSphere() || g?.boundingSphere
     if (!m.isMesh || m.isInstancedMesh || m === scarMesh || m.userData.crater || g.index || !g.attributes.uv ||
@@ -15167,6 +15210,7 @@ function frameBody() {
     startLog.frames.push(t - (startLog.last ?? t)); startLog.last = t
   }
   try { if (phase === 'menu') prepMenu(); prepareStep() } catch (e) { prepQueue.shift(); prepAt = null; frameFailed('prep', e) }      // a failing row drops only itself
+  try { drawSlices() } catch (e) { frameFailed('chunk', e) }
 }
 
 const lastHud = {}
