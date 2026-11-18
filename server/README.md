@@ -1,0 +1,187 @@
+# Dedicated server
+
+The game's dedicated server, as a Docker image. It runs the game page itself, the same file players open, in headless
+Chromium and in the page's own server mode (the landing page's *Run a server*). Players join from the public game page
+with the room code. Your own code can watch the game and act on it: hook modules run inside the page, every event goes
+to stdout as a JSON line and to any webhooks you register, and a small HTTP API kicks, announces and changes the match.
+
+## Run it
+
+```sh
+docker run -d --name superkillers --network host --restart unless-stopped ghcr.io/jsxyz/superkillers-server
+docker logs superkillers
+```
+
+The log names the room and its join link:
+
+```
+Room K7XQ2M  Yard  join: https://jsxyz.github.io/superkillers/#K7XQ2M
+```
+
+The image is rebuilt from this repository whenever the game changes, so `latest` always runs the game players open. Each
+build is also tagged with its commit's sha. To build it yourself instead, from the repository root:
+
+```sh
+docker build -f server/Dockerfile -t superkillers-server .
+```
+
+Run it with `--network host`. Players connect to the server directly over WebRTC, and host networking lets them reach it
+at the machine's own addresses. Behind Docker's own NAT (a bridge network) each player's link has to be made through that
+NAT too, which can fail. The server needs the internet: the page loads its libraries from a CDN and finds players through
+the public PeerJS signaling server.
+
+`docker stop` closes the room cleanly. The players are told the host left, and the last events go out first.
+
+## Configure it
+
+Everything is an environment variable (`-e NAME=value`).
+
+| Variable | Default | |
+|---|---|---|
+| `LEVEL` | `Yard` | a level by name or number: Yard, Foundry, Sprawl, City |
+| `MODE` | `waves` | `ffa` (free-for-all, 32 players) or `waves` (4 players) |
+| `FRAGS` | `25` | kills to win, 0–200; 0 is no limit |
+| `MINUTES` | `0` | length of a match, 0–60; 0 is untimed |
+| `ENEMIES` | `3` | computer-run enemies |
+| `ROOM_CODE` | random | a fixed room code, 6 characters of `ABCDEFGHJKMNPQRSTUVWXYZ23456789`, so the join link stays the same |
+| `SERVER_NAME` | `The server` | the name players see when it kicks them |
+| `JOIN_URL` | the public game page | printed with `#` and the room code as the join link |
+| `HOOKS_DIR` | `/hooks` | hook modules |
+| `STDOUT_EVENTS` | `*` | the event types written to stdout |
+| `WEBHOOK_URL`, `WEBHOOK_SECRET` (or `WEBHOOK_SECRET_FILE`), `WEBHOOK_EVENTS` | | one webhook |
+| `WEBHOOKS_FILE` | `/config/webhooks.json` | several webhooks |
+| `ACTION_HOST`, `ACTION_PORT` | `127.0.0.1`, `8080` | the action API; port 0 turns it off |
+| `ACTION_TOKEN` (or `ACTION_TOKEN_FILE`) | | required whenever `ACTION_HOST` is not loopback |
+| `GAME_FILE` | the game in the image | run another copy of the game, mounted into the container |
+
+An event type list is `*` for every type, a comma list such as `kill,player.join`, or a list of types to leave out such as
+`-damage,-chat`.
+
+## Events
+
+Each event is one JSON object, the same on stdout and to a webhook:
+
+```json
+{"id":"6f1c…","type":"kill","ts":1795030120.52,"seq":41,"game":"superkillers","match":"90aa2b7d…",
+ "data":{"killer":{"id":1,"name":"Ann","kind":"player","character":"Sam"},
+         "victim":{"id":101,"name":"Blue","kind":"enemy","character":"Blue"},"weapon":"Pistol"}}
+```
+
+`id` is unique to the event. `ts` is when it happened, in unix seconds. `seq` rises with every event of a server run.
+`match` is a random id for the match it happened in. Wherever a person appears it is `{id, name, kind, character}`:
+- `kind` is `player`, `enemy`, or `ally` (a computer-run team-mate a player fields, with `owner`, that player's id).
+- `id` belongs to whoever has it now and is given to someone else after they leave.
+
+| Type | Data |
+|---|---|
+| `ping` | `reason` (`start`, or `request` from the action API), `players`, `enemies`, `level`, `uptime` |
+| `match.start` | `level`, `mode`, `fragLimit`, `minutes` |
+| `match.end` | `reason` (`frags`, `time`, `restart`, `stop`), `winner` (or null), `standings` with `kills` each |
+| `player.join` | `player` |
+| `player.leave` | `player`, `reason` (`left`, `kicked`, `timeout`, `dropped`) |
+| `player.rename` | `player`, `was` |
+| `kill` | `killer`, `victim`, `weapon`; `via`, the team-mate who struck for its owner |
+| `death` | `victim`, `weapon`: a death nobody is credited with |
+| `chat` | `player`, `text`, `action` (an emote) |
+| `damage` | `victim`, `attacker` (or null), `weapon`, `amount`, `hp` |
+| `spawn` | `who`: a respawn, or an enemy arriving |
+| `pickup` | `player`, `item`, `kind` (`gun`, `power`, `heal`) |
+| `wave` | `name`, `number` |
+
+Every `match.start` is followed by one `match.end`. A level change, a restart or the room emptying ends it as
+`restart`. Hook modules can add types of their own.
+
+**Names and chat are typed by players.** They are capped (16 and 160 characters) and stripped of control and colour
+codes, but not authenticated and not unique. Escape them wherever you show them, and never treat them as identity. No
+event carries the room code, the room's only credential.
+
+## Webhooks
+
+The server POSTs each event as its JSON body to every webhook that wants its type, one at a time and in order. Any 2xx
+answer is delivery. Otherwise it tries again after 1, 5, 30 and then every 60 seconds, with the same body, until five
+minutes after the event, then drops it. A webhook holds at most 10,000 waiting events, dropping the oldest first. Drops
+are counted on stderr. Only https URLs are accepted, and a webhook gets every type but `damage` and `chat` unless you
+list its types.
+
+Headers: `Content-Type: application/json`, `X-Game-Event-Id`, `X-Game-Timestamp` (unix seconds of this attempt) and
+`X-Game-Signature: sha256=` followed by the hex HMAC-SHA256 of `<X-Game-Timestamp>.<raw body>` under the webhook's
+secret. To check a delivery, compute the HMAC over the exact bytes received and compare it in constant time. Refuse a
+timestamp more than a few minutes off. Ignore an event id you have seen before.
+
+```js
+const want = 'sha256=' + crypto.createHmac('sha256', secret).update(ts + '.').update(rawBody).digest('hex')
+const ok = sig.length === want.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want))
+```
+
+Several webhooks go in a mounted file (`-v ./webhooks.json:/config/webhooks.json:ro`):
+
+```json
+[{ "url": "https://example.com/game-events", "secretFile": "/run/secrets/game-events", "events": "*" },
+ { "url": "https://example.org/kills", "secret": "…", "events": ["kill", "match.end"] }]
+```
+
+The secret is never printed, and stderr names a webhook only by its origin.
+
+## Hook modules
+
+Mount a directory at `/hooks` (`-v ./hooks:/hooks:ro`). Each `.js` or `.mjs` file directly in it is loaded, in name
+order, as an ES module into the game page before the room opens. Its default export is called with the hooks:
+
+```js
+// hooks/welcome.mjs
+export default function (hooks) {
+  hooks.on('player.join', ({ player }) => hooks.tell(player.id, 'Welcome, ' + player.name))
+  hooks.filter('chat', ({ text }) => /\bspoiler\b/i.test(text) ? false : undefined)
+  hooks.on('kill', ({ killer, victim }) => {
+    if (victim.kind === 'enemy' && victim.character === 'Superman') hooks.announce(killer.name + ' brought down Superman')
+  })
+}
+```
+
+- `on(type, fn)` calls `fn(data, { type, match })` for each event of a type, or of every type with `'*'`, and returns a
+  function that removes it.
+- `filter(kind, fn)` asks `fn(data, { type, match })` before the host takes something from a player:
+  - `join`: a joining player, and a player's new name (`rename` is true);
+  - `chat`: a chat line it would pass on;
+  - `hit`: a hit it would deal.
+
+  Return `false` to refuse, `{ name, character }`, `{ text }` or `{ damage }` to change it, and anything else to let it
+  pass. A refused player is let go, a refused line goes nowhere, and a refused hit does no harm at all.
+- `emit(type, data)` sends an event of your own, a lowercase dotted name such as `league.goal`, with at most 8 KB of
+  JSON. Your other hooks, stdout and the webhooks get it like any event.
+- `announce(text)`, `tell(id, text)` and `kick(id or name)` act on players. So do `command('/bots 4')` (any chat
+  command, returning the lines it printed), `setLevel(name or number)`, `setFragLimit(n)`, `setMatchMinutes(n)`,
+  `setEnemies(n)` and `restart()`. Each returns false when refused.
+- `players()` lists everyone in the game. `room()` describes the room, its code included.
+
+Hooks run in the middle of the game's own work, so keep them quick. A hook that throws is skipped and counted, and the
+game goes on. Whatever hooks send players is held to a player's own limits: a line is at most 160 characters, eight may go at
+once, and after that one each quarter second. A module may `fetch()` other services, which CORS governs, or emit an
+event and let a webhook carry it.
+
+## Action API
+
+It listens on `127.0.0.1:8080` inside the container, so with `--network host` it is the machine's own loopback, open to
+any program on that machine. It is for programs: a request with an `Origin` header is refused. Bound anywhere else
+(`ACTION_HOST=0.0.0.0`) it needs `Authorization: Bearer <ACTION_TOKEN>` on every request, and the server refuses to start
+without a token. A token set on loopback is required there too.
+
+| Request | Body | |
+|---|---|---|
+| `GET /health` | | 200 while the room is open (the image's health check) |
+| `GET /status` | | the room: code, join link, level, limits, players, webhook queues |
+| `GET /players` | | everyone in the game |
+| `POST /ping` | | sends a `ping` event |
+| `POST /announce` | `{"text"}` | a line to every player |
+| `POST /tell` | `{"id", "text"}` | a line to one player |
+| `POST /kick` | `{"id"}` or `{"name"}` | |
+| `POST /command` | `{"line"}` | a chat command, such as `/bots 4`; answers the lines it printed |
+| `POST /level` | `{"level"}` | |
+| `POST /frags` | `{"frags"}` | |
+| `POST /minutes` | `{"minutes"}` | |
+| `POST /enemies` | `{"enemies"}` | |
+| `POST /restart` | | |
+
+```sh
+curl -s -X POST http://127.0.0.1:8080/announce -d '{"text":"Double points this round"}'
+```

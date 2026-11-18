@@ -1,0 +1,10 @@
+{
+  "name": "superkillers-server",
+  "private": true,
+  "description": "The game's dedicated server: the game page itself, run headless in its server mode",
+  "type": "commonjs",
+  "main": "server.js",
+  "dependencies": {
+    "playwright": "1.64.1"
+  }
+}
