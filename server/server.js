@@ -10,7 +10,25 @@ const say = msg => process.stderr.write(msg + '\n')
 const die = (msg, code = 2) => { say('server: ' + msg); process.exit(code) }
 const sleep = ms => new Promise(ok => setTimeout(ok, ms))
 const blank = v => v === undefined || v === ''
-const read = f => { try { return fs.readFileSync(f, 'utf8').trim() } catch (e) { die('cannot read ' + f + ': ' + e.code) } }
+// A setting's file. Its errors name the setting, never the path, which may be the secret itself given by mistake
+const readFile = (f, what) => { try { return fs.readFileSync(f, 'utf8') } catch (e) { die(what + ': cannot read the file (' + (e.code || e.name) + ')') } }
+const read = (f, what) => readFile(f, what).trim()
+// A file of JSON. A fault is told by its line and column, never by the text around it, which may hold a secret
+function readJson(f, what) {
+  const text = readFile(f, what)
+  try { return JSON.parse(text) } catch (e) { die(what + ': not valid JSON at ' + jsonFault(text, e)) }
+}
+// V8 gives most faults' line and column; an unexpected token is the last character of the shortest prefix that fails
+// on something other than its end
+function jsonFault(text, e) {
+  const at = /\(line (\d+) column (\d+)\)/.exec(e.message)
+  if (at) return 'line ' + at[1] + ', column ' + at[2]
+  const ends = s => { try { JSON.parse(s); return true } catch (e) { const p = /at position (\d+)/.exec(e.message); return /end of JSON input/.test(e.message) || !!p && +p[1] >= s.length } }
+  let lo = 0, hi = text.length, fault = text.length
+  if (!ends(text)) { while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (ends(text.slice(0, mid))) lo = mid; else hi = mid } fault = hi - 1 }
+  const lines = text.slice(0, fault).split('\n')
+  return 'line ' + lines.length + ', column ' + (lines[lines.length - 1].length + 1)
+}
 
 // ---- configuration
 const number = (k, lo, hi, whole) => {
@@ -29,25 +47,26 @@ const types = (v, what) => {
   return no.length ? t => !no.includes(t) : t => yes.includes(t)
 }
 const WEBHOOK_DEFAULT = '-damage,-chat'
-function webhook(h, where) {
+function webhook(h, where, secretFile) {
   if (!h || typeof h !== 'object') die(where + ': a webhook is { url, secret | secretFile, events }')
   let u
   try { u = new URL(h.url) } catch (e) { die(where + ': its url is not a URL') }
   if (u.protocol !== 'https:') die(where + ': a webhook url must be https')
-  const secret = h.secretFile ? read(h.secretFile) : h.secret
-  if (blank(secret)) die(where + ': needs a secret (secret, or secretFile)')
-  return new Webhook(u.href, u.origin, String(secret), types(h.events ?? WEBHOOK_DEFAULT, where))
+  const file = h.secretFile ?? ''
+  if (typeof file !== 'string') die(secretFile + ' must be a path')
+  const secret = file ? read(file, secretFile) : h.secret
+  if (typeof secret !== 'string' || !secret.trim()) die(where + ': needs a secret, a string (secret, or secretFile)')
+  return new Webhook(u.href, u.origin, secret, types(h.events ?? WEBHOOK_DEFAULT, where))
 }
 function webhooks() {
   const out = [], file = env.WEBHOOKS_FILE || '/config/webhooks.json'
   if (fs.existsSync(file)) {
-    let list
-    try { list = JSON.parse(fs.readFileSync(file, 'utf8')) } catch (e) { die(file + ' is not JSON: ' + e.message) }
+    const list = readJson(file, file)
     if (!Array.isArray(list)) die(file + ' must hold a list of webhooks')
-    list.forEach((h, i) => out.push(webhook(h, file + ' #' + (i + 1))))
-  } else if (!blank(env.WEBHOOKS_FILE)) die('no file ' + env.WEBHOOKS_FILE)
+    list.forEach((h, i) => out.push(webhook(h, file + ' #' + (i + 1), file + ' #' + (i + 1) + ': its secretFile')))
+  } else if (!blank(env.WEBHOOKS_FILE)) die('WEBHOOKS_FILE: no such file')
   if (!blank(env.WEBHOOK_URL))
-    out.push(webhook({ url: env.WEBHOOK_URL, secret: env.WEBHOOK_SECRET, secretFile: env.WEBHOOK_SECRET_FILE, events: env.WEBHOOK_EVENTS }, 'WEBHOOK_URL'))
+    out.push(webhook({ url: env.WEBHOOK_URL, secret: env.WEBHOOK_SECRET, secretFile: env.WEBHOOK_SECRET_FILE, events: env.WEBHOOK_EVENTS }, 'WEBHOOK_URL', 'WEBHOOK_SECRET_FILE'))
   return out
 }
 
@@ -113,22 +132,23 @@ const CFG = {
     frags: number('FRAGS', 0, 200, true), minutes: number('MINUTES', 0, 60), enemies: number('ENEMIES', 0, 100, true),
   }).filter(([, v]) => !blank(v))),
   api: { host: env.ACTION_HOST || '127.0.0.1', port: number('ACTION_PORT', 0, 65535, true) ?? 8080,
-         token: env.ACTION_TOKEN_FILE ? read(env.ACTION_TOKEN_FILE) : env.ACTION_TOKEN || '' },
+         token: env.ACTION_TOKEN_FILE ? read(env.ACTION_TOKEN_FILE, 'ACTION_TOKEN_FILE') || die('ACTION_TOKEN_FILE: the file is empty') : env.ACTION_TOKEN || '' },
 }
 const HOOKS = webhooks()
 const LOOPBACK = /^(127\.\d+\.\d+\.\d+|::1|localhost)$/
 if (CFG.api.port && !LOOPBACK.test(CFG.api.host) && !CFG.api.token)
   die(`the action API on ${CFG.api.host} is beyond loopback: set ACTION_TOKEN or ACTION_TOKEN_FILE, or keep ACTION_HOST=127.0.0.1`)
 let html
-try { html = fs.readFileSync(CFG.game) } catch (e) { die('cannot read the game at ' + CFG.game) }
+try { html = fs.readFileSync(CFG.game) } catch (e) { die((env.GAME_FILE ? 'GAME_FILE' : 'the game') + ': cannot read the file (' + e.code + ')') }
 
 // ---- the page, served on loopback: the game, and the hook modules under /hooks/
+const unescaped = s => { try { return decodeURIComponent(s) } catch (e) { return '' } }
 function serveFiles() {
   const files = http.createServer((req, res) => {
-    const u = new URL(req.url, 'http://loopback'), type = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json' }
+    const u = URL.parse(req.url, 'http://loopback'), type = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json' }
     if (req.method !== 'GET') { res.writeHead(405); return res.end() }
-    if (u.pathname === '/') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }); return res.end(html) }
-    const m = /^\/hooks\/(.+)$/.exec(u.pathname), f = m && path.resolve(CFG.hooksDir, decodeURIComponent(m[1]))
+    if (u?.pathname === '/') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }); return res.end(html) }
+    const m = u && /^\/hooks\/(.+)$/.exec(u.pathname), f = m && path.resolve(CFG.hooksDir, unescaped(m[1]))
     if (f && f.startsWith(CFG.hooksDir + path.sep) && type[path.extname(f)] && fs.existsSync(f) && fs.statSync(f).isFile()) {
       res.writeHead(200, { 'Content-Type': type[path.extname(f)] + '; charset=utf-8', 'Cache-Control': 'no-store' }); return res.end(fs.readFileSync(f))
     }
@@ -185,8 +205,8 @@ function actionApi(page) {
       const t = /^Bearer (.+)$/.exec(req.headers.authorization || '')
       if (!t || !crypto.timingSafeEqual(crypto.createHash('sha256').update(t[1]).digest(), want)) return send(401, { error: 'needs Authorization: Bearer <ACTION_TOKEN>' })
     } else if (!hosts.has(req.headers.host)) return send(403, { error: 'unexpected Host' })
-    const u = new URL(req.url, 'http://loopback'), route = ROUTES[req.method + ' ' + u.pathname]
-    if (!route) return send(Object.keys(ROUTES).some(k => k.endsWith(' ' + u.pathname)) ? 405 : 404, { error: 'no such action' })
+    const u = URL.parse(req.url, 'http://loopback'), route = u && ROUTES[req.method + ' ' + u.pathname]
+    if (!route) return send(u && Object.keys(ROUTES).some(k => k.endsWith(' ' + u.pathname)) ? 405 : 404, { error: 'no such action' })
     let raw = ''
     req.setEncoding('utf8')
     req.on('data', d => { raw += d; if (raw.length > 16384) { send(413, { error: 'body too large' }); req.destroy() } })
@@ -236,15 +256,24 @@ let page = null
   const r0 = await page.evaluate(() => globalThis.gameHooks ? gameHooks.room() : null)
   if (!r0?.ready) die('the game did not start: ' + (r0?.status || await page.textContent('#status').catch(() => '') || 'no hooks in this copy of the game'), 1)
   await page.evaluate(BRIDGE)
-  const mods = fs.existsSync(CFG.hooksDir) ? fs.readdirSync(CFG.hooksDir).filter(f => /^[^.].*\.m?js$/.test(f) && fs.statSync(path.join(CFG.hooksDir, f)).isFile()).sort() : []
+  let mods = []
+  try { if (fs.existsSync(CFG.hooksDir)) mods = fs.readdirSync(CFG.hooksDir).filter(f => /^[^.].*\.m?js$/.test(f) && fs.statSync(path.join(CFG.hooksDir, f)).isFile()).sort() }
+  catch (e) { die('HOOKS_DIR: cannot read it (' + e.code + ')') }
   for (const f of mods) {
     const err = await page.evaluate(async url => {
+      const slow = {}
       try {
         const m = await import(url)
         if (typeof m.default !== 'function') return 'it has no default export function'
-        await Promise.race([m.default(gameHooks), new Promise((ok, no) => setTimeout(() => no(new Error('its setup took over 30 s')), 30000))])
+        await Promise.race([m.default(gameHooks), new Promise((ok, no) => setTimeout(() => no(slow), 30000))])
         return ''
-      } catch (e) { return String(e?.stack || e) }
+      } catch (e) {
+        if (e === slow) return 'its setup took over 30 s'
+        // the kind of error and where, never its message, which can quote the module
+        const at = /^(\d+):(\d+)/.exec(String(e?.stack).split(url + ':')[1] || '')
+        return 'a ' + (/^[A-Z][A-Za-z]{0,30}Error$/.test(e?.name) ? e.name : 'thrown value')
+          + (at ? ' at line ' + at[1] + ', column ' + at[2] : e?.name === 'SyntaxError' ? ' (node --check on it shows where)' : '')
+      }
     }, '/hooks/' + encodeURIComponent(f))
     if (err) die('hook module ' + f + ': ' + err, 1)
     say('hooks: ' + f)
