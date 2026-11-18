@@ -3800,7 +3800,9 @@ function stepTornado(dt, all, onKill) {
       if (d > r || c.y - c.h - c.r > TOR_TOP) continue
       const s = seatOf(c)
       if (s) { if (!rode.has(s[0])) { rode.add(s[0]); s[0].hp -= dmg; s[0].by = T.by } continue }
+      const was = hookHitOn && [c.hp, c.mark, c.markT]
       c.hp -= dmg
+      if (was && !hookHit(players.get(T.by), c, 'Tornado', was)) continue
       if (yank && d > 0.2) {
         const a = Math.atan2(c.z - T.z, c.x - T.x)
         knockChar(c, -Math.cos(a) * 0.6 - Math.sin(a), 0.5, -Math.sin(a) * 0.6 + Math.cos(a), 7)
@@ -4766,7 +4768,10 @@ function dropCar(o) {
   A.destroy(o.car); A.destroy(o.carRay); if (o.padQ) A.destroy(o.padQ); o.padQ = null
   o.car = null
 }
-const fell = (c, how) => announce('§f' + ((roster.get(c.id) || {}).name || '?') + ' §7' + how)
+const fell = (c, how, what) => {
+  announce('§f' + ((roster.get(c.id) || {}).name || '?') + ' §7' + how)
+  if (hooked.death) hookEmit('death', { victim: hookWho(c), weapon: what })
+}
 function sit(c, o, i) {
   o.riders[i] = c.id; c.seat = [o, i]
   world.removeRigidBody(c.body)
@@ -4989,10 +4994,12 @@ function launchObject(o, L, ux, uz) {
 function strike(c, h, G, ux, uy, uz, rode) {
   const s = seatOf(h)
   if (s) { if (!rode?.has(s[0])) { rode?.add(s[0]); strikeObject(c, s[0], G, ux, uy, uz) } return }
+  const was = hookHitOn && [h.hp, h.mark, h.markT]
   if (G.apply) { h.mark = powerNamed(G.apply); h.markT = POWERS[h.mark - 1]?.dur ?? 0 }
   // Amp is read off the shooter, Shield off the shot: they compose
   if (G.lethal) h.hp = 0
   else h.hp -= stat(h, 'take', stat(c, 'give', G.dmg * profDmg(c, G.name)))
+  if (was && !hookHit(c, h, G.name, was)) return
   knockChar(h, ux, uy, uz, G.knock * (1 + profExtra(c, G.name, 'knock')))
 }
 
@@ -5166,15 +5173,19 @@ function boltSegments(x1, y1, z1, x2, y2, z2, gunId, hit) {
 }
 
 // freezes nobody (guests' prediction would diverge); scoring stops instead
+// a match as the server's events tell it
+const matchInfo = () => ({ level: LEVELS[levelId].name, mode: gameMode, fragLimit, minutes: timeLimit / 60 })
 function endMatch(why) {
   if (resultsLeft > 0) return
   resultsLeft = RESULTS_S
   const best = [...players.values()].sort((a, b) => b.kills - a.kills)[0]
   const who = best ? (roster.get(best.id) || {}).name || '?' : '?'
   announce('§e' + why + ' §f' + who + ' §7wins with §f' + (best ? best.kills : 0))
+  hookMatchEnd(why === 'Time.' ? 'time' : 'frags', best)
 }
 
 function resetMatch() {
+  hookMatchStart(matchInfo)
   resultsLeft = 0
   matchLeft = timeLimit
   spawnObjects()
@@ -5295,6 +5306,7 @@ function stepPickups(dt, list) {
           c.ammo = GUNS[pk.gun].ammo
           got = GUNS[pk.gun].name
         }
+        if (hooked.pickup) hookEmit('pickup', { player: hookWho(c), item: got, kind: H ? 'heal' : pk.pow > 0 ? 'power' : 'gun' })
         if (pk.dropped) { pickups.splice(pickups.indexOf(pk), 1) }
         else { pk.respawn = 9 + Math.random() * 6; rollPad(pk) }
         if (c === selfChar()) sysMsg('§ePicked up §f' + got)
@@ -12822,7 +12834,8 @@ function pushMsg(html) {
   el('#chat').style.display = ''
 }
 
-const sysMsg = raw => pushMsg(mcHtml(raw))
+let sysTap = null            // a hook's command: what it prints
+const sysMsg = raw => { if (sysTap) sysTap.push(String(raw)); pushMsg(mcHtml(raw)) }
 
 function nameTag(id) {
   const p = roster.get(id)
@@ -12942,7 +12955,7 @@ function cmdNick(a) {
   const n = cleanName(a)
   if (!n) return sysMsg('§cUsage: §f/nick <name>')
   myName = n
-  if (isHost) { roster.set(0, { cid: myCid, name: n }); pushRoster() }
+  if (isHost) { if (!serving) { roster.set(0, { cid: myCid, name: n }); pushRoster() } }
   else sendHost({ k: 'nick', name: n })
   sysMsg('§7You are now §f' + n)
 }
@@ -12959,6 +12972,7 @@ function cmdChar(a) {
 }
 
 function requestChar(idx) {
+  if (serving) return sysMsg('§cA server plays no character.')
   if (!CHARS[idx] || CHARS[idx].hidden) return
   const me = selfChar(), swap = !!me && !!CHARS[idx].team && CHARS[idx].team === CHARS[me.cid]?.team
   if (isHost) {
@@ -13024,6 +13038,7 @@ function cmdKick(a) {
 
 function kickId(id) {
   const p = roster.get(id), c = conns.get(id)
+  if (c && hooked['player.leave']) hookGone.set(id, 'kicked')
   if (c && c.open) {
     try { c.send(JSON.stringify({ k: 'kicked', by: myName })) } catch (e) {}
     setTimeout(() => { try { c.close() } catch (e) {} }, 150)
@@ -13153,6 +13168,187 @@ function fadeChat(t) {
   }
   fadeIdle = !live && !chatOpen
 }
+
+// ---- hooks: a server owner's code in this page (globalThis.gameHooks) observes what the host's game does, filters what
+// guests send, and acts through the host's own functions. Nothing registered, nothing runs: each emit point reads
+// hooked[type] first. What a guest sent reaches a hook bounded as the host bounds it, and still untrusted; what a hook sends
+// guests is cut to a guest's chat line and spaced as a guest's chat is.
+const HOOK_TYPES = ['ping', 'match.start', 'match.end', 'player.join', 'player.leave', 'player.rename', 'kill', 'death', 'chat',
+                    'damage', 'spawn', 'pickup', 'wave']
+const HOOK_FILTERS = ['join', 'chat', 'hit'], HOOK_TYPE = /^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)*$/, HOOK_DATA_MAX = 8192, HOOK_BURST = 8
+// type ('*': every type) -> its listeners; kind -> its filters; a guest's id -> how it went, while its link closes
+const hookOn = new Map(), hookFilters = new Map(), hookGone = new Map()
+let hooked = {}, hookHitOn = false, hookFails = 0, hookFail = ''        // type -> the listeners its emit calls; none: absent
+let hookMatchId = null, hookMatchOpen = false, hookTokens = HOOK_BURST, hookTokenAt = 0, serveCode = ''
+function hookRelist() {
+  const any = [...hookOn.get('*') || []]
+  hooked = any.length ? Object.fromEntries([...HOOK_TYPES, '*'].map(k => [k, any])) : {}
+  for (const [k, fs] of hookOn) if (k !== '*') hooked[k] = [...fs, ...any]
+  hookHitOn = hookFilters.has('hit') || !!hooked.damage
+}
+const hookFailed = (where, e) => { hookFails++; hookFail = where + ': ' + (e?.message || e); try { console.error('[hooks] ' + hookFail) } catch (err) {} }
+const hookFreeze = o => { if (o && typeof o === 'object' && !Object.isFrozen(o)) { Object.freeze(o); for (const k in o) hookFreeze(o[k]) } return o }
+// the match's id, random and made when first wanted: never the room code
+const hookMeta = type => Object.freeze({ type, match: hookMatchId ||= [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('') })
+function hookEmit(type, data) {
+  const fs = isHost && hooked[type]
+  if (!fs) return
+  hookFreeze(data)
+  const meta = hookMeta(type)
+  for (const f of fs) try { f(data, meta) } catch (e) { hookFailed(type, e) }
+}
+// each filter in turn: false refuses, an object rewrites what take accepts of it, anything else passes. null: refused
+function hookFilter(kind, data, take) {
+  for (const f of isHost && hookFilters.has(kind) ? [...hookFilters.get(kind)] : []) {
+    let r
+    try { r = f(hookFreeze({ ...data }), hookMeta(kind)) } catch (e) { hookFailed('filter ' + kind, e); continue }
+    if (r === false) return null
+    if (r && typeof r === 'object') data = take(data, r)
+  }
+  return data
+}
+// a body as the events tell it: its in-room id (reused once it leaves) and its name as the host took it, not an identity
+function hookWho(c) {
+  const R = GAME.participantOf(c), p = roster.get(c.id)
+  return !c.bot ? { id: c.id, name: p ? p.name : '?', kind: 'player', character: R.name }
+    : c.owner !== undefined ? { id: c.id, name: R.name, kind: 'ally', character: R.name, owner: c.owner }
+    : { id: c.id, name: p ? p.name : R.name, kind: 'enemy', character: R.name }
+}
+const hookPlayer = id => players.has(id) ? hookWho(players.get(id)) : { id, name: roster.get(id)?.name ?? '?', kind: 'player', character: '?' }
+const hookStandings = () => [...players.values()].filter(c => roster.has(c.id)).sort((a, b) => b.kills - a.kills).map(c => ({ ...hookWho(c), kills: c.kills | 0 }))
+// a join filter's name and row, kept only as the host takes them from a guest
+const hookRow = name => { for (let i = 0; GAME.rows.of(i); i++) if (GAME.rows.of(i).name === name) return i; return -1 }
+const hookJoinTake = (d, r) => {
+  const name = typeof r.name === 'string' && cleanName(r.name), cid = typeof r.character === 'string' ? hookRow(r.character) : -1
+  return { ...d, player: { ...d.player, ...name && { name }, ...cid >= 0 && { character: r.character } }, ...cid >= 0 && { cid } }
+}
+// a guest's hello as the join filters leave it, or null: refused, and let go
+function hookJoin(id, d) {
+  const v = hookFilter('join', { player: { id, name: cleanName(d.name) || 'player', kind: 'player', character: GAME.rows.of(GAME.rows.cid(d.cid)).name }, rename: false }, hookJoinTake)
+  if (!v) { kickId(id); conns.delete(id); return null }        // refused: nothing more it sends is read
+  return { ...d, name: v.player.name, cid: v.cid ?? d.cid }
+}
+// a guest's new name judged as a joining one, then taken and told
+function hookRename(id, p, d) {
+  const was = p.name
+  let name = cleanName(d.name) || was
+  if (name !== was && hookFilters.has('join')) name = hookFilter('join', { player: { ...hookPlayer(id), name }, rename: true, was }, hookJoinTake)?.player.name ?? was
+  p.name = name; pushRoster()
+  if (name !== was && hooked['player.rename']) hookEmit('player.rename', { player: hookPlayer(id), was })
+}
+// a match starts (info: what match.start tells of it); one not yet ended is told ended 'restart' first
+function hookMatchStart(info) {
+  if (hookMatchOpen && hooked['match.end']) hookEmit('match.end', { reason: 'restart', winner: null, standings: hookStandings() })
+  hookMatchId = null; hookMatchOpen = true
+  if (hooked['match.start']) hookEmit('match.start', info())
+}
+function hookMatchEnd(reason, best) {
+  if (!hookMatchOpen) return
+  hookMatchOpen = false
+  if (hooked['match.end']) hookEmit('match.end', { reason, winner: best ? { ...hookWho(best), kills: best.kills | 0 } : null, standings: hookStandings() })
+}
+// a hit as the game dealt it (was: the victim's [hp, mark, markT] before): a filter may refuse it, undone whole and its
+// knock not given, or set its damage; then it is told. false: refused
+function hookHit(by, v, weapon, was) {
+  let dmg = was[0] - v.hp
+  if (hookFilters.has('hit')) {
+    const r = hookFilter('hit', { attacker: by ? hookWho(by) : null, victim: hookWho(v), weapon, damage: dmg },
+      (d, r) => Number.isFinite(r.damage) && r.damage >= 0 ? { ...d, damage: Math.min(r.damage, 1e6) } : d)
+    if (!r) { [v.hp, v.mark, v.markT] = was; return false }
+    if (r.damage !== dmg) v.hp = was[0] - (dmg = r.damage)
+  }
+  if (hooked.damage && dmg > 0) hookEmit('damage', { victim: hookWho(v), attacker: by ? hookWho(by) : null, weapon, amount: Math.round(dmg * 10) / 10, hp: Math.round(v.hp) })
+  return true
+}
+const hookText = t => String(t ?? '').slice(0, 160)          // as a guest's chat line is cut
+// what reaches guests spends a token: HOOK_BURST at once, then one each CHAT_MIN_MS, as a guest's chat is spaced
+function hookSend() {
+  const t = now()
+  hookTokens = Math.min(HOOK_BURST, hookTokens + (t - hookTokenAt) / CHAT_MIN_MS); hookTokenAt = t
+  if (hookTokens < 1) return false
+  hookTokens--
+  return true
+}
+const hookCheck = (ok, what) => { if (!ok) throw new TypeError(what) }
+Object.defineProperty(globalThis, 'gameHooks', { value: Object.freeze({
+  // fn(data, { type, match }) on each event of type ('*': every type); returns what removes it
+  on(type, fn) {
+    hookCheck(type === '*' || HOOK_TYPES.includes(type) || HOOK_TYPE.test(type) && type.length <= 40, 'no event type ' + type)
+    hookCheck(typeof fn === 'function', 'on(type, fn) needs a function')
+    hookOn.set(type, (hookOn.get(type) || new Set()).add(fn)); hookRelist()
+    return () => { const s = hookOn.get(type); if (s?.delete(fn) && !s.size) hookOn.delete(type); hookRelist() }
+  },
+  // fn(data, { type, match }) before the host takes a guest's join or rename, relays its chat line or deals a hit: false
+  // refuses it; { name, character } (join), { text } (chat) or { damage } (hit) rewrites it
+  filter(kind, fn) {
+    hookCheck(HOOK_FILTERS.includes(kind), 'no filter ' + kind + ': ' + HOOK_FILTERS.join(', '))
+    hookCheck(typeof fn === 'function', 'filter(kind, fn) needs a function')
+    hookFilters.set(kind, (hookFilters.get(kind) || new Set()).add(fn)); hookRelist()
+    return () => { const s = hookFilters.get(kind); if (s?.delete(fn) && !s.size) hookFilters.delete(kind); hookRelist() }
+  },
+  // a hook's own event, to whoever listens for its type or for '*'
+  emit(type, data = {}) {
+    hookCheck(!HOOK_TYPES.includes(type) && HOOK_TYPE.test(type) && type.length <= 40, 'not a type a hook may emit: ' + type)
+    const s = JSON.stringify(data)
+    // its UTF-8 size
+    hookCheck(s !== undefined && encodeURIComponent(s).replace(/%../g, '.').length <= HOOK_DATA_MAX, 'event data must be JSON of at most ' + HOOK_DATA_MAX + ' bytes')
+    const fs = isHost && (hooked[type] || hooked['*'])
+    if (!fs) return
+    const d = hookFreeze(JSON.parse(s)), meta = hookMeta(type)
+    for (const f of fs) try { f(d, meta) } catch (e) { hookFailed(type, e) }
+  },
+  // Run a server from the landing page, as its button does: { code, level, mode, frags, minutes, enemies, name }, each optional
+  serve(o = {}) {
+    if (phase !== 'menu' || el('#serve-btn').disabled) return false
+    const lv = o.level === undefined ? pickedLevel : levelArg(o.level), code = o.code === undefined ? '' : codeOf(o.code, '')
+    hookCheck(lv >= 0, 'no level ' + o.level + ': ' + LEVELS.map(L => L.name).join(', '))
+    hookCheck(o.code === undefined || code, 'a room code is 6 of ' + CODE_ALPHABET)
+    hookCheck(o.mode === undefined || MODES.includes(o.mode), 'no mode ' + o.mode + ': ' + MODES.join(', '))
+    hookCheck(o.frags === undefined || Number.isInteger(o.frags) && o.frags >= 0 && o.frags <= 200, 'frags: 0-200')
+    hookCheck(o.minutes === undefined || Number.isFinite(o.minutes) && o.minutes >= 0 && o.minutes <= 60, 'minutes: 0-60')
+    hookCheck(o.enemies === undefined || Number.isInteger(o.enemies) && o.enemies >= 0, 'enemies: 0 or more')
+    pickedLevel = lv; serveCode = code
+    if (o.mode !== undefined) gameMode = o.mode
+    if (o.frags !== undefined) settings.frags = o.frags
+    if (o.minutes !== undefined) settings.mins = o.minutes
+    if (o.enemies !== undefined) BOT_COUNT = o.enemies
+    const name = cleanName(o.name)
+    withLib(LIBS.peer, () => { startServer(); if (name) myName = name }, e => setStatus(e.message, 'err'))
+    return true
+  },
+  stop() { if (!serving) return false; stopServing(); return true },
+  // a guest, by id or by name as /kick takes it; this and what follows it that guests see spend a token
+  kick(who) {
+    const id = typeof who === 'number' ? who : [...roster.keys()].find(i => conns.has(i) && roster.get(i).name.toLowerCase() === String(who).toLowerCase())
+    if (!isHost || !conns.has(id) || !roster.has(id) || !hookSend()) return false
+    kickId(id)
+    return true
+  },
+  announce(text) { const m = hookText(text); if (!isHost || !m || !hookSend()) return false; announce(m); return true },
+  tell(id, text) { const m = hookText(text); if (!isHost || !m || !conns.get(id)?.open || !hookSend()) return false; tell(id, m); return true },
+  // a chat command as the host types it: the lines it printed, or false
+  command(line) {
+    const s = String(line ?? '').trim().slice(0, 200)
+    if (!isHost || !s.startsWith('/') || !hookSend()) return false
+    const out = sysTap = []
+    try { runCommand(s) } finally { sysTap = null }
+    return out.map(m => m.replace(/§./g, ''))
+  },
+  setLevel(level) { const i = levelArg(level); if (!isHost || i < 0 || !hookSend()) return false; setLevel(i); return true },
+  setFragLimit(n) { if (!isHost || !(Number.isInteger(n) && n >= 0 && n <= 200)) return false; GAME.match.frags(n); return true },
+  setMatchMinutes(n) { if (!isHost || !(Number.isFinite(n) && n >= 0 && n <= 60)) return false; GAME.match.minutes(n); return true },
+  setEnemies(n) { if (!isHost || !(Number.isInteger(n) && n >= 0) || !hookSend()) return false; GAME.match.bots(n); return true },
+  restart() { if (!isHost || !hookSend()) return false; GAME.match.restart(); return true },
+  players: () => isHost ? [...players.values()].map(c => ({ ...hookWho(c), kills: c.kills | 0, hp: Math.round(c.hp), dead: c.dead > 0, x: r2(c.x), y: r2(c.y), z: r2(c.z) })) : [],
+  room() {
+    const all = [...players.values()]
+    return { ready: phase === 'menu' && !el('#serve-btn').disabled, hosting: isHost, serving, open: isHost && roomOpen, code: isHost ? roomCodeStr : '',
+      level: LEVELS[levelId].name, mode: gameMode, fragLimit: GAME.match.fragLimit, minutes: GAME.match.timeLimit / 60,
+      match: isHost ? hookMeta('room').match : null, players: all.filter(c => !c.bot).length, enemies: all.filter(c => c.bot && c.owner === undefined).length,
+      uptime: serving ? Math.floor((now() - servedAt) / 1000) : 0, signaling: !peer ? '' : peer.disconnected ? 'lost, retrying' : peer.open ? 'connected' : 'connecting',
+      status: el('#status').textContent, hookFailures: hookFails, lastHookFailure: hookFail }
+  },
+}) })
 
 // ---------------------------------------------------------------- net
 // host (id 0) simulates all; each guest links only to it; chat is relayed
@@ -13439,7 +13635,7 @@ function watchLink(c, id) {
   const gone = why => {
     clearTimeout(grace)
     if (id === null) endSession('Disconnected', why, true)
-    else { const cc = conns.get(id); if (cc) { try { cc.close() } catch (e) {} } }
+    else { const cc = conns.get(id); if (cc) { if (hooked['player.leave']) hookGone.set(id, 'dropped'); try { cc.close() } catch (e) {} } }
   }
   pc.addEventListener('iceconnectionstatechange', () => {
     const st = pc.iceConnectionState
@@ -13499,7 +13695,7 @@ function applyRoster(list) {
 
 function startHost() {
   isHost = true; myId = 0; phase = 'connecting'
-  roomCodeStr = roomCode(); roomOpen = false
+  roomCodeStr = serveCode || roomCode(); roomOpen = false
   scarsLater = false
   loadLevel(pickedLevel)          // before spawns/bodies
   markStart('level')
@@ -13525,6 +13721,13 @@ function openHostPeer(attempt) {
       return
     }
     const note = (m, k) => phase === 'playing' ? sysMsg((k ? '§c' : '§7') + m) : setStatus(m, k)
+    // a code the server was given is asked for again: its holder may be this server's last run, not yet let go
+    if (e.type === 'unavailable-id' && serveCode && attempt < 12) {
+      try { peer.destroy() } catch (err) {}
+      note('Room ' + serveCode + ' is still taken; asking again…')
+      setTimeout(() => phase === 'connecting' && openHostPeer(attempt + 1), 10000)
+      return
+    }
     if (e.type === 'unavailable-id' && attempt < 4) {
       try { peer.destroy() } catch (err) {}
       roomCodeStr = roomCode()
@@ -13570,12 +13773,15 @@ function openHostPeer(attempt) {
     c.on('data', raw => { if (!conns.has(id)) return; countDown(raw); lastSeen.set(id, now()); onHostData(id, decode(raw)) })
     c.on('close', () => {
       const had = conns.delete(id), p = roster.get(id)
+      const gone = p && hooked['player.leave'] && players.has(id) && { player: hookWho(players.get(id)), reason: hookGone.get(id) || 'left' }
+      hookGone.delete(id)
       if (players.has(id)) detachBody(players.get(id))
       players.delete(id); roster.delete(id); GAME.lifecycle.left(id); inputs.delete(id); pkSent.delete(id); tierSent.delete(id); objSent.delete(id)
       inputSeq.delete(id); lastChatSeq.delete(id); lastChatAt.delete(id); lastSeen.delete(id)
       inQ.delete(id); inAck.delete(id)
       if (poll) { poll.yes.delete(id); poll.no.delete(id); countVote() }
       if (p) announce('§e' + p.name + ' left')
+      if (gone) hookEmit('player.leave', gone)
       dropAvatar(id)
       pushRoster()
       if (serving && had && !conns.size) GAME.lifecycle.empty()
@@ -13689,7 +13895,7 @@ function beginServing() {
 
 function endServing() {
   if (!serving) return
-  serving = false
+  serving = false; serveCode = ''
   document.body.classList.remove('serving')
   el('#stage-server').style.display = 'none'
   setHeadless(false)
@@ -13715,6 +13921,7 @@ function dropBot(c) { detachBody(c); players.delete(c.id); inputs.delete(c.id); 
 const HOST_MSGS = {
   hello: { apply: (id, d) => {
     if (players.has(id)) { const c = conns.get(id); if (!(now() - c.welcomedAt < HELLO_MS)) c.welcomedAt = now(), c.send(welcome(id)); return }
+    if (hookFilters.has('join') && !(d = hookJoin(id, d))) return
     const cid = GAME.rows.admit(id, d.cid)
     const name = cleanName(d.name) || 'player'
     players.set(id, Object.assign(newChar(cid, 0, 0), { id }))
@@ -13725,6 +13932,7 @@ const HOST_MSGS = {
     inQ.set(id, []); inAck.set(id, 0)
     announce('§e' + name + ' joined')
     pushRoster()
+    if (hooked['player.join']) hookEmit('player.join', { player: hookWho(players.get(id)) })
     if (poll) countVote()
     return
   } },
@@ -13735,13 +13943,20 @@ const HOST_MSGS = {
     const tnow = now()
     if (tnow - (lastChatAt.get(id) || 0) < CHAT_MIN_MS) return
     lastChatAt.set(id, tnow)
-    const text = String(d.m || '').slice(0, 160)
+    let text = String(d.m || '').slice(0, 160)
+    if (hookFilters.has('chat') || hooked.chat) {
+      const v = hookFilter('chat', { player: hookPlayer(id), text, action: !!d.a }, (v, r) => typeof r.text === 'string' ? { ...v, text: r.text.slice(0, 160) } : v)
+      if (!v?.text) return
+      text = v.text
+      if (hooked.chat) hookEmit('chat', v)
+    }
     showChat(id, text, !!d.a)
     broadcast({ k: 'c', id, m: text, a: !!d.a, s: d.s }, id)
     return
   } },
   nick: { apply: (id, d) => {
     const p = roster.get(id)
+    if (p && (hookFilters.has('join') || hooked['player.rename'])) return hookRename(id, p, d)
     if (p) { p.name = cleanName(d.name) || p.name; pushRoster() }
   } },
   vote: { apply: (id, d) => callVote(id, d.lv) },
@@ -14058,6 +14273,7 @@ function reconcile(a) {
 
 function clearSession() {
   pauseOpen = false; closeSettings(); closeCharPick(); picking = false; poll = pollSeen = null
+  if (isHost) hookMatchEnd('stop', null)
   endServing()                       // first: nothing below may think it serves
   const pe = el('#pause')
   if (pe) pe.classList.remove('open')
@@ -14196,6 +14412,7 @@ function addBot(i) {
   b.id = id
   players.set(id, b)
   roster.set(id, { cid: b.cid, name: b.bot.name })
+  if (hooked.spawn) hookEmit('spawn', { who: hookWho(b) })
   return true
 }
 
@@ -14233,6 +14450,7 @@ function setMode(m) {
 function startWave(i) {
   waveAt = i
   const w = WAVES[i]
+  if (hooked.wave) hookEmit('wave', { name: w.name, number: i + 1 })
   spawnList(picked(w.pick))
   for (const c of players.values())
     if (!c.bot) { c.spLeft = {}; restoreSpecial(c) }
@@ -14285,10 +14503,12 @@ function vehicleTick(list, credit, touch, dt) {
     if (!(J > 0) || !list.includes(c) || c.dead > 0) continue
     const dx = c.x - o.x, dz = c.z - o.z, d = Math.hypot(dx, dz) || 1, v = o.body.getLinearVelocity(), into = (v.x() * dx + v.z() * dz) / d
     if (into < 2 || o.thrownBy !== undefined) continue
+    const was = hookHitOn && [c.hp, c.mark, c.markT]
     c.hp -= stat(c, 'take', o.V.ram * into)
     const L = o.launchBy !== undefined, by = L ? o.launchBy !== c.id && players.get(o.launchBy) : players.get(o.riders[0])
+    if (was && !hookHit(by, c, L ? GUNS[o.launchG].name : o.K.name, was)) continue
     knockChar(c, dx / d, 0.3, dz / d, into * 0.5)
-    if (downed(c)) by ? credit(by.id, by)(c, L ? GUNS[o.launchG] : { name: o.K.name }) : fell(c, 'was run over by a ' + o.K.name)
+    if (downed(c)) by ? credit(by.id, by)(c, L ? GUNS[o.launchG] : { name: o.K.name }) : fell(c, 'was run over by a ' + o.K.name, o.K.name)
   }
   for (const o of objs) if (o.V) {
     if (o.v0) {                         // m/s lost this step
@@ -14315,10 +14535,12 @@ function boom(o, list, credit) {
   o.riders.forEach((id, i) => { const c = id !== undefined && players.get(id); if (c) leave(c, o, i) })
   for (const c of list) {
     const dx = c.x - at[0], dz = c.z - at[2], d = Math.hypot(dx, c.y - at[1], dz), k = 1 - d / B.radius
+    const was = hookHitOn && [c.hp, c.mark, c.markT]
     if (c.dead > 0 || k <= 0 || seatOf(c)) continue      // riders: their vehicle takes it
     c.hp -= stat(c, 'take', B.dmg * k)
+    if (was && !hookHit(by, c, o.K.name, was)) continue
     knockChar(c, dx / (d || 1), 0.5, dz / (d || 1), B.knock * k)
-    if (downed(c)) by ? credit(by.id, by)(c, { name: o.K.name }) : fell(c, 'was caught in a ' + o.K.name + '\'s blast')
+    if (downed(c)) by ? credit(by.id, by)(c, { name: o.K.name }) : fell(c, 'was caught in a ' + o.K.name + '\'s blast', o.K.name)
   }
   for (const p of objs) if (p !== o && p.V) {         // chained ones blow on their own turn
     const d = Math.hypot(p.x - at[0], p.y - at[1], p.z - at[2])
@@ -14374,7 +14596,11 @@ function objectStrikes(o, c, credit) {
   const W = o.K.weakens, e = W && weakFx(c, o.K)
   if (e) { c.mark = e; c.markT = Math.max(c.markT, W.struck) }
   const by = players.get(o.thrownBy), D = by && hurlOf(by)?.dmg
-  if (D && !(c.prot > 0) && (c.hp -= stat(c, 'take', stat(by, 'give', D))) <= 0 && downed(c) && credit) credit(by.id, by)(c, { name: 'Hurl' })
+  if (!D || c.prot > 0) return
+  const was = hookHitOn && [c.hp, c.mark, c.markT]
+  c.hp -= stat(c, 'take', stat(by, 'give', D))
+  if (was && !hookHit(by, c, 'Hurl', was)) return
+  if (c.hp <= 0 && downed(c) && credit) credit(by.id, by)(c, { name: 'Hurl' })
 }
 
 // a host tick's rules, in its order around the engine's own steps (see hostTick); t: the tick's dt, all (players), cur (their
@@ -14424,6 +14650,7 @@ const HOST_PHASES = {
     if (resultsLeft > 0) return
     const k = c.owner !== undefined && players.get(c.owner) || c
     k.kills++
+    if (hooked.kill) hookEmit('kill', { killer: hookWho(k), victim: hookWho(victim), weapon: G.name, ...c !== k && { via: hookWho(c) } })
     if (fragLimit && gameMode === 'ffa' && k.kills >= fragLimit) endMatch('Frag limit.')
     const vn = (roster.get(victim.id) || {}).name || rowOf(victim).name
     const own = (roster.get(k.id) || {}).name || '?', kn = c === k ? own : rowOf(c).name + ' (' + own + ')'
@@ -14541,6 +14768,7 @@ GAME.lifecycle = {
     resultsLeft = 0
     fragLimit = settings.frags; timeLimit = settings.mins * 60
     matchLeft = timeLimit
+    hookMatchStart(matchInfo)
   },
   populate() {
     if (gameMode === 'waves') startWave(0)
@@ -14643,7 +14871,7 @@ function teamDown(c, dt) {
 function teamUp(c, team) {
   if (c.bot && c.owner === undefined && !c.bot.squad && (c.bot.rare || gameMode === 'waves')) leaveRare(c)
   else {      // player last
-    for (const m of team.length ? team.filter(m => m.dead > 0 || m === c).sort((a, b) => !a.bot - !b.bot) : [c]) { m.downT = 0; if (isHost && !m.bot) rebalance(m); respawn(m) }
+    for (const m of team.length ? team.filter(m => m.dead > 0 || m === c).sort((a, b) => !a.bot - !b.bot) : [c]) { m.downT = 0; if (isHost && !m.bot) rebalance(m); respawn(m); if (hooked.spawn) hookEmit('spawn', { who: hookWho(m) }) }
     rollRare(c)
   }
 }
@@ -15050,7 +15278,7 @@ function checkLiveness(t, own) {
   for (const [id, seen] of [...lastSeen]) {
     if (t - seen <= GUEST_DEAD_MS) continue
     const c = conns.get(id)
-    if (c) { try { c.close() } catch (e) {} }   // close handler does the cleanup
+    if (c) { if (hooked['player.leave']) hookGone.set(id, 'timeout'); try { c.close() } catch (e) {} }   // close handler does the cleanup
     lastSeen.delete(id)
   }
 }
