@@ -110,8 +110,11 @@ off in the settings.
 
 - The URL must be https, and the stream's server must allow the game's page (`https://jsxyz.github.io`) by CORS.
   Without that, the screens keep their idle look, and each player is told why once.
-- HLS (an `.m3u8` URL) plays through hls.js, at the best rendition 360 lines tall or less, else the smallest. MP4 and
-  WebM play as the browser plays them. A stream over 1920x1080 is refused.
+- HLS (an `.m3u8` URL) plays through hls.js, at the best rendition whose shorter side is 360 or less, else the smallest.
+  MP4 and WebM play as the browser plays them.
+- A stream may be lying or standing: one larger than 1920x1080 either way round (1080x1920 standing) is refused, and
+  tried again later, as a stream can change its size. Each shows at its own shape on the 16:9 screens, with bars in
+  the screens' idle colour.
 - To broadcast from OBS you need a server that takes its stream and serves it as HLS over https with CORS. That isn't
   part of this image.
 
