@@ -10,6 +10,8 @@ const say = msg => process.stderr.write(msg + '\n')
 const die = (msg, code = 2) => { say('server: ' + msg); process.exit(code) }
 const sleep = ms => new Promise(ok => setTimeout(ok, ms))
 const blank = v => v === undefined || v === ''
+// a broadcast the game takes, as the page judges it too
+const streamOk = u => { try { const p = new URL(u); return u.length <= 1024 && p.protocol === 'https:' && !p.username && !p.password } catch (e) { return false } }
 // A setting's file. Its errors name the setting, never the path, which may be the secret itself given by mistake
 const readFile = (f, what) => { try { return fs.readFileSync(f, 'utf8') } catch (e) { die(what + ': cannot read the file (' + (e.code || e.name) + ')') } }
 const read = (f, what) => readFile(f, what).trim()
@@ -126,6 +128,8 @@ const CFG = {
   game: env.GAME_FILE || path.join(__dirname, 'game.html'),
   joinUrl: env.JOIN_URL || '',
   hooksDir: path.resolve(env.HOOKS_DIR || '/hooks'),
+  broadcast: blank(env.BROADCAST_URL) ? '' : streamOk(env.BROADCAST_URL) ? env.BROADCAST_URL
+    : die('BROADCAST_URL: an https URL with no credentials in it, at most 1024 characters'),
   stdout: types(env.STDOUT_EVENTS || '*', 'STDOUT_EVENTS'),
   serve: Object.fromEntries(Object.entries({
     code: env.ROOM_CODE, level: env.LEVEL, mode: env.MODE, name: env.SERVER_NAME,
@@ -185,7 +189,7 @@ function actionApi(page) {
     'GET /status': async () => { const r = await act('room')
       return [200, { code: r.code, link: CFG.joinUrl ? CFG.joinUrl + '#' + r.code : '', level: r.level, mode: r.mode, fragLimit: r.fragLimit, minutes: r.minutes,
         match: r.match, players: r.players, enemies: r.enemies, uptime: r.uptime, signaling: r.signaling, hookFailures: r.hookFailures,
-        lastHookFailure: r.lastHookFailure, webhooks: HOOKS.map(h => h.status) }] },
+        lastHookFailure: r.lastHookFailure, broadcast: r.broadcast, webhooks: HOOKS.map(h => h.status) }] },
     'GET /players': async () => [200, { players: await act('players') }],
     'POST /ping': async () => { await page.evaluate(() => serverPing('request')); return [200, {}] },
     'POST /announce': async b => [200, { done: await act('announce', b.text) }],
@@ -197,6 +201,7 @@ function actionApi(page) {
     'POST /minutes': async b => [200, { done: await act('setMatchMinutes', b.minutes) }],
     'POST /enemies': async b => [200, { done: await act('setEnemies', b.enemies) }],
     'POST /restart': async () => [200, { done: await act('restart') }],
+    'POST /broadcast': async b => [200, { done: await act('broadcast', b.url ?? null) }],
   }
   const api = http.createServer((req, res) => {
     const send = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ ok: code === 200, ...o }) + '\n') }
@@ -290,6 +295,7 @@ let page = null
   }
   say(`Room ${r.code}  ${r.level}` + (CFG.joinUrl ? `  join: ${CFG.joinUrl}#${r.code}` : '  (set JOIN_URL to print a join link)'))
   await page.evaluate(() => serverPing('start'))
+  if (CFG.broadcast) await page.evaluate(u => gameHooks.broadcast(u), CFG.broadcast)
   actionApi(page)
   for (let was = r.signaling; !stopping; await sleep(2000)) {
     r = await page.evaluate(() => gameHooks.room()).catch(e => { if (!stopping) throw e })

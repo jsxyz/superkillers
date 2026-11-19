@@ -30,6 +30,9 @@ at the machine's own addresses. Behind Docker's own NAT (a bridge network) each 
 NAT too, which can fail. The server needs the internet: the page loads its libraries from a CDN and finds players through
 the public PeerJS signaling server.
 
+Chromium picks the server's WebRTC ports from the system's ephemeral range (on Linux 32768–60999, unless
+`net.ipv4.ip_local_port_range` says otherwise), so a firewall on the machine must let in UDP across that range.
+
 `docker stop` closes the room cleanly. The players are told the host left, and the last events go out first.
 
 ## Configure it
@@ -53,6 +56,7 @@ Everything is an environment variable (`-e NAME=value`).
 | `ACTION_HOST`, `ACTION_PORT` | `127.0.0.1`, `8080` | the action API; port 0 turns it off |
 | `ACTION_TOKEN` (or `ACTION_TOKEN_FILE`) | | required whenever `ACTION_HOST` is not loopback |
 | `GAME_FILE` | the game in the image | run another copy of the game, mounted into the container |
+| `BROADCAST_URL` | | a stream every player sees on the level's screens (see Broadcasts) |
 
 An event type list is `*` for every type, a comma list such as `kill,player.join`, or a list of types to leave out such as
 `-damage,-chat`.
@@ -87,6 +91,8 @@ Each event is one JSON object, the same on stdout and to a webhook:
 | `spawn` | `who`: a respawn, or an enemy arriving |
 | `pickup` | `player`, `item`, `kind` (`gun`, `power`, `heal`) |
 | `wave` | `name`, `number` |
+| `broadcast.start` | `origin`: a broadcast started, or switched to a stream from there |
+| `broadcast.stop` | `origin` |
 
 Every `match.start` is followed by one `match.end`. A level change, a restart or the room emptying ends it as
 `restart`. Hook modules can add types of their own.
@@ -94,6 +100,20 @@ Every `match.start` is followed by one `match.end`. A level change, a restart or
 **Names and chat are typed by players.** They are capped (16 and 160 characters) and stripped of control and colour
 codes, but not authenticated and not unique. Escape them wherever you show them, and never treat them as identity. No
 event carries the room code, the room's only credential.
+
+## Broadcasts
+
+`BROADCAST_URL`, `POST /broadcast` or a hook's `broadcast(url)` names a stream that plays on the level's screens: a wall
+and a billboard in the Yard, building fronts and rooftop boards in the City. The server only names it. Each player's
+own browser fetches and plays it, so **the stream's server sees every player's address**. A player can turn broadcasts
+off in the settings.
+
+- The URL must be https, and the stream's server must allow the game's page (`https://jsxyz.github.io`) by CORS.
+  Without that, the screens keep their idle look, and each player is told why once.
+- HLS (an `.m3u8` URL) plays through hls.js, at the best rendition 360 lines tall or less, else the smallest. MP4 and
+  WebM play as the browser plays them. A stream over 1920x1080 is refused.
+- To broadcast from OBS you need a server that takes its stream and serves it as HLS over https with CORS. That isn't
+  part of this image.
 
 ## Webhooks
 
@@ -151,7 +171,7 @@ export default function (hooks) {
   JSON. Your other hooks, stdout and the webhooks get it like any event.
 - `announce(text)`, `tell(id, text)` and `kick(id or name)` act on players. So do `command('/bots 4')` (any chat
   command, returning the lines it printed), `setLevel(name or number)`, `setFragLimit(n)`, `setMatchMinutes(n)`,
-  `setEnemies(n)` and `restart()`. Each returns false when refused.
+  `setEnemies(n)`, `restart()` and `broadcast(url)` (an https URL, or null to stop). Each returns false when refused.
 - `players()` lists everyone in the game. `room()` describes the room, its code included.
 
 Hooks run in the middle of the game's own work, so keep them quick. A hook that throws is skipped and counted, and the
@@ -181,6 +201,7 @@ without a token. A token set on loopback is required there too.
 | `POST /minutes` | `{"minutes"}` | |
 | `POST /enemies` | `{"enemies"}` | |
 | `POST /restart` | | |
+| `POST /broadcast` | `{"url"}` | starts or switches the broadcast; `{"url": null}` stops it |
 
 ```sh
 curl -s -X POST http://127.0.0.1:8080/announce -d '{"text":"Double points this round"}'
