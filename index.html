@@ -13830,7 +13830,7 @@ function watchLink(c, id) {
   let grace = 0
   const gone = why => {
     clearTimeout(grace)
-    if (id === null) endSession('Disconnected', why, true)
+    if (id === null) endSession('Disconnected', why, 'lost')
     else { const cc = conns.get(id); if (cc) { if (hooked['player.leave']) hookGone.set(id, 'dropped'); try { cc.close() } catch (e) {} } }
   }
   pc.addEventListener('iceconnectionstatechange', () => {
@@ -14202,22 +14202,31 @@ function onHostData(id, d) {
   if (M) { const v = M.validate ? M.validate(d) : d; return v ? M.apply(id, v) : undefined }
 }
 
-function startJoin(code) {
+function startJoin(code, again) {
   isHost = false; phase = 'connecting'
   scarsLater = false; if (!scarMesh) prepareScars()
   roomCodeStr = code.trim().toUpperCase()
-  predicted = newChar(myCid, 6, 0); admitted = false; helloAt = 0; picking = true
+  // a rejoin asks for the character it had at once; the pick opens only if the host gives it another
+  predicted = newChar(myCid, 6, 0); admitted = false; helloAt = 0; picking = !again; rejoinPick = !!again
+  clearTimeout(relinkTimer); relinkTimer = 0; relinkTries = 0
   const t0 = now(), stage = t => phase === 'connecting' && setStatus('Connecting… ' + t)
   stage('to the signaling server')
   peer = new Peer()
+  // signaling only finds the host: while the link to it is open, an error there or a drop is not the game's end, and
+  // the signaling link comes back by itself
+  const linked = () => phase === 'playing' && !!conns.get(0)?.open
   peer.on('error', e => {
-    if (phase === 'playing') endSession('Disconnected', 'Connection error: ' + e.type, true)
-    else setStatus('Could not connect: ' + e.type, 'err')
+    if (linked()) return
+    if (phase === 'playing') endSession('Disconnected', 'Connection error: ' + e.type, 'lost')
+    else { setStatus('Could not connect: ' + e.type, 'err'); rejoinMissed('Could not connect: ' + e.type) }
   })
+  peer.on('disconnected', () => { if (linked()) relinkLater() })
   peer.on('close', () => {
-    if (phase === 'playing') endSession('Disconnected', 'The connection closed.', true)
+    if (phase === 'playing') endSession('Disconnected', 'The connection closed.', 'lost')
   })
   peer.on('open', () => {
+    relinkTries = 0
+    if (conns.has(0)) return            // signaling back after a drop: the link to the host is the one it had
     const c = peer.connect(roomCodeStr, { reliable: false, serialization: 'json' })
     conns.set(0, c)
     stage('asking the host')
@@ -14228,12 +14237,14 @@ function startJoin(code) {
       if (now() - t0 < 15000) return stage('(' + at + ')')
       clearInterval(watch)
       setStatus('Could not reach the host after 15 s (' + at + '). The room may be closed, or the network blocks a direct link.', 'err')
+      rejoinMissed('Could not reach the host.')
     }, 1000)
     c.on('error', e => setStatus('Could not connect: ' + (e && (e.type || e.message) || e), 'err'))
     c.on('open', () => {
       connected = true
       watchLink(c, null)
       beginPlay()
+      if (!picking) hello()
     })
     c.on('data', raw => { countDown(raw); onGuestData(decode(raw)) })
     c.on('close', () => {
@@ -14241,8 +14252,8 @@ function startJoin(code) {
       if (kickedBy) endSession('Kicked', kickedBy + ' removed you from the game.', true)
       // a page frozen longer than the host waits for word from it: that is why the host let it go
       else if (froze > GUEST_DEAD_MS) endSession('Disconnected', 'This page froze for ' + Math.round(froze / 1000) + ' s, longer than the host waits for word from it, so the host dropped it.' +
-        (softGL() ? ' This browser draws without graphics acceleration, which is too slow for this game here.' : ''), true)
-      else endSession('Disconnected', 'Lost connection to the host.', true)
+        (softGL() ? ' This browser draws without graphics acceleration, which is too slow for this game here.' : ''), 'lost')
+      else endSession('Disconnected', 'Lost connection to the host.', 'lost')
     })
   })
 }
@@ -14279,7 +14290,9 @@ const GUEST_MSGS = {
     return
   } },
   roster: { apply: d => {
-    applyRoster(d.list || []); if (pickOpen) paintPicker(); return
+    applyRoster(d.list || []); if (pickOpen) paintPicker()
+    if (rejoinPick && roster.has(myId)) { rejoinPick = false; if (roster.get(myId).cid !== myCid) openCharPick() }
+    return
   } },
   pong: {
     validate: d => (d.s | 0) === rttSeq ? d : null,
@@ -14507,19 +14520,38 @@ function clearSession() {
   releasePointer()          // flagged, or teardown would trip the pause menu
 }
 
+// rejoinable: true shows Rejoin; 'lost' (a lost link) also asks the room again by itself first
 function endSession(title, msg, rejoinable) {
   if (phase === 'ended') return
   phase = 'ended'
   const canRejoin = rejoinable && !!roomCodeStr
+  const again = rejoinable === 'lost' && canRejoin && !kickedBy ? roomCodeStr : ''
   clearSession()
   el('#end-title').textContent = title
   el('#end-msg').textContent = msg
   el('#end-rejoin').style.display = canRejoin ? '' : 'none'
   show('endmodal', 1)
+  if (again) rejoinLater(again); else rejoinStop()
 }
+
+// after a lost link the room is asked again by itself, about 2, 5 and 12 s apart (±30%, so a room of guests doesn't come
+// back in step); the end screen says so, and shows Rejoin again once they are spent
+const REJOIN_MS = [2000, 5000, 12000], REJOIN_SPREAD = 0.3
+let rejoinTimer = 0, rejoinTry = 0, rejoinPick = false
+function rejoinLater(code) {
+  clearTimeout(rejoinTimer); rejoinTimer = 0
+  if (rejoinTry >= REJOIN_MS.length) { rejoinTry = 0; return }      // spent: the end screen as the last try left it
+  const wait = REJOIN_MS[rejoinTry++] * (1 + (2 * Math.random() - 1) * REJOIN_SPREAD)
+  el('#end-title').textContent = 'Reconnecting…'; el('#end-rejoin').style.display = 'none'
+  rejoinTimer = setTimeout(() => { rejoinTimer = 0; if (phase === 'ended') startJoin(code, true) }, wait)
+}
+function rejoinStop() { clearTimeout(rejoinTimer); rejoinTimer = 0; rejoinTry = 0 }
+// an attempt that failed before it was linked (no signaling, no answer): the next one
+const rejoinMissed = why => { if (rejoinTry && phase === 'connecting') endSession('Disconnected', why, 'lost') }
 
 function resetToMenu() {
   clearSession()
+  rejoinStop()                       // leaving: nothing asks the room again
   phase = 'menu'
   roomCodeStr = ''
   show('endmodal')
@@ -14541,6 +14573,7 @@ function initEndModal() {
 
 function beginPlay() {
   phase = 'playing'
+  if (rejoinTry) { rejoinTry = 0; show('endmodal') }
   played = true; jitTip()
   GAME.audio.voices()
   lastRecvAt = now()
@@ -15598,7 +15631,7 @@ function checkLiveness(t, own) {
   if (!isHost) {
     if (own) { lastRecvAt = t; return }
     if (lastRecvAt && t - lastRecvAt > LINK_DEAD_MS) {
-      endSession('Disconnected', 'The host stopped responding.', true)
+      endSession('Disconnected', 'The host stopped responding.', 'lost')
     }
     return
   }
