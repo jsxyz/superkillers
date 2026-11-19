@@ -8268,6 +8268,7 @@ function cullView(cam) {
   for (const o of culled.splice(0)) o.visible = true
   cullFrom(cam)
   drawSeen()
+  if (screensDirty) try { screensDraw() } catch (e) { frameFailed('screens', e) }      // what drawSeen placed shows its screens now
   if (!culling) return
   const { v, s, b } = cullT, lit = renderer.shadowMap.enabled && sunLight.castShadow
   const hide = (o, x, test = x.isBox3 ? 'intersectsBox' : 'intersectsSphere') => { if (!v[test](x) && !(lit && s[test](x))) { o.visible = false; culled.push(o) } }
@@ -8309,14 +8310,21 @@ const chunkDraws = [], CHUNK_MS = 3
 let chunkGrew = false
 // the frame's frusta take it in, as cullView tests a drawn chunk (none yet: every chunk)
 const seenJob = j => !culling || cullT.v.intersectsBox(j.box) || renderer.shadowMap.enabled && sunLight.castShadow && cullT.s.intersectsBox(j.box)
-function onChunk({ cell, boxes, scenery, ahead }) {
-  if (!worldGroup) return
-  chunkGrew = true
-  const gen = drawSteps(boxes, scenery, [BOXES[0]]), box = new THREE.Box3(), v = new THREE.Vector3()
-  // what it draws: its boxes, and its trees' crowns above them
+// what a grown chunk draws, as one box: its boxes, its trees' crowns above them, and its rooftop boards with their frames
+// and posts, which rise higher still (cityScreens given no faces makes only those)
+function chunkBound(boxes, scenery) {
+  const box = new THREE.Box3(), v = new THREE.Vector3()
   for (const b of boxes) box.expandByPoint(v.set(b.cx - b.ex, b.cy - b.ey, b.cz - b.ez)).expandByPoint(v.set(b.cx + b.ex, b.cy + b.ey, b.cz + b.ez))
   for (const r of scenery) if (r.kind === 'tree') { const { base, bottom, width } = crownOf(r), { cx, cz } = r.box
     box.expandByPoint(v.set(cx - width / 2, base + bottom, cz - width / 2)).expandByPoint(v.set(cx + width / 2, base + r.h, cz + width / 2)) }
+  if (LV.screenRule) for (const s of cityScreens(scenery.filter(r => r.kind === 'building'), [], LV.screenRule)) { const r = s.w / 2 + 0.2
+    box.expandByPoint(v.set(s.x - r, s.ground ?? s.y - s.h / 2, s.z - r)).expandByPoint(v.set(s.x + r, s.y + s.h / 2 + 0.2, s.z + r)) }
+  return box
+}
+function onChunk({ cell, boxes, scenery, ahead }) {
+  if (!worldGroup) return
+  chunkGrew = true
+  const gen = drawSteps(boxes, scenery, [BOXES[0]]), box = chunkBound(boxes, scenery)
   if (ahead && !seenJob({ box: box.expandByScalar(2) })) return void chunkDraws.push({ cell, gen, box })
   placeChunk(cell, drain(gen))
 }
@@ -13524,6 +13532,7 @@ let tracers = []
 const LINK_DEAD_MS = 8000        // guest: host silence
 const ICE_GRACE_MS = 4000        // 'disconnected' can recover; 'failed' cannot
 const GUEST_DEAD_MS = 12000      // host: guest silence
+const GUEST_LOAD_MS = 180000     // host: a joiner's silence before its first input, while its level builds
 let lastRecvAt = 0
 const lastSeen = new Map()
 let myId = 0, myCid = START, myName = ''
@@ -14550,12 +14559,15 @@ function remoteAt(t) {
 // ---------------------------------------------------------------- broadcast
 // A stream on the level's screens. The host names it, an https URL or none, and each viewer's own browser plays it from
 // its server, which sees the viewer's address. While one is on, the host says it again every few seconds, and a guest
-// that stops hearing it lets it go. HLS plays through hls.js, anything else as the browser plays it itself
+// that stops hearing it lets it go. HLS plays through hls.js, anything else as the browser plays it itself. One that
+// fails is tried again while it is still named; back in view, a live one the browser held goes to its live edge
 const BCAST_URL_MAX = 1024, BCAST_EVERY_MS = 3000, BCAST_LEASE_MS = 10000, BCAST_BURST = 3, BCAST_REFILL_MS = 5000
 const BCAST_HZ = 15, BCAST_W = 640, BCAST_H = 360, BCAST_MAX_W = 1920, BCAST_MAX_H = 1080, BCAST_REACH = 8
+const BCAST_BEHIND_S = 10, BCAST_RETRY_MS = 5000, BCAST_RETRY_MAX_MS = 60000
 // the host's: what it names, its changes counted. bc: this page's, as heard and as played
 let bcastUrl = '', bcastN = 0, bcastSaidAt = 0, bcastTimer = 0
-const bc = { url: '', n: -1, heard: 0, tokens: BCAST_BURST, refill: 0, playing: '', video: null, hls: null, told: '' }
+const bc = { url: '', n: -1, heard: 0, tokens: BCAST_BURST, refill: 0, playing: '', video: null, hls: null, told: '',
+             last: '', retries: 0, retryAt: 0 }
 
 // an https URL with no credentials in it, at most BCAST_URL_MAX characters; '' is none
 function bcastOk(u) {
@@ -14603,6 +14615,7 @@ function bcastRun() {
 function bcastTick() {
   if (isHost && bcastUrl && now() - bcastSaidAt >= BCAST_EVERY_MS) bcastSay()
   if (!isHost && bc.url && now() - bc.heard > BCAST_LEASE_MS) bc.url = ''
+  if (bc.retryAt && now() >= bc.retryAt) { bc.retryAt = 0; bc.playing = '' }
   bcastPlay(); bcastSound(); bcastRun()
 }
 // what this page plays: a viewer's, never a server's, and only while playing a level with screens, broadcasts shown
@@ -14610,15 +14623,17 @@ function bcastPlay() {
   const u = phase === 'playing' && settings.bcast && !serving && (LV.screens?.length || LV.screenRule) ? isHost ? bcastUrl : bc.url : ''
   if (u === bc.playing) return
   bcastQuit(); bc.playing = u
+  if (u !== bc.last) Object.assign(bc, { last: u, retries: 0, retryAt: 0 })
   if (!u) return
   const v = bc.video = Object.assign(document.createElement('video'), { crossOrigin: 'anonymous', playsInline: true, muted: true, preload: 'auto' })
-  const fail = why => { if (bc.video === v) bcastFail(u, why) }
+  const fail = (why, final) => { if (bc.video === v) bcastFail(u, why, final) }
   v.onerror = () => fail('its server does not let this game play it (CORS), or the browser cannot')
-  v.onloadedmetadata = () => { if (v.videoWidth > BCAST_MAX_W || v.videoHeight > BCAST_MAX_H) fail('it is larger than 1920x1080') }
+  v.onloadedmetadata = () => { if (v.videoWidth > BCAST_MAX_W || v.videoHeight > BCAST_MAX_H) fail('it is larger than 1920x1080', true) }
+  v.onplaying = () => { bc.retries = 0 }
   if (/\.m3u8$/i.test(new URL(u).pathname)) withLib(LIBS.hls, () => {
     const H = window.Hls
     if (bc.video !== v) return
-    if (!H.isSupported()) return v.canPlayType('application/vnd.apple.mpegurl') ? void (v.src = u, v.play().catch(() => {})) : fail('this browser cannot play HLS')
+    if (!H.isSupported()) return v.canPlayType('application/vnd.apple.mpegurl') ? void (v.src = u, v.play().catch(() => {})) : fail('this browser cannot play HLS', true)
     const h = bc.hls = new H({ lowLatencyMode: true, maxBufferLength: 8, backBufferLength: 4 })
     // the best rendition at or under the cap, else the smallest: none is refused for its size alone
     h.on(H.Events.MANIFEST_PARSED, (e, d) => { const L = d.levels, under = L.map((l, i) => i).filter(i => (L[i].height || 0) <= BCAST_H)
@@ -14629,26 +14644,35 @@ function bcastPlay() {
   else { v.src = u; v.play().catch(() => {}) }
   bcastFeed(v)
 }
-// why one cannot show here: said once a URL, by its origin alone, as its path and query may carry a token
-function bcastFail(u, why) {
+// why one cannot show here: said once a URL, by its origin alone, as its path and query may carry a token. Unless the
+// refusal is final, it is tried again while still named, each wait twice the last and at most BCAST_RETRY_MAX_MS
+function bcastFail(u, why, final) {
   if (bc.told !== u) { bc.told = u; sysMsg('§7The broadcast from ' + bcastOrigin(u) + ' cannot show here: ' + why + '.') }
   bcastQuit()
+  if (!final) bc.retryAt = now() + Math.min(BCAST_RETRY_MS * 2 ** bc.retries++, BCAST_RETRY_MAX_MS)
 }
-// stops what plays, and the screens take their idle look again; bc.playing stays, so a failed one is not tried again
+// stops what plays, and the screens take their idle look again; bc.playing stays, so a failed one waits for its retry
 function bcastQuit() {
   const v = bc.video
   if (!v) return
   bc.video = null
   if (bc.hls) { try { bc.hls.destroy() } catch (e) {} bc.hls = null }
-  v.onerror = v.onloadedmetadata = null; v.pause(); v.removeAttribute('src'); v.load()
+  v.onerror = v.onloadedmetadata = v.onplaying = null; v.pause(); v.removeAttribute('src'); v.load()
   bcastFeed(null); bcastSound()
 }
 // the session's end: nothing named, heard or played
 function bcastEnd() {
   bcastQuit()
   if (bcastTimer) { clearInterval(bcastTimer); bcastTimer = 0 }
-  bcastUrl = ''; Object.assign(bc, { url: '', n: -1, heard: 0, tokens: BCAST_BURST, refill: 0, playing: '', told: '' })
+  bcastUrl = ''; Object.assign(bc, { url: '', n: -1, heard: 0, tokens: BCAST_BURST, refill: 0, playing: '', told: '', last: '', retries: 0, retryAt: 0 })
 }
+// back in view: a live one the browser held while the tab was hidden goes to its live edge
+document.addEventListener('visibilitychange', () => {
+  const v = bc.video
+  if (document.hidden || !v) return
+  const edge = bc.hls ? bc.hls.liveSyncPosition : v.duration === Infinity && v.seekable.length ? v.seekable.end(v.seekable.length - 1) : null
+  if (edge != null && edge - v.currentTime > BCAST_BEHIND_S) { v.currentTime = edge; v.play().catch(() => {}) }
+})
 
 // ---------------------------------------------------------------- rules
 // this game's rules: modes, bots, waves, combat; the engine reaches them through GAME and the phases
@@ -15546,7 +15570,7 @@ function checkLiveness(t, own) {
   }
   if (own) { for (const id of lastSeen.keys()) lastSeen.set(id, t); return }
   for (const [id, seen] of [...lastSeen]) {
-    if (t - seen <= GUEST_DEAD_MS) continue
+    if (t - seen <= GUEST_DEAD_MS || !inputSeq.has(id) && t - seen <= GUEST_LOAD_MS) continue
     const c = conns.get(id)
     if (c) { if (hooked['player.leave']) hookGone.set(id, 'timeout'); try { c.close() } catch (e) {} }   // close handler does the cleanup
     lastSeen.delete(id)
