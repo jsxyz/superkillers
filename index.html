@@ -659,6 +659,11 @@
     <input type="range" id="set-vol" min="0" max="1" step="0.05">
     <span class="setval" id="set-vol-v"></span>
   </div>
+  <div class="setrow">
+    <label for="set-bvol">Broadcast volume</label>
+    <input type="range" id="set-bvol" min="0" max="1" step="0.05">
+    <span class="setval" id="set-bvol-v"></span>
+  </div>
   <div class="mrow" style="margin-top:16px">
     <button id="set-view">View: third</button>
     <button id="set-quality">Quality: high</button>
@@ -668,9 +673,11 @@
     <button id="set-sound">Sound: on</button>
     <button id="set-voices" title="Characters speak lines made on this machine: about 700 MB, fetched and run in the background. Needs WebGPU.">AI voices: off</button>
     <button id="set-radio">Car radio: on</button>
+    <button id="set-bcast">Broadcasts: on</button>
     <button id="set-vhs">VHS: on</button>
     <button id="set-full">Fullscreen</button>
   </div>
+  <div class="sub" style="margin-top:8px">A broadcast plays from its owner's server, which sees your address.</div>
   <div class="mrow" style="margin-top:10px">
     <button id="set-back">Back</button>
   </div>
@@ -1092,6 +1099,9 @@ const THEME = {
 }
 // LEVELS: brushes, pads ('x y z [item it always rolls]'), spawns, objects ('x y z Kind [yaw] [seed]'), theme, gen
 // reach: spots every walker reaches on foot and back: pad indexes, 'pads' (all) or 'x y z'
+// screens: where a broadcast shows, decoration only. 'x y z w h yaw': a w by h m screen centred at x y z, facing yaw
+//   (0 faces +z); a trailing 'board' raises it on two posts from y = 0. { buildings, roofs } on a generated city: one tall
+//   building in `buildings`, by its seed, shows one on its widest side, and one low one in `roofs` a board on its roof
 const LEVELS = [
   { name: 'Yard', brushes: [
     '0 -3.25 -31.68 72 3.25 40.32', '0 -3.25 56.88 72 3.25 15.12', '-58.32 -3.25 25.2 13.68 3.25 16.56',
@@ -1122,7 +1132,8 @@ const LEVELS = [
       '28.8 3 46.08', '-7.2 3 -17.28', '47.52 3 4.32', '-33.12 3 1.44'],
     objects: ['8 .55 24 Ball', '-24 .55 -14 Ball',
       '16 .8 -12 Crate', '17.7 .8 -12 Crate', '16.85 2.4 -12 Crate', '-6 .8 -40 Crate', '0 .25 -30 Kryptonite'],
-    reach: [1, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, '-59.55 4.2 -39.6'] },
+    reach: [1, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, '-59.55 4.2 -39.6'],
+    screens: ['0 12 -70.94 16 9 0', '-28 7.6 46 12 6.75 3.1416 board'] },
   // nowhere to stand lower than the tallest character
   { name: 'Foundry', brushes: [
     '0 -1 0 72 1 72',
@@ -1141,7 +1152,7 @@ const LEVELS = [
       '20 .8 20 Crate', '21.7 .8 20 Crate', '20.85 2.4 20 Crate', '-20 .8 -20 Crate', '36 .25 -30 Kryptonite'],
     reach: ['pads', '0 2.8 0', '0 6.4 44.64', '44.64 6.4 0', '-44.64 6.4 0', '0 6.4 -44.64', ['q', '53.6 6.4 53.6'], '0 12.2 0'] },
   { name: 'Sprawl', gen: { kind: 'sprawl', seed: 1337, size: 2 }, objects: ['0 .25 0 Kryptonite'], reach: ['pads'] },
-  { name: 'City', gen: { kind: 'city', seed: 2026, size: 20, cores: [[-180, -260], [330, 290]],
+  { name: 'City', screens: [{ buildings: 6, roofs: 8 }], gen: { kind: 'city', seed: 2026, size: 20, cores: [[-180, -260], [330, 290]],
       heights: [[140, 72, 168, 0], [300, 36, 120, 0], [520, 16.8, 54, 1], [800, 8.4, 25.2, 1], [Infinity, 4.2, 8.4, 2]] },
     theme: { fog: [0x252b3a], view: [31, 192] }, reach: ['pads'] },
 ]
@@ -2207,12 +2218,23 @@ function compileLevel(L, A) {
   const top = T.height, lid = T.lid, ghost = { vis: false }
   box(0, lid, 0, A + 1, 1, A + 1, ghost)
   walls((top + lid - 1) / 2, (lid - 1 - top) / 2, ghost)
+  // a listed screen faces a quarter turn's multiple; its frame and a board's posts are painted boxes, never a body
+  const screens = (L.screens || []).filter(s => typeof s === 'string').map(s => {
+    const [x, y, z, w, h, yaw, board] = s.split(' '), S = { x: x * u, y: +y, z: z * u, w: w * u, h: +h, yaw: +yaw, framed: true }
+    const nx = Math.round(Math.sin(S.yaw)), nz = Math.round(Math.cos(S.yaw)), bx = S.x - nx * 0.16, bz = S.z - nz * 0.16
+    box(bx, S.y, bz, Math.abs(nz) * (S.w / 2 + 0.2) + Math.abs(nx) * 0.15, S.h / 2 + 0.2, Math.abs(nx) * (S.w / 2 + 0.2) + Math.abs(nz) * 0.15, { paint: true })
+    S.frame = B.at(-1)
+    const post = board === 'board' ? S.y - S.h / 2 : 0
+    for (const k of post > 0 ? [-0.35, 0.35] : []) box(bx + nz * k * S.w, post / 2, bz - nx * k * S.w, 0.15, post / 2, 0.15, { paint: true })
+    return S
+  })
   return { A, theme: T, boxes: B, grow: L.grow || null, pads: levelRows(L.pads, u), spawns: levelRows(L.spawns, u),
            objects: levelRows(L.objects, u).map(r => {   // yaw about Y, model -Z forward; seed uint32
              const t = r[3].split(' '), i = t.findIndex(w => !isNaN(w)), [sx, sz] = r.q || [1, 1]
              const y = i < 0 ? 0 : sx * +t[i], seed = i < 0 ? 0 : +t[i + 1]
              return [r.slice(0, 3), (i < 0 ? t : t.slice(0, i)).join(' '), sz < 0 ? Math.PI - y : y, seed > 0 ? seed >>> 0 : 0] }),
-           scenery: roofs(B, L.scenery?.map(s => ({ ...s, boxes: s.boxes?.map(i => B[first[i]]), box: B[first[s.box]] }))) }
+           scenery: roofs(B, L.scenery?.map(s => ({ ...s, boxes: s.boxes?.map(i => B[first[i]]), box: B[first[s.box]] }))),
+           screens, screenRule: (L.screens || []).find(s => typeof s === 'object') || null }
 }
 
 // ---- visible faces: boxes intersect on purpose; of two on a plane the box placed FIRST wins (landing before bridge)
@@ -2429,6 +2451,8 @@ const LIBS = {
     sri: 'sha384-8FWZA6BGMXhsfO+BLtrJK0We6gg5o1JyO8xQm6peWDEUs17ACA5ziE/NIAkl9z2k', global: 'qrcode' },
   zxing: { url: 'https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.4/dist/iife/reader/index.js',
     sri: 'sha384-PN2+TcV6o3ygq0xnuFCxKBra0Yt4uPsZhoQ/vGYAwE57BrG9nHTvynv6YPyluWaU', global: 'ZXingWASM' },
+  hls: { url: 'https://cdn.jsdelivr.net/npm/hls.js@1.7.4/dist/hls.min.js',
+    sri: 'sha384-p9vgU/7IYJWd3I4STrtqxqR/2cAQlhIX7D/HrTnIMEjjcUox165b7se7sxmm3zDg', global: 'Hls' },
 }
 const loadLib = L => L.p ||= window[L.global] ? Promise.resolve() : new Promise((ok, no) => {
   const s = document.createElement('script')
@@ -7825,6 +7849,104 @@ function sceneryKind(b, unit = ARENA / 72) {
 
 const CITY_PALETTE = [0xa4adb0, 0xc1aa91, 0x8399a0, 0xb6b2a3]
 let cityMap = null
+// ---- screens: where a broadcast shows. A level's panels are one mesh with one material, its idle look or the
+// broadcast's frames; the frames and posts no painted level box draws, one more
+let screenFeed = null, screenMat = null, screenRim = null, screenGroup = null, screensDirty = false, screenFrustum = null
+const SCREEN_IDLE = 0x161b24, screenSpots = []      // the level's screens, as drawn, for the nearest one's sound
+// the panels' material, made with each level as its others are; the picture carries over
+const screenMaterial = () => screenMat ||= new THREE.MeshBasicMaterial({ color: screenFeed ? 0xffffff : SCREEN_IDLE, map: screenFeed })
+// whether the camera, as last drawn, takes in a screen
+function screenInView() {
+  if (!camera) return false
+  const f = screenFrustum ||= { v: new THREE.Frustum(), m: new THREE.Matrix4(), s: new THREE.Sphere() }
+  f.v.setFromProjectionMatrix(f.m.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse))
+  return screenSpots.some(p => (f.s.center.set(p.x, p.y, p.z), f.s.radius = Math.hypot(p.w, p.h) / 2, f.v.intersectsSphere(f.s)))
+}
+// the panels' picture: a playing video drawn down to BCAST_W x BCAST_H on its new frames, at most BCAST_HZ a second
+// and only while a screen is in view (cheaper than a full frame going up); none: the idle look
+function bcastFeed(v) {
+  screenFeed?.dispose()
+  screenFeed = null
+  if (v) {
+    const cv = Object.assign(document.createElement('canvas'), { width: BCAST_W, height: BCAST_H }), g = cv.getContext('2d')
+    const t = screenFeed = new THREE.CanvasTexture(cv)
+    t.colorSpace = THREE.SRGBColorSpace; t.minFilter = THREE.LinearFilter; t.generateMipmaps = false
+    let at = -Infinity, shown = -1
+    const frame = () => {
+      if (screenFeed !== t) return                    // another picture took over
+      const n = now()
+      if (n - at >= 1000 / BCAST_HZ - 1 && v.currentTime !== shown && screenInView()) { at = n; shown = v.currentTime; g.drawImage(v, 0, 0, BCAST_W, BCAST_H); t.needsUpdate = true }
+      if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(frame); else setTimeout(frame, 500 / BCAST_HZ)
+    }
+    frame()
+  }
+  if (screenMat) { screenMat.map = screenFeed; screenMat.color.setHex(screenFeed ? 0xffffff : SCREEN_IDLE); screenMat.needsUpdate = true }
+}
+// screens, { x, y, z, w, h, yaw, ground, framed }: the panels one mesh; the frames and a board's posts of those the
+// level's boxes do not frame, another. None is a body
+function screenMeshes(list) {
+  const group = new THREE.Group(), panels = [], rims = [], m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), p = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1)
+  for (const s of list) {
+    m.compose(p.set(s.x, s.y, s.z), q.setFromAxisAngle(up, s.yaw), one)
+    panels.push(new THREE.PlaneGeometry(s.w, s.h).applyMatrix4(m))
+    if (s.framed) continue
+    rims.push(new THREE.BoxGeometry(s.w + 0.4, s.h + 0.4, 0.3).translate(0, 0, -0.16).applyMatrix4(m))
+    const post = s.ground == null ? 0 : s.y - s.h / 2 - s.ground
+    if (post > 0) for (const side of [-0.35, 0.35]) rims.push(new THREE.BoxGeometry(0.3, post, 0.3).translate(side * s.w, -s.h / 2 - post / 2, -0.16).applyMatrix4(m))
+  }
+  if (panels.length) group.add(Object.assign(new THREE.Mesh(joinGeometries(panels), screenMaterial()), { name: 'screens' }))
+  if (rims.length) {
+    const r = new THREE.Mesh(joinGeometries(rims), screenRim ||= new THREE.MeshStandardMaterial({ color: 0x1d2128, roughness: 0.6, metalness: 0.3 }))
+    r.castShadow = r.receiveShadow = true; group.add(r)
+  }
+  return group
+}
+// a placed group's screens join the level's: a City chunk's only once it is drawn
+const screensTake = g => g.traverse(n => { if (n.userData.screens) { screenSpots.push(...n.userData.screens); screensDirty = true } })
+// the level's screens drawn again as one: at a rebuild, and in the frame after chunks with some are placed
+function screensDraw() {
+  if (!screensDirty || !worldGroup) return
+  screensDirty = false
+  if (screenGroup) { worldGroup.remove(screenGroup); screenGroup.traverse(n => n.geometry?.dispose()) }
+  screenGroup = screenSpots.length ? screenMeshes(screenSpots) : null
+  if (screenGroup) { still(screenGroup); worldGroup.add(screenGroup) }
+}
+// many geometries as one, each unindexed: position, normal and uv end to end
+function joinGeometries(list) {
+  const flat = list.map(g => g.index ? g.toNonIndexed() : g), out = new THREE.BufferGeometry()
+  for (const k of ['position', 'normal', 'uv']) {
+    const a = new Float32Array(flat.reduce((n, g) => n + g.attributes[k].array.length, 0))
+    flat.reduce((o, g) => (a.set(g.attributes[k].array, o), o + g.attributes[k].array.length), 0)
+    out.setAttribute(k, new THREE.BufferAttribute(a, flat[0].attributes[k].itemSize))
+  }
+  return out
+}
+// a city's screens, chosen by each building's seed, so the layout never moves: one tall building in rule.buildings shows
+// one on its widest visible side, one low one in rule.roofs a board across its roof
+function cityScreens(rows, faces, { buildings, roofs }) {
+  const out = []
+  for (const row of rows) {
+    const b = row.boxes[0], pick = cityHash(row.seed ^ 0x5c7e)
+    if (!row.roofAccess && buildings && pick % buildings === 0) {
+      let best = null
+      for (const f of faces) if (f.box === b && f.axis !== 1) {
+        const across = f.axis ? [f.a0, f.a1] : [f.b0, f.b1], up = f.axis ? [f.b0, f.b1] : [f.a0, f.a1], area = (across[1] - across[0]) * (up[1] - up[0])
+        if (across[1] - across[0] >= 10 && up[1] - up[0] >= 12 && !(best && best.area >= area)) best = { f, across, up, area }
+      }
+      if (best) {
+        const { f, across, up } = best, w = Math.min(16, (across[1] - across[0]) * 0.7, (up[1] - up[0] - 6) * 16 / 9), h = w * 9 / 16
+        const c = (across[0] + across[1]) / 2, y = Math.max(up[0] + 4 + h / 2, Math.min(up[1] - 2 - h / 2, up[0] + 0.6 * (up[1] - up[0]))), at = f.p + f.dir * 0.06
+        out.push(f.axis ? { x: c, y, z: at, w, h, yaw: f.dir > 0 ? 0 : Math.PI, ground: null } : { x: at, y, z: c, w, h, yaw: f.dir * Math.PI / 2, ground: null })
+      }
+    }
+    if (row.roofAccess && roofs && pick % roofs === 1) {
+      const top = b.cy + b.ey, along = b.ex >= b.ez, w = Math.min(10, (along ? b.ex : b.ez) * 1.4), h = w * 9 / 16
+      out.push({ x: b.cx, y: top + 2 + h / 2, z: b.cz, w, h, yaw: (along ? 0 : Math.PI / 2) + (pick >>> 8 & 1) * Math.PI, ground: top })
+    }
+  }
+  return out
+}
+
 function cityFacadeMap() {
   if (cityMap) return cityMap
   const cv = document.createElement('canvas')
@@ -8042,6 +8164,7 @@ function* citySteps(rows, faces) {
     near.position.set(-chunk.x, 0, -chunk.z); far.position.copy(near.position)
     lod.addLevel(near, 0); lod.addLevel(far, 120, 0.12); far.visible = false; lod.update = flatLOD
     group.add(lod); root.add(group)
+    if (LV.screenRule) group.userData.screens = cityScreens(buildings, faces, LV.screenRule)      // shown once the chunk is placed
     yield
     if (!trees.length) continue
     const trunk = cityInstances(kitGeometry(['lathe', [[0, 0], [1, 0], [0.68, 1], [0, 1]], 8]),
@@ -8210,6 +8333,7 @@ function placeChunk(cell, g) {
   still(g); shareMaterials(g)
   g.traverse(n => { if (n.isMesh && !n.isInstancedMesh) mine.push(n) })
   scarSurfaces.push(...mine); scarSend(mine); groundStale = !!cityGround
+  screensTake(g)
 }
 // view distance: × the level's fog; far plane capped at 320 m
 const VIEW = { short: 0.6, normal: 1, far: 1.6 }
@@ -8231,6 +8355,7 @@ function rebuildWorld() {
     if (n.geometry && !n.geometry.userData.shared) geometries.add(n.geometry)
     for (const m of Array.isArray(n.material) ? n.material : [n.material]) if (m) materials.add(m)
   })
+  screenMat = screenRim = null                     // the level's own: disposed with it, made again for the next
   worldGroup.clear()
   for (const g of geometries) g.dispose()
   const [sky] = LV.theme.fog, s = Math.min(46, ARENA * 0.85)
@@ -8262,10 +8387,14 @@ function rebuildWorld() {
     t.anisotropy = aniso
     baseTex[kind] = t
   }
+  screenSpots.length = 0; screenGroup = null
   worldGroup.add(...drawBoxes(BOXES, LV.scenery || []).children)   // the level's own meshes stay worldGroup's children
+  if (LV.screens?.length) { screenSpots.push(...LV.screens.filter(s => BOXES.includes(s.frame))); screensDirty = true }
+  screensTake(worldGroup)
   still(worldGroup)
   worldGroup.traverse(n => { if (n.isMesh && !n.isInstancedMesh) scarSurfaces.push(n) })
   prepareScars()
+  screensDraw()                      // after the scars' surfaces: the panels are remade as chunks grow
   // the new level takes over the old one's programs before they go
   if (!renderHeadless && camera && renderer.compile) renderer.compile(worldGroup, camera, scene)
   warmEffects()
@@ -11613,6 +11742,8 @@ function loadSettings() {
   settings.sound = settings.sound !== false
   settings.voices = settings.voices === true
   settings.radio = settings.radio !== false
+  settings.bcast = settings.bcast !== false
+  settings.bvol = clamp(Number.isFinite(+settings.bvol) ? +settings.bvol : 0.7, 0, 1)
   settings.station = Number.isInteger(settings.station) && settings.station >= -1 && settings.station < RADIO.length ? settings.station : RADIO_START
   settings.volume = clamp(Number.isFinite(+settings.volume) ? +settings.volume : 0.8, 0, 1)
   settings.rate = SNAP_STEPS.includes(+settings.rate) ? +settings.rate : 0
@@ -11672,6 +11803,7 @@ const SET_BUTTONS = {
   'set-shake': [() => 'Camera shake: ' + onOff(settings.shake), () => { settings.shake = !settings.shake }],
   'set-balance': [() => 'Balance teams: ' + onOff(settings.balance), () => { settings.balance = !settings.balance }],
   'set-radio': [() => 'Car radio: ' + onOff(settings.radio), () => { settings.radio = !settings.radio }, () => GAME.audio.radio()],
+  'set-bcast': [() => 'Broadcasts: ' + onOff(settings.bcast), () => { settings.bcast = !settings.bcast }, () => bcastPlay()],
   'set-vhs': [() => 'VHS: ' + onOff(settings.vhs !== false), () => { settings.vhs = settings.vhs === false }],
   'set-voices': [() => 'AI voices: ' + onOff(settings.voices) + (settings.voices && !('gpu' in navigator) ? ' (needs WebGPU)' : ''), () => GAME.audio.voicesToggle()],
 }
@@ -11692,6 +11824,7 @@ function openSettings() {
   bind('set-sens', 'sens', v => v.toFixed(2) + '×')
   bind('set-fov', 'fov', v => v + '°')
   bind('set-vol', 'volume', v => Math.round(v * 100) + '%')
+  bind('set-bvol', 'bvol', v => Math.round(v * 100) + '%')
   el('#set-full').style.display = FS_OK ? '' : 'none'
   applySettings()
   show('settings', 1)
@@ -12183,6 +12316,22 @@ function takeRadio(r) {
     radioOf = new Map(r.flatMap((v, i) => i % 2 ? [] : [[v, r[i + 1]]]))
 }
 setInterval(radioTick, 500)
+
+// ---- broadcast sound: the stream from the screen nearest the ear, at its own volume, once the context runs
+const bcastAudio = { v: null, src: null, gain: null, pan: null, cut: null }
+function bcastSound() {
+  const A = bcastAudio, v = bc.video
+  if (A.v && A.v !== v) { try { A.src.disconnect() } catch (e) {} A.v = A.src = null }
+  if (!v || !sfxLive()) return
+  if (!A.gain) {
+    A.gain = actx.createGain(); A.pan = actx.createStereoPanner(); A.cut = actx.createBiquadFilter()
+    A.cut.connect(A.pan).connect(A.gain).connect(sfxOut)
+  }
+  if (!A.v) { A.src = actx.createMediaElementSource(v); A.src.connect(A.cut); A.v = v; v.muted = false }
+  const s = screenSpots.reduce((a, s) => !a || (s.x - sfxEar.x) ** 2 + (s.z - sfxEar.z) ** 2 < (a.x - sfxEar.x) ** 2 + (a.z - sfxEar.z) ** 2 ? s : a, null)
+  const at = s ? sfxPlace(s.x, s.y, s.z, BCAST_REACH) : { gain: 0, pan: 0, cut: 20000 }, t = actx.currentTime
+  A.gain.gain.setTargetAtTime(settings.bvol * at.gain, t, 0.1); A.pan.pan.setTargetAtTime(at.pan, t, 0.1); A.cut.frequency.setTargetAtTime(at.cut, t, 0.1)
+}
 
 // ---------------------------------------------------------------- voices
 // Chatterbox in a worker (~700 MB, WebGPU, opt-in); lines made ahead and kept, unmade ones not said
@@ -13174,7 +13323,7 @@ function fadeChat(t) {
 // hooked[type] first. What a guest sent reaches a hook bounded as the host bounds it, and still untrusted; what a hook sends
 // guests is cut to a guest's chat line and spaced as a guest's chat is.
 const HOOK_TYPES = ['ping', 'match.start', 'match.end', 'player.join', 'player.leave', 'player.rename', 'kill', 'death', 'chat',
-                    'damage', 'spawn', 'pickup', 'wave']
+                    'damage', 'spawn', 'pickup', 'wave', 'broadcast.start', 'broadcast.stop']
 const HOOK_FILTERS = ['join', 'chat', 'hit'], HOOK_TYPE = /^[a-z][a-z0-9_-]*(\.[a-z0-9_-]+)*$/, HOOK_DATA_MAX = 8192, HOOK_BURST = 8
 // type ('*': every type) -> its listeners; kind -> its filters; a guest's id -> how it went, while its link closes
 const hookOn = new Map(), hookFilters = new Map(), hookGone = new Map()
@@ -13339,6 +13488,8 @@ Object.defineProperty(globalThis, 'gameHooks', { value: Object.freeze({
   setMatchMinutes(n) { if (!isHost || !(Number.isFinite(n) && n >= 0 && n <= 60)) return false; GAME.match.minutes(n); return true },
   setEnemies(n) { if (!isHost || !(Number.isInteger(n) && n >= 0) || !hookSend()) return false; GAME.match.bots(n); return true },
   restart() { if (!isHost || !hookSend()) return false; GAME.match.restart(); return true },
+  // a stream every viewer plays on the level's screens: an https URL, or null to stop
+  broadcast(url) { if (!isHost || !hookSend()) return false; return bcastSet(url ?? '') },
   players: () => isHost ? [...players.values()].map(c => ({ ...hookWho(c), kills: c.kills | 0, hp: Math.round(c.hp), dead: c.dead > 0, x: r2(c.x), y: r2(c.y), z: r2(c.z) })) : [],
   room() {
     const all = [...players.values()]
@@ -13346,7 +13497,7 @@ Object.defineProperty(globalThis, 'gameHooks', { value: Object.freeze({
       level: LEVELS[levelId].name, mode: gameMode, fragLimit: GAME.match.fragLimit, minutes: GAME.match.timeLimit / 60,
       match: isHost ? hookMeta('room').match : null, players: all.filter(c => !c.bot).length, enemies: all.filter(c => c.bot && c.owner === undefined).length,
       uptime: serving ? Math.floor((now() - servedAt) / 1000) : 0, signaling: !peer ? '' : peer.disconnected ? 'lost, retrying' : peer.open ? 'connected' : 'connecting',
-      status: el('#status').textContent, hookFailures: hookFails, lastHookFailure: hookFail }
+      status: el('#status').textContent, hookFailures: hookFails, lastHookFailure: hookFail, broadcast: isHost && bcastUrl ? bcastOrigin(bcastUrl) : null }
   },
 }) })
 
@@ -13769,6 +13920,7 @@ function openHostPeer(attempt) {
       lastSeen.set(id, now())
       watchLink(c, id)
       c.send(welcome(id)); c.send({ k: 'roster', list: rosterList() })
+      if (bcastUrl) bcastSay(c)
     })
     c.on('data', raw => { if (!conns.has(id)) return; countDown(raw); lastSeen.set(id, now()); onHostData(id, decode(raw)) })
     c.on('close', () => {
@@ -14100,6 +14252,7 @@ const GUEST_MSGS = {
   kicked: { apply: d => { kickedBy = String(d.by || 'the host').slice(0, 16) } },
   full: { apply: d => { endSession('Room full', (gameMode === 'waves' ? 'Waves takes ' : 'The room takes ') + (d.n | 0) + ' players.', false) } },
   hostgone: { apply: () => { endSession('Host left', 'The host closed the game.', true) } },
+  bcast: { validate: d => typeof d.u === 'string' && Number.isInteger(d.n) && d.n >= 0 && bcastOk(d.u) ? d : null, apply: d => { bcastHear(d.u, d.n) } },
   c: { apply: d => {
     const key = 'p' + d.id
     if ((lastChatSeq.get(key) || -1) >= d.s) return
@@ -14288,6 +14441,7 @@ function clearSession() {
   tierSent.clear(); hotUntil.clear(); snapSeq = 0; tracks.clear()
   sendRing.length = 0
   GAME.lifecycle.sessionEnd()
+  bcastEnd()
   setRoomTag(false)
   clearHistory()
   for (const id of [...avatars.keys()]) dropAvatar(id)
@@ -14380,6 +14534,109 @@ function remoteAt(t) {
   }
   return out
 }
+// ---------------------------------------------------------------- broadcast
+// A stream on the level's screens. The host names it, an https URL or none, and each viewer's own browser plays it from
+// its server, which sees the viewer's address. While one is on, the host says it again every few seconds, and a guest
+// that stops hearing it lets it go. HLS plays through hls.js, anything else as the browser plays it itself
+const BCAST_URL_MAX = 1024, BCAST_EVERY_MS = 3000, BCAST_LEASE_MS = 10000, BCAST_BURST = 3, BCAST_REFILL_MS = 5000
+const BCAST_HZ = 15, BCAST_W = 640, BCAST_H = 360, BCAST_MAX_W = 1920, BCAST_MAX_H = 1080, BCAST_REACH = 8
+// the host's: what it names, its changes counted. bc: this page's, as heard and as played
+let bcastUrl = '', bcastN = 0, bcastSaidAt = 0, bcastTimer = 0
+const bc = { url: '', n: -1, heard: 0, tokens: BCAST_BURST, refill: 0, playing: '', video: null, hls: null, told: '' }
+
+// an https URL with no credentials in it, at most BCAST_URL_MAX characters; '' is none
+function bcastOk(u) {
+  if (u === '') return true
+  if (typeof u !== 'string' || u.length > BCAST_URL_MAX) return false
+  try { const p = new URL(u); return p.protocol === 'https:' && !p.username && !p.password } catch (e) { return false }
+}
+const bcastOrigin = u => { try { return new URL(u).origin } catch (e) { return '' } }
+
+// host: start, switch or stop; false when the URL is refused. A stop is said twice, and the lease covers the rest
+function bcastSet(u) {
+  if (!isHost || !bcastOk(u)) return false
+  if (u === bcastUrl) return true
+  const was = bcastUrl
+  bcastUrl = u; bcastN++
+  bcastSay()
+  if (!u) setTimeout(() => { if (isHost && !bcastUrl) bcastSay() }, 1000)
+  if (u && hooked['broadcast.start']) hookEmit('broadcast.start', { origin: bcastOrigin(u) })
+  if (!u && hooked['broadcast.stop']) hookEmit('broadcast.stop', { origin: bcastOrigin(was) })
+  bcastRun(); bcastPlay()
+  return true
+}
+// to every guest, or to one that has just joined
+function bcastSay(c) {
+  const m = { k: 'bcast', u: bcastUrl, n: bcastN }
+  if (c) { try { c.send(m) } catch (e) {} } else { bcastSaidAt = now(); broadcast(m) }
+}
+// guest: the host's word. An older one is dropped. A change spends a token, BCAST_BURST at most, one back each
+// BCAST_REFILL_MS; one refused is taken when the host says it again
+function bcastHear(u, n) {
+  if (n < bc.n) return
+  bc.heard = now()
+  if (u === bc.url) { bc.n = n; return }
+  bc.tokens = Math.min(BCAST_BURST, bc.tokens + (now() - bc.refill) / BCAST_REFILL_MS); bc.refill = now()
+  if (bc.tokens < 1) return
+  bc.tokens--; bc.n = n; bc.url = u
+  bcastRun(); bcastPlay()
+}
+// runs only while there is one to say, to keep or to stop playing
+function bcastRun() {
+  const on = (isHost ? bcastUrl : bc.url) || bc.video
+  if (on && !bcastTimer) bcastTimer = setInterval(bcastTick, 250)
+  if (!on && bcastTimer) { clearInterval(bcastTimer); bcastTimer = 0 }
+}
+function bcastTick() {
+  if (isHost && bcastUrl && now() - bcastSaidAt >= BCAST_EVERY_MS) bcastSay()
+  if (!isHost && bc.url && now() - bc.heard > BCAST_LEASE_MS) bc.url = ''
+  bcastPlay(); bcastSound(); bcastRun()
+}
+// what this page plays: a viewer's, never a server's, and only while playing a level with screens, broadcasts shown
+function bcastPlay() {
+  const u = phase === 'playing' && settings.bcast && !serving && (LV.screens?.length || LV.screenRule) ? isHost ? bcastUrl : bc.url : ''
+  if (u === bc.playing) return
+  bcastQuit(); bc.playing = u
+  if (!u) return
+  const v = bc.video = Object.assign(document.createElement('video'), { crossOrigin: 'anonymous', playsInline: true, muted: true, preload: 'auto' })
+  const fail = why => { if (bc.video === v) bcastFail(u, why) }
+  v.onerror = () => fail('its server does not let this game play it (CORS), or the browser cannot')
+  v.onloadedmetadata = () => { if (v.videoWidth > BCAST_MAX_W || v.videoHeight > BCAST_MAX_H) fail('it is larger than 1920x1080') }
+  if (/\.m3u8$/i.test(new URL(u).pathname)) withLib(LIBS.hls, () => {
+    const H = window.Hls
+    if (bc.video !== v) return
+    if (!H.isSupported()) return v.canPlayType('application/vnd.apple.mpegurl') ? void (v.src = u, v.play().catch(() => {})) : fail('this browser cannot play HLS')
+    const h = bc.hls = new H({ lowLatencyMode: true, maxBufferLength: 8, backBufferLength: 4 })
+    // the best rendition at or under the cap, else the smallest: none is refused for its size alone
+    h.on(H.Events.MANIFEST_PARSED, (e, d) => { const L = d.levels, under = L.map((l, i) => i).filter(i => (L[i].height || 0) <= BCAST_H)
+      h.autoLevelCapping = under.length ? under.reduce((a, i) => L[i].height >= L[a].height ? i : a) : L.reduce((a, l, i) => (l.height || 0) < (L[a].height || 0) ? i : a, 0) })
+    h.on(H.Events.ERROR, (e, d) => { if (d.fatal) fail(d.type === H.ErrorTypes.NETWORK_ERROR ? 'its server does not let this game load it (CORS), or it is not there' : 'it could not be played') })
+    h.loadSource(u); h.attachMedia(v); v.play().catch(() => {})
+  }, () => fail('the HLS player did not load'))
+  else { v.src = u; v.play().catch(() => {}) }
+  bcastFeed(v)
+}
+// why one cannot show here: said once a URL, by its origin alone, as its path and query may carry a token
+function bcastFail(u, why) {
+  if (bc.told !== u) { bc.told = u; sysMsg('§7The broadcast from ' + bcastOrigin(u) + ' cannot show here: ' + why + '.') }
+  bcastQuit()
+}
+// stops what plays, and the screens take their idle look again; bc.playing stays, so a failed one is not tried again
+function bcastQuit() {
+  const v = bc.video
+  if (!v) return
+  bc.video = null
+  if (bc.hls) { try { bc.hls.destroy() } catch (e) {} bc.hls = null }
+  v.onerror = v.onloadedmetadata = null; v.pause(); v.removeAttribute('src'); v.load()
+  bcastFeed(null); bcastSound()
+}
+// the session's end: nothing named, heard or played
+function bcastEnd() {
+  bcastQuit()
+  if (bcastTimer) { clearInterval(bcastTimer); bcastTimer = 0 }
+  bcastUrl = ''; Object.assign(bc, { url: '', n: -1, heard: 0, tokens: BCAST_BURST, refill: 0, playing: '', told: '' })
+}
+
 // ---------------------------------------------------------------- rules
 // this game's rules: modes, bots, waves, combat; the engine reaches them through GAME and the phases
 // a participant's body and abilities as the engine reads them: { r, h, model, room?, wallRun?, climb?, lift?, hurl?, name }
@@ -15489,6 +15746,7 @@ function frameBody() {
   }
   try { if (phase === 'menu') prepMenu(); prepareStep() } catch (e) { prepQueue.shift(); prepAt = null; frameFailed('prep', e) }      // a failing row drops only itself
   try { drawSlices() } catch (e) { frameFailed('chunk', e) }
+  if (screensDirty) try { screensDraw() } catch (e) { frameFailed('screens', e) }
 }
 
 const lastHud = {}
