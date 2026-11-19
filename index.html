@@ -14595,7 +14595,7 @@ const BCAST_BEHIND_S = 10, BCAST_RETRY_MS = 5000, BCAST_RETRY_MAX_MS = 60000
 // the host's: what it names, its changes counted. bc: this page's, as heard and as played
 let bcastUrl = '', bcastN = 0, bcastSaidAt = 0, bcastTimer = 0
 const bc = { url: '', n: -1, heard: 0, tokens: BCAST_BURST, refill: 0, playing: '', video: null, hls: null, told: '',
-             last: '', retries: 0, retryAt: 0 }
+             last: '', retries: 0, retryAt: 0, played: false }
 
 // an https URL with no credentials in it, at most BCAST_URL_MAX characters; '' is none
 function bcastOk(u) {
@@ -14651,7 +14651,7 @@ function bcastPlay() {
   const u = phase === 'playing' && settings.bcast && !serving && (LV.screens?.length || LV.screenRule) ? isHost ? bcastUrl : bc.url : ''
   if (u === bc.playing) return
   bcastQuit(); bc.playing = u
-  if (u !== bc.last) Object.assign(bc, { last: u, retries: 0, retryAt: 0 })
+  if (u !== bc.last) Object.assign(bc, { last: u, retries: 0, retryAt: 0, played: false })
   if (!u) return
   const v = bc.video = Object.assign(document.createElement('video'), { crossOrigin: 'anonymous', playsInline: true, muted: true, preload: 'auto' })
   const fail = (why, final) => { if (bc.video === v) bcastFail(u, why, final) }
@@ -14660,7 +14660,7 @@ function bcastPlay() {
   v.onloadedmetadata = v.onresize = () => {
     if (Math.max(v.videoWidth, v.videoHeight) > BCAST_MAX_LONG || Math.min(v.videoWidth, v.videoHeight) > BCAST_MAX_SHORT) fail('it is larger than 1920x1080 either way round')
   }
-  v.onplaying = () => { bc.retries = 0 }
+  v.onplaying = () => { bc.retries = 0; bc.played = true }
   if (/\.m3u8$/i.test(new URL(u).pathname)) withLib(LIBS.hls, () => {
     const H = window.Hls
     if (bc.video !== v) return
@@ -14677,11 +14677,13 @@ function bcastPlay() {
   bcastFeed(v)
 }
 // why one cannot show here: said once a URL, by its origin alone, as its path and query may carry a token. Unless the
-// refusal is final, it is tried again while still named, each wait twice the last and at most BCAST_RETRY_MAX_MS
+// refusal is final, it is tried again while still named: at once if it played since its last failure, else each wait
+// twice the last and at most BCAST_RETRY_MAX_MS
 function bcastFail(u, why, final) {
   if (bc.told !== u) { bc.told = u; sysMsg('§7The broadcast from ' + bcastOrigin(u) + ' cannot show here: ' + why + '.') }
   bcastQuit()
-  if (!final) bc.retryAt = now() + Math.min(BCAST_RETRY_MS * 2 ** bc.retries++, BCAST_RETRY_MAX_MS)
+  if (!final) bc.retryAt = now() + (bc.played ? 0 : Math.min(BCAST_RETRY_MS * 2 ** bc.retries++, BCAST_RETRY_MAX_MS))
+  bc.played = false
 }
 // stops what plays, and the screens take their idle look again; bc.playing stays, so a failed one waits for its retry
 function bcastQuit() {
@@ -14696,7 +14698,7 @@ function bcastQuit() {
 function bcastEnd() {
   bcastQuit()
   if (bcastTimer) { clearInterval(bcastTimer); bcastTimer = 0 }
-  bcastUrl = ''; Object.assign(bc, { url: '', n: -1, heard: 0, tokens: BCAST_BURST, refill: 0, playing: '', told: '', last: '', retries: 0, retryAt: 0 })
+  bcastUrl = ''; Object.assign(bc, { url: '', n: -1, heard: 0, tokens: BCAST_BURST, refill: 0, playing: '', told: '', last: '', retries: 0, retryAt: 0, played: false })
 }
 // back in view: a live one the browser held while the tab was hidden goes to its live edge
 document.addEventListener('visibilitychange', () => {
