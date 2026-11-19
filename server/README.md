@@ -33,7 +33,9 @@ the public PeerJS signaling server.
 Chromium picks the server's WebRTC ports from the system's ephemeral range (on Linux 32768–60999, unless
 `net.ipv4.ip_local_port_range` says otherwise), so a firewall on the machine must let in UDP across that range.
 
-`docker stop` closes the room cleanly. The players are told the host left, and the last events go out first.
+`docker stop` closes the room cleanly. The players are told the host left, and the last events go out first. With a
+fixed `ROOM_CODE` they are told instead that the server is restarting, and they ask for the room again by themselves,
+three times over about a minute, so a server that restarts or updates in that time gets its players back.
 
 ## Configure it
 
@@ -46,7 +48,7 @@ Everything is an environment variable (`-e NAME=value`).
 | `FRAGS` | `25` | kills to win, 0–200; 0 is no limit |
 | `MINUTES` | `0` | length of a match, 0–60; 0 is untimed |
 | `ENEMIES` | `3` | computer-run enemies |
-| `ROOM_CODE` | random | a fixed room code, 6 characters of `ABCDEFGHJKMNPQRSTUVWXYZ23456789`, so the join link stays the same |
+| `ROOM_CODE` | random | a fixed room code, 6 characters of `ABCDEFGHJKMNPQRSTUVWXYZ23456789`, so the join link stays the same and players come back by themselves after a restart |
 | `SERVER_NAME` | `The server` | the name players see when it kicks them |
 | `JOIN_URL` | the public game page | printed with `#` and the room code as the join link |
 | `HOOKS_DIR` | `/hooks` | hook modules |
