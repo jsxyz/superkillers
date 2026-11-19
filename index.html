@@ -7592,6 +7592,16 @@ function rigFor(M, bones) {
 }
 
 // union of bone-transformed bounds: a bind-pose sphere clips limbs
+const depthKinds = []
+function depthFor(m) {
+  const own = depthKinds.includes(m.customDepthMaterial)
+  if (m.customDepthMaterial && !own) return
+  const special = m.morphTexture || Object.values(m.geometry.morphAttributes || {}).some(a => a.length) ||
+    [m.material].flat().some(v => v.alphaTest > 0 || v.displacementMap || v.clippingPlanes?.length)
+  if (special) { if (own) delete m.customDepthMaterial; return }
+  const k = m.isSkinnedMesh ? 0 : m.instanceColor ? 1 : 2
+  m.customDepthMaterial = depthKinds[k] ||= new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking })
+}
 const skinBoxes = new WeakMap()
 let skinMatrix
 // g's bone boxes as mesh binds it, a step per 1024 vertices
@@ -7615,6 +7625,7 @@ function* boxSteps(g, mesh) {
 }
 function cullSkin(mesh) {
   if (!mesh.isSkinnedMesh || mesh.poseBounds && mesh.poseBounds.geometry === mesh.geometry) return
+  depthFor(mesh)
   if (!skinMatrix) skinMatrix = new THREE.Matrix4()
   const g = mesh.geometry, boxes = skinBoxes.get(g) || drain(boxSteps(g, mesh))
   mesh.poseBounds = { geometry: g, boxes, box: new THREE.Box3(), sphere: new THREE.Sphere() }
@@ -8051,6 +8062,7 @@ function cityInstances(g, material, rows, pose) {
   m.instanceMatrix.needsUpdate = true
   m.computeBoundingSphere()
   m.receiveShadow = true
+  depthFor(m)
   return m
 }
 // atlas rows: road sections, middle to kerb, 8 m along
@@ -9707,7 +9719,7 @@ let wheelBucket = null, wheelN = 0
 const WHEEL_CAP = OBJ_MAX * 6
 const wheelPart = (w, n) => { const m = new THREE.InstancedMesh(kitGeometry(w.g).clone().rotateZ(Math.PI / 2),
   meshKit({ [w.m]: PROP_PALETTE[w.m] }).materials[w.m], n)
-  m.castShadow = m.receiveShadow = true; return m }
+  m.castShadow = m.receiveShadow = true; depthFor(m); return m }
 function wheelOut(pos, quat, r) {
   if (!wheelBucket) {
     wheelBucket = WHEEL_PARTS.map(w => wheelPart(w, WHEEL_CAP)); objGroup.add(...wheelBucket)
@@ -9755,6 +9767,7 @@ function objLook(K) {
   const m = new THREE.InstancedMesh(K.r ? new THREE.SphereGeometry(K.r, 20, 14)
     : new THREE.BoxGeometry(...K.half.map(v => v * 2)), new THREE.MeshStandardMaterial({ map, roughness: 0.6 }), OBJ_MAX)
   m.castShadow = m.receiveShadow = true
+  depthFor(m)
   return m
 }
 function drawObjects(list, wheelsAt = () => null) {
@@ -10364,7 +10377,7 @@ function glowTex() {
   glowMap.magFilter = glowMap.minFilter = THREE.LinearFilter; glowMap.needsUpdate = true
   return glowMap
 }
-const GLOW = () => ({ map: glowTex(), blending: THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false })
+const GLOW = () => ({ map: glowTex(), blending: THREE.AdditiveBlending, side: THREE.DoubleSide, forceSinglePass: true, toneMapped: false })
 // at most GLOW_MAX glow quads a frame; past it a glow is refused, so no flood grows the pool or the batch without bound
 const GLOW_MAX = 6144
 function glowMesh(hex, alpha, cell) {
