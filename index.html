@@ -731,7 +731,7 @@
    ENGINE, free of game names (engine.js checks): raycast, physics, rewind, net, loop.
    SHARED, reused as they are by any game: helpers, character, camera, textures,
      avatars, render, input, touch, debug, settings, pause, code modal,
-     fullscreen, chat, boot, and tuning's level compiler.
+     fullscreen, chat, broadcast, boot, and tuning's level compiler.
    GAME, this shooter: the CONTENT tables at the top of tuning and the sections
      bots, tornado, guns, rules, view, sound and voices.
 
@@ -744,10 +744,10 @@
      simulation: host (the host tick's phases), think (a bot's input), lifecycle
        (match start, joins, leaves, session end, snapshot fields), death, match
        (limits, restart, mode, bots), level (loaded, grown tiles), crater,
-       objectBody;
+       objectBody, guest (a guest's own step after physics);
      presentation: looks and tornado (what avatars and render draw), view (HUD,
        scoreboard, results, radar, server panel, F3 rows), audio (effects, radio,
-       voices).
+       voices, a broadcast's sound).
    To make a different game, replace those seven sections and the CONTENT
    tables that differ. soccer/ is the worked example: build.py makes car-soccer.html from this
    file plus soccer/parts, and check.js fails when a shared section reads a name
@@ -12535,7 +12535,7 @@ function speak(who, i) {
 }
 
 // the audio the engine plays through: per frame, the radio, effects, one sound, voice lines and the voices' start
-GAME.audio = { frame: sfxFrame, radio: radioTick, fx: sfxFx, play: sfxPlay, speak, say, takeRadio, voices: startVoices, toggle: sfxToggle, cycle: radioCycle, apply: sfxApply, start: sfxStart, gesture: sfxGesture, voicesToggle }
+GAME.audio = { frame: sfxFrame, radio: radioTick, fx: sfxFx, play: sfxPlay, speak, say, takeRadio, voices: startVoices, toggle: sfxToggle, cycle: radioCycle, apply: sfxApply, start: sfxStart, gesture: sfxGesture, voicesToggle, broadcast: bcastSound }
 
 // ---------------------------------------------------------------- pause
 // nothing pauses: the host keeps simulating
@@ -14644,7 +14644,7 @@ function bcastTick() {
   if (isHost && bcastUrl && now() - bcastSaidAt >= BCAST_EVERY_MS) bcastSay()
   if (!isHost && bc.url && now() - bc.heard > BCAST_LEASE_MS) bc.url = ''
   if (bc.retryAt && now() >= bc.retryAt) { bc.retryAt = 0; bc.playing = '' }
-  bcastPlay(); bcastSound(); bcastRun()
+  bcastPlay(); GAME.audio.broadcast(); bcastRun()
 }
 // what this page plays: a viewer's, never a server's, and only while playing a level with screens, broadcasts shown
 function bcastPlay() {
@@ -14690,7 +14690,7 @@ function bcastQuit() {
   bc.video = null
   if (bc.hls) { try { bc.hls.destroy() } catch (e) {} bc.hls = null }
   v.onerror = v.onloadedmetadata = v.onresize = v.onplaying = null; v.pause(); v.removeAttribute('src'); v.load()
-  bcastFeed(null); bcastSound()
+  bcastFeed(null); GAME.audio.broadcast()
 }
 // the session's end: nothing named, heard or played
 function bcastEnd() {
