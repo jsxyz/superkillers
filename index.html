@@ -7865,7 +7865,10 @@ let cityMap = null
 let screenFeed = null, screenMat = null, screenRim = null, screenGroup = null, screensDirty = false, screenFrustum = null
 const SCREEN_IDLE = 0x161b24, screenSpots = []      // the level's screens, as drawn, for the nearest one's sound
 // the panels' material, made with each level as its others are; the picture carries over
-const screenMaterial = () => screenMat ||= new THREE.MeshBasicMaterial({ color: screenFeed ? 0xffffff : SCREEN_IDLE, map: screenFeed })
+// a feed shows once its first frame is drawn: until then, as with none, the screens keep their idle look
+const screenShown = () => !!screenFeed?.userData.shown
+const screenMaterial = () => screenMat ||= new THREE.MeshBasicMaterial({ color: screenShown() ? 0xffffff : SCREEN_IDLE, map: screenShown() ? screenFeed : null })
+function screenLook() { if (!screenMat) return; const on = screenShown(); screenMat.map = on ? screenFeed : null; screenMat.color.setHex(on ? 0xffffff : SCREEN_IDLE); screenMat.needsUpdate = true }
 // whether the camera, as last drawn, takes in a screen
 function screenInView() {
   if (!camera) return false
@@ -7886,12 +7889,15 @@ function bcastFeed(v) {
     const frame = () => {
       if (screenFeed !== t) return                    // another picture took over
       const n = now()
-      if (n - at >= 1000 / BCAST_HZ - 1 && v.currentTime !== shown && screenInView()) { at = n; shown = v.currentTime; g.drawImage(v, 0, 0, BCAST_W, BCAST_H); t.needsUpdate = true }
+      if (n - at >= 1000 / BCAST_HZ - 1 && v.currentTime !== shown && v.readyState >= 2 && screenInView()) {
+        at = n; shown = v.currentTime; g.drawImage(v, 0, 0, BCAST_W, BCAST_H); t.needsUpdate = true
+        if (!t.userData.shown) { t.userData.shown = true; screenLook() }
+      }
       if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(frame); else setTimeout(frame, 500 / BCAST_HZ)
     }
     frame()
   }
-  if (screenMat) { screenMat.map = screenFeed; screenMat.color.setHex(screenFeed ? 0xffffff : SCREEN_IDLE); screenMat.needsUpdate = true }
+  screenLook()
 }
 // screens, { x, y, z, w, h, yaw, ground, framed }: the panels one mesh; the frames and a board's posts of those the
 // level's boxes do not frame, another. None is a body
@@ -11712,6 +11718,10 @@ const QUALITY = {
 }
 const QNAMES = Object.keys(QUALITY)
 const GPU_SOFTWARE = /swiftshader|llvmpipe|softwarerasterizer|basic render|mesa offscreen/i
+// software GL draws every pixel on the CPU: there the frame is drawn at SOFT_SCALE of the screen's pixels a side
+const SOFT_SCALE = 0.5
+let gpuSoft = null, softTold = false
+const softGL = () => { if (gpuSoft === null) { const g = gpuName(); if (g) gpuSoft = GPU_SOFTWARE.test(g) } return !!gpuSoft }
 
 // the game's own context: a second one can make the browser drop the oldest
 function gpuName() {
@@ -11792,7 +11802,7 @@ function applySettings() {
   const Q = QUALITY[settings.quality] || QUALITY.high
   fxStride = Q.fx >= 1 ? 1 : Math.max(2, Math.round(1 / Q.fx))
   if (renderer) {
-    const want = Math.min(devicePixelRatio || 1, IS_TOUCH ? 1.5 : Q.ratio)
+    const want = Math.min(devicePixelRatio || 1, IS_TOUCH ? 1.5 : Q.ratio) * (softGL() ? SOFT_SCALE : 1)
     if (Math.abs(renderer.getPixelRatio() - want) > 0.01) {
       renderer.setPixelRatio(want)
       renderer.setSize(innerWidth, innerHeight)
@@ -12014,7 +12024,10 @@ function sfxApply(starting) {
     }
   } else {
     sfxHush()
-    if (actx.state === 'running') actx.suspend().catch(() => {})
+    // a broadcast routed through the context would stop with it: the context runs on, the broadcast heard in a hidden
+    // tab and silent only with the sound off
+    if (bcastAudio.v && bcastAudio.v === bc.video) { if (!settings.sound) bcastAudio.gain.gain.setTargetAtTime(0, actx.currentTime, 0.02) }
+    else if (actx.state === 'running') actx.suspend().catch(() => {})
   }
   sfxVol = v
 }
@@ -12340,10 +12353,13 @@ setInterval(radioTick, 500)
 
 // ---- broadcast sound: the stream from the screen nearest the ear, at its own volume, once the context runs
 const bcastAudio = { v: null, src: null, gain: null, pan: null, cut: null }
+// heard as the game's sounds are, and in a hidden tab too
+const bcastHeard = () => !!actx && actx.state === 'running' && !!settings.sound && !serving && (phase === 'playing' || phase === 'connecting')
 function bcastSound() {
   const A = bcastAudio, v = bc.video
-  if (A.v && A.v !== v) { try { A.src.disconnect() } catch (e) {} A.v = A.src = null }
-  if (!v || !sfxLive()) return
+  if (A.v && A.v !== v) { try { A.src.disconnect() } catch (e) {} A.v = A.src = null
+    if (!v && actx.state === 'running' && !sfxWanted()) actx.suspend().catch(() => {}) }
+  if (!v || !bcastHeard()) return
   if (!A.gain) {
     A.gain = actx.createGain(); A.pan = actx.createStereoPanner(); A.cut = actx.createBiquadFilter()
     A.cut.connect(A.pan).connect(A.gain).connect(sfxOut)
@@ -14214,7 +14230,11 @@ function startJoin(code) {
     })
     c.on('data', raw => { countDown(raw); onGuestData(decode(raw)) })
     c.on('close', () => {
+      const froze = now() - last
       if (kickedBy) endSession('Kicked', kickedBy + ' removed you from the game.', true)
+      // a page frozen longer than the host waits for word from it: that is why the host let it go
+      else if (froze > GUEST_DEAD_MS) endSession('Disconnected', 'This page froze for ' + Math.round(froze / 1000) + ' s, longer than the host waits for word from it, so the host dropped it.' +
+        (softGL() ? ' This browser draws without graphics acceleration, which is too slow for this game here.' : ''), true)
       else endSession('Disconnected', 'Lost connection to the host.', true)
     })
   })
@@ -14524,6 +14544,7 @@ function beginPlay() {
   sysMsg('§7Connected. §8T to chat · /help for codes · /code for the room code')
   if (qualityAuto && qualityAuto !== QNAMES[0])
     sysMsg('§7Quality §f' + qualityAuto + '§7 — chosen for this machine. Settings can change it.')
+  if (softGL() && !softTold) { softTold = true; sysMsg('§eThis browser draws without graphics acceleration, so the game may not keep up here.') }
 }
 
 function remoteAt(t) {
