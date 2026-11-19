@@ -14100,7 +14100,8 @@ function endServing() {
 }
 
 function stopServing() {
-  broadcast({ k: 'hostgone' })
+  // a fixed code is the room again when the server restarts: its guests are told to come back
+  broadcast(serveCode ? { k: 'hostgone', back: true } : { k: 'hostgone' })
   setTimeout(resetToMenu, 120)       // let the goodbye flush
 }
 
@@ -14313,7 +14314,9 @@ const GUEST_MSGS = {
   } },
   kicked: { apply: d => { kickedBy = String(d.by || 'the host').slice(0, 16) } },
   full: { apply: d => { endSession('Room full', (gameMode === 'waves' ? 'Waves takes ' : 'The room takes ') + (d.n | 0) + ' players.', false) } },
-  hostgone: { apply: () => { endSession('Host left', 'The host closed the game.', true) } },
+  hostgone: { validate: d => ({ ...d, back: d.back === true }), apply: d => {
+    if (d.back) endSession('Disconnected', 'The server is restarting…', 'back')
+    else endSession('Host left', 'The host closed the game.', true) } },
   bcast: { validate: d => typeof d.u === 'string' && Number.isInteger(d.n) && d.n >= 0 && bcastOk(d.u) ? d : null, apply: d => { bcastHear(d.u, d.n) } },
   c: { apply: d => {
     const key = 'p' + d.id
@@ -14520,28 +14523,30 @@ function clearSession() {
   releasePointer()          // flagged, or teardown would trip the pause menu
 }
 
-// rejoinable: true shows Rejoin; 'lost' (a lost link) also asks the room again by itself first
+// rejoinable: true shows Rejoin; 'lost' (a lost link) and 'back' (a server restarting) also ask the room again by itself first
 function endSession(title, msg, rejoinable) {
   if (phase === 'ended') return
   phase = 'ended'
   const canRejoin = rejoinable && !!roomCodeStr
-  const again = rejoinable === 'lost' && canRejoin && !kickedBy ? roomCodeStr : ''
+  const again = (rejoinable === 'lost' || rejoinable === 'back') && canRejoin && !kickedBy ? roomCodeStr : ''
   clearSession()
   el('#end-title').textContent = title
   el('#end-msg').textContent = msg
   el('#end-rejoin').style.display = canRejoin ? '' : 'none'
   show('endmodal', 1)
-  if (again) rejoinLater(again); else rejoinStop()
+  if (again) rejoinLater(again, rejoinable === 'back'); else rejoinStop()
 }
 
-// after a lost link the room is asked again by itself, about 2, 5 and 12 s apart (±30%, so a room of guests doesn't come
-// back in step); the end screen says so, and shows Rejoin again once they are spent
-const REJOIN_MS = [2000, 5000, 12000], REJOIN_SPREAD = 0.3
-let rejoinTimer = 0, rejoinTry = 0, rejoinPick = false
-function rejoinLater(code) {
+// after a lost link the room is asked again by itself, about 2, 5 and 12 s apart; after a server's word that it restarts,
+// on RESTART_MS, which covers a restart. ±30% either way, so a room of guests doesn't come back in step. The end screen
+// says so, and shows Rejoin again once they are spent
+const REJOIN_MS = [2000, 5000, 12000], RESTART_MS = [5000, 15000, 40000], REJOIN_SPREAD = 0.3
+let rejoinTimer = 0, rejoinTry = 0, rejoinPick = false, rejoinPlan = REJOIN_MS
+function rejoinLater(code, restart) {
   clearTimeout(rejoinTimer); rejoinTimer = 0
-  if (rejoinTry >= REJOIN_MS.length) { rejoinTry = 0; return }      // spent: the end screen as the last try left it
-  const wait = REJOIN_MS[rejoinTry++] * (1 + (2 * Math.random() - 1) * REJOIN_SPREAD)
+  if (!rejoinTry) rejoinPlan = restart ? RESTART_MS : REJOIN_MS
+  if (rejoinTry >= rejoinPlan.length) { rejoinTry = 0; return }      // spent: the end screen as the last try left it
+  const wait = rejoinPlan[rejoinTry++] * (1 + (2 * Math.random() - 1) * REJOIN_SPREAD)
   el('#end-title').textContent = 'Reconnecting…'; el('#end-rejoin').style.display = 'none'
   rejoinTimer = setTimeout(() => { rejoinTimer = 0; if (phase === 'ended') startJoin(code, true) }, wait)
 }
