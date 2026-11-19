@@ -7885,12 +7885,16 @@ function bcastFeed(v) {
     const cv = Object.assign(document.createElement('canvas'), { width: BCAST_W, height: BCAST_H }), g = cv.getContext('2d')
     const t = screenFeed = new THREE.CanvasTexture(cv)
     t.colorSpace = THREE.SRGBColorSpace; t.minFilter = THREE.LinearFilter; t.generateMipmaps = false
-    let at = -Infinity, shown = -1
+    let at = -Infinity, shown = -1, fit = ''
     const frame = () => {
       if (screenFeed !== t) return                    // another picture took over
       const n = now()
       if (n - at >= 1000 / BCAST_HZ - 1 && v.currentTime !== shown && v.readyState >= 2 && screenInView()) {
-        at = n; shown = v.currentTime; g.drawImage(v, 0, 0, BCAST_W, BCAST_H); t.needsUpdate = true
+        // the picture at its own shape, centred, the rest in the screens' idle colour: a 16:9 one fills the panel
+        const vw = v.videoWidth || BCAST_W, vh = v.videoHeight || BCAST_H, k = Math.min(BCAST_W / vw, BCAST_H / vh)
+        const x = Math.max(0, Math.floor((BCAST_W - Math.round(vw * k)) / 2)), y = Math.max(0, Math.floor((BCAST_H - Math.round(vh * k)) / 2))
+        if (fit !== (fit = x + ' ' + y) && (x || y)) { g.fillStyle = '#' + SCREEN_IDLE.toString(16).padStart(6, '0'); g.fillRect(0, 0, BCAST_W, BCAST_H) }
+        at = n; shown = v.currentTime; g.drawImage(v, x, y, BCAST_W - 2 * x, BCAST_H - 2 * y); t.needsUpdate = true
         if (!t.userData.shown) { t.userData.shown = true; screenLook() }
       }
       if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(frame); else setTimeout(frame, 500 / BCAST_HZ)
@@ -11402,7 +11406,10 @@ const menuUp = () => modalOpen || pauseOpen || settingsOpen || pickOpen
 const IS_TOUCH = (matchMedia && matchMedia('(pointer: coarse)').matches) ||
                  ('ontouchstart' in window && navigator.maxTouchPoints > 0)
 
-function lockPointer() {
+// a request: a refusal is asked again once (pointerlockerror), after that only by the next request
+let lockRetried = false
+function lockPointer() { lockRetried = false; askLock() }
+function askLock() {
   if (IS_TOUCH || !renderer || serving) return
   try { renderer.domElement.requestPointerLock() } catch (e) {}
 }
@@ -11458,7 +11465,7 @@ function initInput() {
   })
   // Chrome refuses a lock ~1 s after an exit: one retry
   document.addEventListener('pointerlockerror', () => {
-    if (phase === 'playing' && !chatOpen && !modalOpen) setTimeout(lockPointer, 500)
+    if (!lockRetried && phase === 'playing' && !chatOpen && !modalOpen) { lockRetried = true; setTimeout(askLock, 500) }
   })
   addEventListener('mousemove', e => {
     if (!locked || chatOpen || menuUp()) return
@@ -14583,7 +14590,7 @@ function remoteAt(t) {
 // that stops hearing it lets it go. HLS plays through hls.js, anything else as the browser plays it itself. One that
 // fails is tried again while it is still named; back in view, a live one the browser held goes to its live edge
 const BCAST_URL_MAX = 1024, BCAST_EVERY_MS = 3000, BCAST_LEASE_MS = 10000, BCAST_BURST = 3, BCAST_REFILL_MS = 5000
-const BCAST_HZ = 15, BCAST_W = 640, BCAST_H = 360, BCAST_MAX_W = 1920, BCAST_MAX_H = 1080, BCAST_REACH = 8
+const BCAST_HZ = 15, BCAST_W = 640, BCAST_H = 360, BCAST_MAX_LONG = 1920, BCAST_MAX_SHORT = 1080, BCAST_REACH = 8
 const BCAST_BEHIND_S = 10, BCAST_RETRY_MS = 5000, BCAST_RETRY_MAX_MS = 60000
 // the host's: what it names, its changes counted. bc: this page's, as heard and as played
 let bcastUrl = '', bcastN = 0, bcastSaidAt = 0, bcastTimer = 0
@@ -14649,16 +14656,20 @@ function bcastPlay() {
   const v = bc.video = Object.assign(document.createElement('video'), { crossOrigin: 'anonymous', playsInline: true, muted: true, preload: 'auto' })
   const fail = (why, final) => { if (bc.video === v) bcastFail(u, why, final) }
   v.onerror = () => fail('its server does not let this game play it (CORS), or the browser cannot')
-  v.onloadedmetadata = () => { if (v.videoWidth > BCAST_MAX_W || v.videoHeight > BCAST_MAX_H) fail('it is larger than 1920x1080', true) }
+  // larger than the budget either way round: refused, and tried again on the backoff, as a stream can change its size
+  v.onloadedmetadata = v.onresize = () => {
+    if (Math.max(v.videoWidth, v.videoHeight) > BCAST_MAX_LONG || Math.min(v.videoWidth, v.videoHeight) > BCAST_MAX_SHORT) fail('it is larger than 1920x1080 either way round')
+  }
   v.onplaying = () => { bc.retries = 0 }
   if (/\.m3u8$/i.test(new URL(u).pathname)) withLib(LIBS.hls, () => {
     const H = window.Hls
     if (bc.video !== v) return
     if (!H.isSupported()) return v.canPlayType('application/vnd.apple.mpegurl') ? void (v.src = u, v.play().catch(() => {})) : fail('this browser cannot play HLS', true)
     const h = bc.hls = new H({ lowLatencyMode: true, maxBufferLength: 8, backBufferLength: 4 })
-    // the best rendition at or under the cap, else the smallest: none is refused for its size alone
-    h.on(H.Events.MANIFEST_PARSED, (e, d) => { const L = d.levels, under = L.map((l, i) => i).filter(i => (L[i].height || 0) <= BCAST_H)
-      h.autoLevelCapping = under.length ? under.reduce((a, i) => L[i].height >= L[a].height ? i : a) : L.reduce((a, l, i) => (l.height || 0) < (L[a].height || 0) ? i : a, 0) })
+    // the best rendition whose shorter side is at or under the cap, else the smallest: none is refused for its size alone
+    h.on(H.Events.MANIFEST_PARSED, (e, d) => { const L = d.levels, side = i => Math.min(L[i].width || L[i].height || 0, L[i].height || L[i].width || 0)
+      const under = L.map((l, i) => i).filter(i => side(i) <= BCAST_H)
+      h.autoLevelCapping = under.length ? under.reduce((a, i) => side(i) >= side(a) ? i : a) : L.reduce((a, l, i) => side(i) < side(a) ? i : a, 0) })
     h.on(H.Events.ERROR, (e, d) => { if (d.fatal) fail(d.type === H.ErrorTypes.NETWORK_ERROR ? 'its server does not let this game load it (CORS), or it is not there' : 'it could not be played') })
     h.loadSource(u); h.attachMedia(v); v.play().catch(() => {})
   }, () => fail('the HLS player did not load'))
@@ -14678,7 +14689,7 @@ function bcastQuit() {
   if (!v) return
   bc.video = null
   if (bc.hls) { try { bc.hls.destroy() } catch (e) {} bc.hls = null }
-  v.onerror = v.onloadedmetadata = v.onplaying = null; v.pause(); v.removeAttribute('src'); v.load()
+  v.onerror = v.onloadedmetadata = v.onresize = v.onplaying = null; v.pause(); v.removeAttribute('src'); v.load()
   bcastFeed(null); bcastSound()
 }
 // the session's end: nothing named, heard or played
