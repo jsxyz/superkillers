@@ -13896,11 +13896,38 @@ function announce(raw) {
   sysMsg(raw)
   if (isHost) broadcast({ k: 'sys', m: raw })
 }
+// joins and leaves in the chat: one at once, but those within a second of the last are counted and told together when
+// the second is up, so a crowd arriving, or one player in and out over and over, doesn't flood it
+const CHURN_MS = 1000
+let churnAt = -Infinity, churnLater = 0, churnN = { joined: 0, left: 0 }, churnOne = ''
+function churnSay(name, how) {
+  if (!churnLater && now() - churnAt >= CHURN_MS) { churnAt = now(); return announce('§e' + name + ' ' + how) }
+  churnN[how]++; churnOne = '§e' + name + ' ' + how
+  if (!churnLater) churnLater = setTimeout(churnTell, churnAt + CHURN_MS - now())
+}
+function churnTell() {
+  churnLater = 0
+  const { joined, left } = churnN, n = joined + left, told = (k, how) => k + (k > 1 ? ' players ' : ' player ') + how
+  churnN = { joined: 0, left: 0 }
+  if (!n) return
+  churnAt = now()
+  announce(n === 1 ? churnOne : '§e' + [joined && told(joined, 'joined'), left && told(left, 'left')].filter(Boolean).join(', '))
+}
 
 const rosterList = () => [...roster].map(([id, p]) => [id, p.cid, p.name, p.cap || ''])
+// the roster to every guest: ROSTER_BURST at once, then ROSTER_PER_S a second; one asked for past that goes when a
+// token is back, as the roster is then
+const ROSTER_BURST = 4, ROSTER_PER_S = 4
+let rosterTokens = ROSTER_BURST, rosterAt = 0, rosterLater = 0
+const rosterFill = () => { const t = now(); rosterTokens = Math.min(ROSTER_BURST, rosterTokens + (t - rosterAt) * ROSTER_PER_S / 1000); rosterAt = t }
 function pushRoster() {
-  broadcast({ k: 'roster', list: rosterList() })
+  if (rosterLater) return
+  rosterFill()
+  if (rosterTokens < 1) { rosterLater = setTimeout(rosterSend, Math.ceil((1 - rosterTokens) * 1000 / ROSTER_PER_S)); return }
+  rosterSend()
 }
+// a whole token is back by the time a deferred one goes: it is spent, not asked for again
+function rosterSend() { rosterLater = 0; rosterFill(); rosterTokens--; broadcast({ k: 'roster', list: rosterList() }) }
 
 function applyRoster(list) {
   const seen = new Set()
@@ -14007,7 +14034,7 @@ function openHostPeer(attempt) {
       inputSeq.delete(id); lastChatSeq.delete(id); lastChatAt.delete(id); lastSeen.delete(id); nickAt.delete(id); nickWait.delete(id)
       inQ.delete(id); inAck.delete(id)
       if (poll) { poll.yes.delete(id); poll.no.delete(id); countVote() }
-      if (p) announce('§e' + p.name + ' left')
+      if (p) churnSay(p.name, 'left')
       if (gone) hookEmit('player.leave', gone)
       dropAvatar(id)
       pushRoster()
@@ -14158,7 +14185,7 @@ const HOST_MSGS = {
     GAME.rows.joined(players.get(id), cid)
     inputs.set(id, { f: 0, r: 0, j: false, fire: false, yaw: 0, pitch: 0 })
     inQ.set(id, []); inAck.set(id, 0)
-    announce('§e' + name + ' joined')
+    churnSay(name, 'joined')
     pushRoster()
     if (hooked['player.join']) hookEmit('player.join', { player: hookWho(players.get(id)) })
     if (poll) countVote()
