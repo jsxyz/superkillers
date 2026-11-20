@@ -65,6 +65,26 @@ page does not know yet: a page that knows another key for it checks against that
 - protect a server without a key or with a random code, or pages served over plain http, which browsers give no
   WebCrypto: those join unchecked.
 
+## What a link may carry
+
+Every message a player's page or the server takes from another is checked before it is read. One larger than the game's
+own pages ever send at once (16,299 bytes, the most its networking library sends) closes the link, and so does a link
+past its byte budget:
+
+- a player's link to the server, which carries the room: 1 MiB a second, with a 12 MiB burst, what twelve seconds at
+  that rate can owe (the longest a server keeps a silent player);
+- the server's link from each player, which carries that player's moves: 64 KiB a second, with a 512 KiB burst, eight
+  seconds' worth (the longest a player waits on a silent server).
+
+The busiest real traffic is far below both: a 32-player City at the fastest snapshot rate sends a player about 190 KB in
+its busiest second, and a player sends about 11 KB a second. Only a modified page sends more. What the limits cannot do:
+
+- each browser takes in a whole message before any page code sees it (Chromium up to about 4 MB, closing the link for a
+  larger one; Firefox at least 8 MB), so that much memory is spent before the game can refuse it;
+- a link made anew starts with a fresh budget, and the links a server holds at once, open or opening, are bounded by the
+  size of its room;
+- a room full of hostile players costs the server a budget for each of them.
+
 ## Configure it
 
 Everything is an environment variable (`-e NAME=value`).
