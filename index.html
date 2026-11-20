@@ -13803,6 +13803,14 @@ function setStatus(msg, cls) {
   box.textContent = msg
   box.className = cls || ''
 }
+// a connection failure in plain words; PeerJS's own name for it goes to the console. `trying`: the room is asked again by itself
+const SIGNALING_DOWN = new Set(['network', 'socket-error', 'socket-closed', 'server-error'])
+function failType(e) { const type = String(e?.type || e?.message || e); console.warn('connection failure: ' + type); return type }
+function failWords(type, trying) {
+  return SIGNALING_DOWN.has(type) ? "The signaling server can't be reached right now."
+    : type === 'peer-unavailable' ? (trying ? "The room isn't open yet." : "The room isn't there.")
+    : "The room couldn't be reached."
+}
 
 function snapHz(n) { return n <= 4 ? 30 : n <= 12 ? 22 : n <= 20 ? 16 : 12 }
 function snapRateNow() {
@@ -13932,7 +13940,8 @@ function openHostPeer(attempt) {
       return
     }
     if (e.type === 'unavailable-id') { note('Could not claim a room code.', 'err'); return }
-    note('Signaling error: ' + e.type, 'err')
+    const type = failType(e)
+    note(SIGNALING_DOWN.has(type) ? failWords(type) : 'Could not open the room.', 'err')
   })
   peer.on('open', () => {
     relinkTries = 0
@@ -14218,8 +14227,9 @@ function startJoin(code, again) {
   const linked = () => phase === 'playing' && !!conns.get(0)?.open
   peer.on('error', e => {
     if (linked()) return
-    if (phase === 'playing') endSession('Disconnected', 'Connection error: ' + e.type, 'lost')
-    else { setStatus('Could not connect: ' + e.type, 'err'); rejoinMissed('Could not connect: ' + e.type) }
+    const type = failType(e)
+    if (phase === 'playing') endSession('Disconnected', failWords(type, true), 'lost')
+    else { setStatus('Could not connect. ' + failWords(type, !!rejoinTry), 'err'); rejoinMissed(type) }
   })
   peer.on('disconnected', () => { if (linked()) relinkLater() })
   peer.on('close', () => {
@@ -14238,9 +14248,9 @@ function startJoin(code, again) {
       if (now() - t0 < 15000) return stage('(' + at + ')')
       clearInterval(watch)
       setStatus('Could not reach the host after 15 s (' + at + '). The room may be closed, or the network blocks a direct link.', 'err')
-      rejoinMissed('Could not reach the host.')
+      rejoinMissed('no answer')
     }, 1000)
-    c.on('error', e => setStatus('Could not connect: ' + (e && (e.type || e.message) || e), 'err'))
+    c.on('error', e => setStatus('Could not connect. ' + failWords(failType(e), !!rejoinTry), 'err'))
     c.on('open', () => {
       connected = true
       watchLink(c, null)
@@ -14538,21 +14548,31 @@ function endSession(title, msg, rejoinable) {
 }
 
 // after a lost link the room is asked again by itself, about 2, 5 and 12 s apart; after a server's word that it restarts,
-// on RESTART_MS, which covers a restart. ±30% either way, so a room of guests doesn't come back in step. The end screen
-// says so, and shows Rejoin again once they are spent
+// on RESTART_MS, which covers a restart. The end screen says so. Once they are spent it shows Rejoin again, and the room
+// is still asked, quietly, every TAIL_MS: at most TAIL_TRIES times within TAIL_FOR_MS. ±30% on every wait, so a room of
+// guests doesn't come back in step
 const REJOIN_MS = [2000, 5000, 12000], RESTART_MS = [5000, 15000, 40000], REJOIN_SPREAD = 0.3
-let rejoinTimer = 0, rejoinTry = 0, rejoinPick = false, rejoinPlan = REJOIN_MS
+const TAIL_MS = 60000, TAIL_TRIES = 30, TAIL_FOR_MS = 30 * 60000
+let rejoinTimer = 0, rejoinTry = 0, rejoinPick = false, rejoinPlan = REJOIN_MS, tailEnd = 0
 function rejoinLater(code, restart) {
   clearTimeout(rejoinTimer); rejoinTimer = 0
   if (!rejoinTry) rejoinPlan = restart ? RESTART_MS : REJOIN_MS
-  if (rejoinTry >= rejoinPlan.length) { rejoinTry = 0; return }      // spent: the end screen as the last try left it
-  const wait = rejoinPlan[rejoinTry++] * (1 + (2 * Math.random() - 1) * REJOIN_SPREAD)
-  el('#end-title').textContent = 'Reconnecting…'; el('#end-rejoin').style.display = 'none'
+  const quick = rejoinTry < rejoinPlan.length
+  if (rejoinTry === rejoinPlan.length) tailEnd = now() + TAIL_FOR_MS
+  const wait = (quick ? rejoinPlan[rejoinTry] : TAIL_MS) * (1 + (2 * Math.random() - 1) * REJOIN_SPREAD)
+  if (!quick && (rejoinTry >= rejoinPlan.length + TAIL_TRIES || now() + wait > tailEnd)) { rejoinTry = 0; return }      // spent: the end screen as the last try left it
+  rejoinTry++
+  if (quick) { el('#end-title').textContent = 'Reconnecting…'; el('#end-rejoin').style.display = 'none' }
   rejoinTimer = setTimeout(() => { rejoinTimer = 0; if (phase === 'ended') startJoin(code, true) }, wait)
 }
 function rejoinStop() { clearTimeout(rejoinTimer); rejoinTimer = 0; rejoinTry = 0 }
-// an attempt that failed before it was linked (no signaling, no answer): the next one
-const rejoinMissed = why => { if (rejoinTry && phase === 'connecting') endSession('Disconnected', why, 'lost') }
+// an attempt that failed before it was linked (no signaling, no answer): the next one; once none follows, the end
+// screen's words stop waiting
+const rejoinMissed = type => {
+  if (!rejoinTry || phase !== 'connecting') return
+  endSession('Disconnected', failWords(type, true), 'lost')
+  if (!rejoinTry) el('#end-msg').textContent = failWords(type, false)
+}
 
 function resetToMenu() {
   clearSession()
