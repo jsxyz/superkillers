@@ -158,6 +158,14 @@ off in the settings.
   the screens' idle colour.
 - To broadcast from OBS you need a server that takes its stream and serves it as HLS over https with CORS. That isn't
   part of this image.
+- A page that frames the game and already plays the stream itself can hand the game its pictures, so the viewer fetches
+  the stream once. While a screen in view wants a picture, the game asks its parent page with
+  `{type: 'stream-frame-want', v: 1, w: 640, h: 360, fps: 15}` (`fps: 0` once none does) and takes
+  `{type: 'stream-frame', v: 1, bitmap}` with an ImageBitmap from that parent only, while it asks: at most 30 a second,
+  each no larger than 1920x1080 either way round. Until the first one comes, the game fetches the stream itself as above;
+  from then the pictures replace it, and when they stop for about 2 s while wanted it fetches the stream again until they
+  come back. Such a page can put any picture on its viewer's screens, as it could already cover them, and the asks tell it
+  when a screen is in view. Nothing of it reaches other players.
 
 ## Webhooks
 
