@@ -13890,11 +13890,11 @@ const FROM_HOST = { rate: 1 << 20, burst: (1 << 20) * GUEST_DEAD_MS / 1000 }, FR
 function guardLink(c, { rate, burst }) {
   const take = typeof c._handleDataMessage === 'function' ? c._handleDataMessage.bind(c) : null
   if (!take) { try { c.close() } catch (e) {} ; return false }
-  let owed = burst, at = now()
+  let credit = burst, at = now()
   c._handleDataMessage = e => {
     const d = e && e.data, n = d == null ? 0 : d.byteLength ?? d.length ?? 0, t = now()
-    owed = Math.min(burst, owed + (t - at) * rate / 1000); at = t
-    if (n > LINK_MSG_MAX || (owed -= n) < 0) { try { c.close() } catch (x) {} ; return }
+    credit = Math.min(burst, credit + (t - at) * rate / 1000); at = t
+    if (n > LINK_MSG_MAX || (credit -= n) < 0) { try { c.close() } catch (x) {} ; return }
     take(e)
   }
   return true
@@ -14992,16 +14992,19 @@ function bcastEnd() {
   bcastUrl = ''; Object.assign(bc, { url: '', n: -1, heard: 0, tokens: BCAST_BURST, refill: 0, playing: '', told: '', last: '', retries: 0, retryAt: 0, played: false })
   fed.on = false; fed.recent = []; feedScreens(''); feedWant('')
 }
-// back in view: a live one the browser held while the tab was hidden goes to its live edge
+// hidden or shown: told a framing page at once; back in view, a live one the browser held while the tab was hidden goes to
+// its live edge
 document.addEventListener('visibilitychange', () => {
+  feedWant()
   const v = bc.video
   if (document.hidden || !v) return
   const edge = bc.hls ? bc.hls.liveSyncPosition : v.duration === Infinity && v.seekable.length ? v.seekable.end(v.seekable.length - 1) : null
   if (edge != null && edge - v.currentTime > BCAST_BEHIND_S) { v.currentTime = edge; v.play().catch(() => {}) }
 })
-// the want, told a framing page at each change: the frame rate a screen in view wants of the room's broadcast, 0 for none
+// the want, told a framing page at each change: the frame rate a screen in view on a shown page wants of the room's
+// broadcast, 0 for none
 function feedWant(want = bcastWanted()) {
-  const fps = framed && want && screenInView() ? BCAST_HZ : 0
+  const fps = framed && want && !document.hidden && screenInView() ? BCAST_HZ : 0
   if (fps === fed.want) return
   fed.want = fps; fed.since = now()
   window.parent.postMessage({ type: 'stream-frame-want', v: 1, w: BCAST_W, h: BCAST_H, fps }, '*')
