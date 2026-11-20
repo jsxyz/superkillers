@@ -13881,6 +13881,24 @@ function watchLink(c, id) {
   })
 }
 
+// a link's messages, before PeerJS decodes and parses them: one past what its json sender sends at once (it refuses 16300
+// bytes or more), or past the link's byte budget, comes only from a modified client, and is refused with the link closed.
+// A guest's link carries the room, a host's link from a guest its inputs; each budget refills at its rate, and its burst
+// is what the link can owe after the longest stall the other side keeps it through. A link that cannot be guarded closes
+const LINK_MSG_MAX = 16299
+const FROM_HOST = { rate: 1 << 20, burst: (1 << 20) * GUEST_DEAD_MS / 1000 }, FROM_GUEST = { rate: 64 << 10, burst: (64 << 10) * LINK_DEAD_MS / 1000 }
+function guardLink(c, { rate, burst }) {
+  const take = typeof c._handleDataMessage === 'function' ? c._handleDataMessage.bind(c) : null
+  if (!take) { try { c.close() } catch (e) {} ; return false }
+  let owed = burst, at = now()
+  c._handleDataMessage = e => {
+    const d = e && e.data, n = d == null ? 0 : d.byteLength ?? d.length ?? 0, t = now()
+    owed = Math.min(burst, owed + (t - at) * rate / 1000); at = t
+    if (n > LINK_MSG_MAX || (owed -= n) < 0) { try { c.close() } catch (x) {} ; return }
+    take(e)
+  }
+  return true
+}
 // strings = our double-encoded JSON; all bounded by MSG_CAP; bad ones dropped, never thrown
 const MSG_CAP = 1 << 16
 function decode(d) {
@@ -14011,6 +14029,7 @@ function openHostPeer(attempt) {
   peer.on('connection', c => {
     // JSON only: 'binary' (PeerJS default) BinaryPack trusts attacker lengths -> hang/OOM
     if (c.serialization !== 'json') { try { c.close() } catch (e) {} ; return }
+    if (!guardLink(c, FROM_GUEST)) return
     // a link holds its id and its place from here until it opens or closes; one not open in JOIN_OPEN_MS is let go and
     // closed. A refusal is said once the channel opens, to a room's worth of links at most
     const id = conns.size + joining.size < roomCap() && takeId(), t0 = now()
@@ -14351,6 +14370,7 @@ function startJoin(code, again) {
     relinkTries = 0
     if (conns.has(0)) return            // signaling back after a drop: the link to the host is the one it had
     const c = peer.connect(roomCodeStr, { reliable: false, serialization: 'json', metadata: nonce ? { n: nonce } : undefined })
+    guardLink(c, FROM_HOST)
     conns.set(0, c)
     stage('asking the host')
     // each second the link's state; after 15 s without a channel, where it stopped
