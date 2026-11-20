@@ -8,9 +8,12 @@ to stdout as a JSON line and to any webhooks you register, and a small HTTP API 
 ## Run it
 
 ```sh
-docker run -d --name superkillers --network host --restart unless-stopped ghcr.io/jsxyz/superkillers-server
+docker run -d --name superkillers --network host --restart unless-stopped \
+  --log-opt max-size=10m --log-opt max-file=3 ghcr.io/jsxyz/superkillers-server
 docker logs superkillers
 ```
+
+The server writes every event to its log, a line of JSON each, so the two `--log-opt` flags keep the log to 30 MB.
 
 The log names the room and its join link:
 
@@ -99,9 +102,10 @@ Each event is one JSON object, the same on stdout and to a webhook:
 Every `match.start` is followed by one `match.end`. A level change, a restart or the room emptying ends it as
 `restart`. Hook modules can add types of their own.
 
-**Names and chat are typed by players.** They are capped (16 and 160 characters) and stripped of control and colour
-codes, but not authenticated and not unique. Escape them wherever you show them, and never treat them as identity. No
-event carries the room code, the room's only credential.
+**Names and chat are typed by players.** They are capped (16 and 160 characters) and stripped of control characters,
+bidi overrides included. Names also lose `§` colour codes; chat may carry them. Neither is authenticated or unique.
+Escape them wherever you show them, and never treat them as identity. No event carries the room code, the room's only
+credential.
 
 ## Broadcasts
 
