@@ -14791,6 +14791,12 @@ const BCAST_LIST_MAX = 8 << 20, BCAST_SEG_MAX = 16 << 20
 let bcastUrl = '', bcastN = 0, bcastSaidAt = 0, bcastTimer = 0
 const bc = { url: '', n: -1, heard: 0, tokens: BCAST_BURST, refill: 0, playing: '', video: null, hls: null, told: '',
              last: '', retries: 0, retryAt: 0, played: false }
+// a page that frames this one and plays the room's stream itself can feed the screens its pictures (the 'message'
+// listener below). fed: the frame rate asked of it (0 for none) and since when; whether its pictures replace the stream,
+// which is otherwise played here; the last one's time and the last second's; whether the screens are on them
+const FEED_MAX_HZ = 30, FEED_WAIT_MS = 2000
+const framed = !!window.parent && window.parent !== window
+const fed = { want: 0, since: 0, on: false, at: 0, recent: [], showing: false, src: null }
 
 // a host on this machine or its network, as `new URL` writes it: localhost and .local names, and addresses unspecified,
 // loopback, private, carrier-grade NAT, link-local or for benchmarking, IPv4-mapped ones among them
@@ -14854,13 +14860,18 @@ function bcastTick() {
   if (isHost && bcastUrl && now() - bcastSaidAt >= BCAST_EVERY_MS) bcastSay()
   if (!isHost && bc.url && now() - bc.heard > BCAST_LEASE_MS) bc.url = ''
   if (bc.retryAt && now() >= bc.retryAt) { bc.retryAt = 0; bc.playing = '' }
+  if (fed.on && fed.want && now() - Math.max(fed.at, fed.since) > FEED_WAIT_MS) fed.on = false     // wanted, not answered
   bcastPlay(); GAME.audio.broadcast(); bcastRun()
 }
-// what this page plays: a viewer's, never a server's, and only while playing a level with screens, broadcasts shown
+// what the screens show: a viewer's, never a server's, and only while playing a level with screens, broadcasts shown.
+// The stream, played here, unless a framing page's pictures replace it
+const bcastWanted = () => phase === 'playing' && settings.bcast && !serving && (LV.screens?.length || LV.screenRule) ? isHost ? bcastUrl : bc.url : ''
 function bcastPlay() {
-  const u = phase === 'playing' && settings.bcast && !serving && (LV.screens?.length || LV.screenRule) ? isHost ? bcastUrl : bc.url : ''
-  if (u === bc.playing) return
+  const want = bcastWanted(), u = fed.on ? '' : want
+  feedWant(want)
+  if (u === bc.playing) return feedScreens(want)
   bcastQuit(); bc.playing = u
+  feedScreens(want)
   if (u !== bc.last) Object.assign(bc, { last: u, retries: 0, retryAt: 0, played: false })
   if (!u) return
   const v = bc.video = Object.assign(document.createElement('video'), { crossOrigin: 'anonymous', playsInline: true, muted: true, preload: 'auto' })
@@ -14959,6 +14970,7 @@ function bcastEnd() {
   bcastQuit()
   if (bcastTimer) { clearInterval(bcastTimer); bcastTimer = 0 }
   bcastUrl = ''; Object.assign(bc, { url: '', n: -1, heard: 0, tokens: BCAST_BURST, refill: 0, playing: '', told: '', last: '', retries: 0, retryAt: 0, played: false })
+  fed.on = false; fed.recent = []; feedScreens(''); feedWant('')
 }
 // back in view: a live one the browser held while the tab was hidden goes to its live edge
 document.addEventListener('visibilitychange', () => {
@@ -14966,6 +14978,47 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden || !v) return
   const edge = bc.hls ? bc.hls.liveSyncPosition : v.duration === Infinity && v.seekable.length ? v.seekable.end(v.seekable.length - 1) : null
   if (edge != null && edge - v.currentTime > BCAST_BEHIND_S) { v.currentTime = edge; v.play().catch(() => {}) }
+})
+// the want, told a framing page at each change: the frame rate a screen in view wants of the room's broadcast, 0 for none
+function feedWant(want = bcastWanted()) {
+  const fps = framed && want && screenInView() ? BCAST_HZ : 0
+  if (fps === fed.want) return
+  fed.want = fps; fed.since = now()
+  window.parent.postMessage({ type: 'stream-frame-want', v: 1, w: BCAST_W, h: BCAST_H, fps }, '*')
+}
+// the screens on a framing page's pictures while they replace the stream and one is wanted, off them when not
+function feedScreens(want) {
+  const on = fed.on && !!want
+  if (on === fed.showing) return
+  fed.showing = on
+  bcastFeed(on ? fed.src ||= frameSource() : null)
+}
+// a framing page's pictures as the screens' feed takes a video's: the last one at its own size, a count for its time,
+// and the feed's frame callback run as each comes
+function frameSource() {
+  const cv = document.createElement('canvas'), g = cv.getContext('2d')
+  return Object.assign(cv, { readyState: 4, currentTime: 0, videoWidth: 0, videoHeight: 0, cb: null,
+    requestVideoFrameCallback(cb) { this.cb = cb },
+    take(b) {
+      if (cv.width !== b.width || cv.height !== b.height) Object.assign(cv, { width: b.width, height: b.height })
+      g.drawImage(b, 0, 0); this.videoWidth = b.width; this.videoHeight = b.height; this.currentTime++
+      const cb = this.cb; this.cb = null; cb?.()
+    } })
+}
+// a framing page's picture: taken only from the parent while a screen wants one, as an ImageBitmap within BCAST_MAX
+// either way round, at most FEED_MAX_HZ a second, by its own size; every one closed. The first taken replaces the stream
+addEventListener('message', e => {
+  const d = e.data, I = globalThis.ImageBitmap, b = I && d && typeof d === 'object' && d.type === 'stream-frame' && d.bitmap instanceof I ? d.bitmap : null
+  if (!b) return
+  try {
+    const n = now(), w = b.width, h = b.height
+    fed.recent = fed.recent.filter(t => n - t < 1000)
+    if (!framed || e.source !== window.parent || d.v !== 1 || !fed.want || fed.recent.length >= FEED_MAX_HZ ||
+      !(w > 0 && h > 0) || Math.max(w, h) > BCAST_MAX_LONG || Math.min(w, h) > BCAST_MAX_SHORT) return
+    fed.recent.push(n); fed.at = n
+    ;(fed.src ||= frameSource()).take(b)
+    if (!fed.on) { fed.on = true; bcastPlay() }
+  } finally { b.close() }
 })
 
 // ---------------------------------------------------------------- rules
