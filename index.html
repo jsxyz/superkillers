@@ -14668,6 +14668,8 @@ function remoteAt(t) {
 const BCAST_URL_MAX = 1024, BCAST_EVERY_MS = 3000, BCAST_LEASE_MS = 10000, BCAST_BURST = 3, BCAST_REFILL_MS = 5000
 const BCAST_HZ = 15, BCAST_W = 640, BCAST_H = 360, BCAST_MAX_LONG = 1920, BCAST_MAX_SHORT = 1080, BCAST_REACH = 8
 const BCAST_BEHIND_S = 10, BCAST_RETRY_MS = 5000, BCAST_RETRY_MAX_MS = 60000
+// the most a stream may make a guest download through hls.js: a playlist, a segment
+const BCAST_LIST_MAX = 8 << 20, BCAST_SEG_MAX = 16 << 20
 // the host's: what it names, its changes counted. bc: this page's, as heard and as played
 let bcastUrl = '', bcastN = 0, bcastSaidAt = 0, bcastTimer = 0
 const bc = { url: '', n: -1, heard: 0, tokens: BCAST_BURST, refill: 0, playing: '', video: null, hls: null, told: '',
@@ -14741,16 +14743,25 @@ function bcastPlay() {
     const H = window.Hls
     if (bc.video !== v) return
     if (!H.isSupported()) return v.canPlayType('application/vnd.apple.mpegurl') ? void (v.src = u, v.play().catch(() => {})) : fail('this browser cannot play HLS', true)
-    const h = bc.hls = new H({ lowLatencyMode: true, maxBufferLength: 8, backBufferLength: 4 })
+    const h = bc.hls = new H({ lowLatencyMode: true, maxBufferLength: 8, backBufferLength: 4,
+      xhrSetup: xhr => bcastCap(xhr, () => fail('it is larger than this game will load')) })
     // the best rendition whose shorter side is at or under the cap, else the smallest: none is refused for its size alone
     h.on(H.Events.MANIFEST_PARSED, (e, d) => { const L = d.levels, side = i => Math.min(L[i].width || L[i].height || 0, L[i].height || L[i].width || 0)
       const under = L.map((l, i) => i).filter(i => side(i) <= BCAST_H)
       h.autoLevelCapping = under.length ? under.reduce((a, i) => side(i) >= side(a) ? i : a) : L.reduce((a, l, i) => side(i) < side(a) ? i : a, 0) })
-    h.on(H.Events.ERROR, (e, d) => { if (d.fatal) fail(d.type === H.ErrorTypes.NETWORK_ERROR ? 'its server does not let this game load it (CORS), or it is not there' : 'it could not be played') })
+    h.on(H.Events.ERROR, (e, d) => { if (d.fatal) fail(d.networkDetails?.bcastOver ? 'it is larger than this game will load'
+      : d.type === H.ErrorTypes.NETWORK_ERROR ? 'its server does not let this game load it (CORS), or it is not there' : 'it could not be played') })
     h.loadSource(u); h.attachMedia(v); v.play().catch(() => {})
   }, () => fail('the HLS player did not load'))
   else { v.src = u; v.play().catch(() => {}) }
   bcastFeed(v)
+}
+// each request hls.js makes for a stream: once its size passes the cap for its kind (a segment is an arraybuffer) it is
+// given up, and the stream refused
+function bcastCap(xhr, refuse) {
+  const over = n => { if (n > (xhr.responseType === 'arraybuffer' ? BCAST_SEG_MAX : BCAST_LIST_MAX) && !xhr.bcastOver) { xhr.bcastOver = true; xhr.abort(); setTimeout(refuse) } }
+  xhr.addEventListener('readystatechange', () => { if (xhr.readyState === 2) over(+xhr.getResponseHeader('content-length') || 0) })
+  xhr.addEventListener('progress', e => over(e.loaded))
 }
 // why one cannot show here: said once a URL, by its origin alone, as its path and query may carry a token. Unless the
 // refusal is final, it is tried again while still named: at once if it played since its last failure, else each wait
