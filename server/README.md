@@ -40,6 +40,31 @@ Chromium picks the server's WebRTC ports from the system's ephemeral range (on L
 fixed `ROOM_CODE` they are told instead that the server is restarting, and they ask for the room again by themselves,
 three times over about a minute, so a server that restarts or updates in that time gets its players back.
 
+## A room's key
+
+A room code belongs to whoever registers it first with the signaling server. When this server stops or crashes, its code
+is free within a second, while its players go on asking for the room by themselves for up to half an hour: whoever holds
+the code then gets them. With `HOST_KEY_FILE` the server signs its welcome to each player, and a player's page remembers
+the key the first time it joins. On every later join the page checks the key before it shows anything of the room or
+sends anything to it. A server with another key, or with none, is shown as a room that has changed hands, with Join
+anyway, and nothing goes back to it by itself.
+
+```sh
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out room.key
+docker run ... -e ROOM_CODE=K7XQ2M -v ./room.key:/keys/room.key:ro -e HOST_KEY_FILE=/keys/room.key ...
+```
+
+The file must be readable by the image's user (uid 1000). Keep the key across restarts and updates: a new key looks to
+every returning player like another server. The join link then carries the key's fingerprint (`#K7XQ2M.` and 22 more
+characters), and a page opened from that link checks even its first join. A link's key is taken only for a code the
+page does not know yet: a page that knows another key for it checks against that one. What the key cannot do:
+
+- hide a player's address: a page sends it to whoever holds the code as it connects, before anything can be checked;
+- keep the room: whoever holds the code keeps this server from getting it back until they let it go;
+- check a first join without the key in its link, or a page that has forgotten the key;
+- protect a server without a key or with a random code, or pages served over plain http, which browsers give no
+  WebCrypto: those join unchecked.
+
 ## Configure it
 
 Everything is an environment variable (`-e NAME=value`).
@@ -60,6 +85,7 @@ Everything is an environment variable (`-e NAME=value`).
 | `WEBHOOKS_FILE` | `/config/webhooks.json` | several webhooks |
 | `ACTION_HOST`, `ACTION_PORT` | `127.0.0.1`, `8080` | the action API; port 0 turns it off |
 | `ACTION_TOKEN` (or `ACTION_TOKEN_FILE`) | | required whenever `ACTION_HOST` is not loopback |
+| `HOST_KEY_FILE` | | the room's own key, so players who have been here can tell this server from anyone else holding its code; needs `ROOM_CODE` (see A room's key) |
 | `GAME_FILE` | the game in the image | run another copy of the game, mounted into the container |
 | `BROADCAST_URL` | | a stream every player sees on the level's screens (see Broadcasts) |
 

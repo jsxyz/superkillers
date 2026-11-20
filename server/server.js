@@ -139,6 +139,21 @@ class Webhook {
   get status() { return { origin: this.origin, queued: this.queue.length, delivered: this.delivered, dropped: this.dropped, failing: this.failing || null } }
 }
 
+// the room's own key (HOST_KEY_FILE, an ECDSA P-256 private key in PKCS#8 PEM), for a fixed ROOM_CODE: the first welcome
+// on each link is signed over the guest's nonce and both ends' DTLS fingerprints, so a player who has been here can tell
+// this server from anyone else holding the code. The key stays here: the page asks for each signature
+const SIGNED = 'superkillers welcome v1\n', PRINT = /^sha-256 (?:[0-9A-F]{2}:){31}[0-9A-F]{2}$/
+const KEY = blank(env.HOST_KEY_FILE) ? null : (() => {
+  if (blank(env.ROOM_CODE)) die('HOST_KEY_FILE needs ROOM_CODE: a random code is new at every start, so no player could know this server again by it')
+  let k; try { k = crypto.createPrivateKey(readFile(env.HOST_KEY_FILE, 'HOST_KEY_FILE')) } catch (e) { die('HOST_KEY_FILE: not a private key in PEM') }
+  if (k.asymmetricKeyType !== 'ec' || k.asymmetricKeyDetails?.namedCurve !== 'prime256v1') die("HOST_KEY_FILE: the key must be ECDSA P-256 (see A room's key in README.md)")
+  const spki = crypto.createPublicKey(k).export({ type: 'spki', format: 'der' })
+  return { k, pub: spki.toString('base64'), print: crypto.createHash('sha256').update(spki).digest().subarray(0, 16).toString('base64url'), code: env.ROOM_CODE.trim().toUpperCase() }
+})()
+const hostSign = (n, host, guest) => typeof n === 'string' && /^[0-9a-f]{32}$/.test(n) && PRINT.test(host) && PRINT.test(guest)
+  ? { key: KEY.pub, sig: crypto.sign('sha256', Buffer.from(SIGNED + KEY.code + '\n' + n + '\n' + host + '\n' + guest), { key: KEY.k, dsaEncoding: 'ieee-p1363' }).toString('base64') } : null
+const joinLink = code => CFG.joinUrl ? CFG.joinUrl + '#' + code + (KEY ? '.' + KEY.print : '') : ''
+
 const CFG = {
   game: env.GAME_FILE || path.join(__dirname, 'game.html'),
   joinUrl: env.JOIN_URL || '',
@@ -202,7 +217,7 @@ function actionApi(page) {
   const ROUTES = {
     'GET /health': async () => [(await act('room')).open ? 200 : 503, {}],
     'GET /status': async () => { const r = await act('room')
-      return [200, { code: r.code, link: CFG.joinUrl ? CFG.joinUrl + '#' + r.code : '', level: r.level, mode: r.mode, fragLimit: r.fragLimit, minutes: r.minutes,
+      return [200, { code: r.code, link: joinLink(r.code), level: r.level, mode: r.mode, fragLimit: r.fragLimit, minutes: r.minutes,
         match: r.match, players: r.players, enemies: r.enemies, uptime: r.uptime, signaling: r.signaling, hookFailures: r.hookFailures,
         lastHookFailure: r.lastHookFailure, broadcast: r.broadcast, webhooks: HOOKS.map(h => h.status) }] },
     'GET /players': async () => [200, { players: await act('players') }],
@@ -271,6 +286,7 @@ let page = null
   page.on('pageerror', e => say('page: ' + e.message))
   page.on('console', m => { if (m.type() === 'error') say('page: ' + m.text()) })
   await page.exposeFunction('serverOut', onEvent)
+  if (KEY) await page.exposeFunction('hostSign', hostSign)
   await page.goto('http://127.0.0.1:' + port + '/', { waitUntil: 'load', timeout: 180000 })
   await page.waitForFunction(() => globalThis.gameHooks?.room().ready || /fail|broke/i.test(document.getElementById('status')?.textContent || ''),
     null, { timeout: 180000, polling: 500 }).catch(() => {})
@@ -309,7 +325,7 @@ let page = null
     if (/error|could not/i.test(r.status)) die('the room did not open', 1)
     if (Date.now() - t0 > 180000) die('the room did not open in 3 minutes', 1)
   }
-  say(`Room ${r.code}  ${r.level}` + (CFG.joinUrl ? `  join: ${CFG.joinUrl}#${r.code}` : '  (set JOIN_URL to print a join link)'))
+  say(`Room ${r.code}  ${r.level}` + (CFG.joinUrl ? `  join: ${joinLink(r.code)}` : '  (set JOIN_URL to print a join link)') + (KEY ? `  key ${KEY.print}` : ''))
   await page.evaluate(() => serverPing('start'))
   if (CFG.broadcast) await page.evaluate(u => gameHooks.broadcast(u), CFG.broadcast)
   actionApi(page)
