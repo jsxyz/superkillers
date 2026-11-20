@@ -8083,6 +8083,9 @@ function cityInstances(g, material, rows, pose) {
 }
 // atlas rows: road sections, middle to kerb, 8 m along
 const STREET_ROWS = { avenue: [0, 112, 7], street: [116, 180, 4], zebra: [184, 232, 3], kerb: [236, 244, 1], face: [248, 256, 1] }   // px, m
+// how far the level's surface textures filter along a slant: 4 on a GPU; not at all on software GL, which pays for
+// every extra sample (one llvmpipe walks a pixel's whole footprint, without bound at a grazing angle)
+const texAniso = () => softGL() ? 1 : renderer?.capabilities?.getMaxAnisotropy ? Math.min(4, renderer.capabilities.getMaxAnisotropy()) : 1
 let streetMap = null, paveMap = null
 function streetAtlas() {
   if (streetMap) return streetMap
@@ -8098,7 +8101,7 @@ function streetAtlas() {
   rect('#b6b9bd', 2, 236, 62, 8); for (let x = 64; x < 512; x += 64) rect('#b6b9bd', x + 2, 236, 62, 8)
   rect('#2a2b2e', 0, 248, 512, 8)                                                                                              // its face
   streetMap = new THREE.CanvasTexture(cv)
-  streetMap.wrapS = THREE.RepeatWrapping; streetMap.colorSpace = THREE.SRGBColorSpace; streetMap.anisotropy = 4
+  streetMap.wrapS = THREE.RepeatWrapping; streetMap.colorSpace = THREE.SRGBColorSpace; streetMap.anisotropy = texAniso()
   return streetMap
 }
 // 1 m slabs in a running bond, TILE_M per texture
@@ -8108,7 +8111,7 @@ function pavingMap() {
   cv.width = cv.height = 256; g.fillStyle = '#8b8d92'; g.fillRect(0, 0, 256, 256); g.fillStyle = '#6c6f74'
   for (let r = 0; r < 4; r++) { g.fillRect(0, r * 64, 256, 2); for (let c = 0; c < 5; c++) g.fillRect(c * 64 + r % 2 * 32, r * 64, 2, 64) }
   paveMap = new THREE.CanvasTexture(cv)
-  paveMap.wrapS = paveMap.wrapT = THREE.RepeatWrapping; paveMap.colorSpace = THREE.SRGBColorSpace; paveMap.anisotropy = 4
+  paveMap.wrapS = paveMap.wrapT = THREE.RepeatWrapping; paveMap.colorSpace = THREE.SRGBColorSpace; paveMap.anisotropy = texAniso()
   return paveMap
 }
 function streetGround(street, walks = [], into) {
@@ -8405,8 +8408,7 @@ function rebuildWorld() {
     c.left = -s; c.right = s; c.top = s; c.bottom = -s
     c.updateProjectionMatrix()
   }
-  const aniso = renderer.capabilities && renderer.capabilities.getMaxAnisotropy
-    ? Math.min(4, renderer.capabilities.getMaxAnisotropy()) : 1
+  const aniso = texAniso()
   for (const kind of ['floor', 'wall']) {
     const pal = LV.theme[kind]
     if (baseTex[kind] && baseTex[kind].userData.pal === String(pal)) continue
@@ -11742,7 +11744,7 @@ function gpuName() {
     const gl = renderer && renderer.getContext && renderer.getContext()
     if (!gl) return ''
     const ext = gl.getExtension('WEBGL_debug_renderer_info')
-    return String((ext && gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) || '')
+    return String((ext && gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) || gl.getParameter(gl.RENDERER) || '')
   } catch (e) { return '' }
 }
 
