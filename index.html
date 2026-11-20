@@ -14784,11 +14784,12 @@ function bcastPlay() {
   bcastFeed(v)
 }
 // each request hls.js makes for a stream: once its size passes the cap for its kind (a segment is an arraybuffer) it is
-// given up, and the stream refused
+// given up, and the stream refused. A playlist is measured by its decoded text as well: some browsers' `loaded` counts
+// only the bytes on the wire
 function bcastCap(xhr, refuse) {
   const over = n => { if (n > (xhr.responseType === 'arraybuffer' ? BCAST_SEG_MAX : BCAST_LIST_MAX) && !xhr.bcastOver) { xhr.bcastOver = true; xhr.abort(); setTimeout(refuse) } }
   xhr.addEventListener('readystatechange', () => { if (xhr.readyState === 2) over(+xhr.getResponseHeader('content-length') || 0) })
-  xhr.addEventListener('progress', e => over(e.loaded))
+  xhr.addEventListener('progress', e => over(Math.max(e.loaded, xhr.responseType === '' || xhr.responseType === 'text' ? xhr.responseText.length : 0)))
 }
 // why one cannot show here: said once a URL, by its origin alone, as its path and query may carry a token. Unless the
 // refusal is final, it is tried again while still named: at once if it played since its last failure, else each wait
