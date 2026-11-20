@@ -2003,9 +2003,13 @@ const capText = t => String(t == null ? '' : t)
   .trim().slice(0, CAP_MAX)
 
 // Clean a name once, where ACCEPTED: raw, mcHtml renders a guest's § codes ("§4§lADMIN") everywhere
+// what no name or chat line carries: C0 and C1 controls, and the bidi overrides and isolates
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g
 const cleanName = t => String(t == null ? '' : t)
-  .replace(/\u00a7./g, '').replace(/[\u0000-\u001f\u007f]/g, '')
+  .replace(/\u00a7./g, '').replace(CONTROL_CHARS, '')
   .trim().slice(0, 16)
+// a chat line as the host takes it, its § colour codes kept
+const cleanText = t => String(t ?? '').replace(CONTROL_CHARS, '').slice(0, 160)
 
 const CAP_TEXT = [
   'SIX SIGMA', 'CPR CERTIFIED', 'LEVEL 2', 'SUPERVISOR', 'ASK ME ABOUT KPIs',
@@ -13426,8 +13430,9 @@ function hookRename(id, p, d) {
   const was = p.name
   let name = cleanName(d.name) || was
   if (name !== was && hookFilters.has('join')) name = hookFilter('join', { player: { ...hookPlayer(id), name }, rename: true, was }, hookJoinTake)?.player.name ?? was
+  if (name === was) return
   p.name = name; pushRoster()
-  if (name !== was && hooked['player.rename']) hookEmit('player.rename', { player: hookPlayer(id), was })
+  if (hooked['player.rename']) hookEmit('player.rename', { player: hookPlayer(id), was })
 }
 // a match starts (info: what match.start tells of it); one not yet ended is told ended 'restart' first
 function hookMatchStart(info) {
@@ -13577,6 +13582,22 @@ const OPENING = 'opening…', codeText = () => isHost && !roomOpen ? OPENING : r
 let outSeq = 0, lastChatSeq = new Map()
 const lastChatAt = new Map()
 const CHAT_MIN_MS = 250        // chat flood gate: we relay it
+const NICK_MIN_MS = 1000, nickAt = new Map(), nickWait = new Map()     // a guest's renames: one taken a second, the latest waiting
+// a guest's rename: at once if its last was taken a second ago, else the latest waits for its second
+function nickLater(id, d) {
+  const due = (nickAt.get(id) ?? -Infinity) + NICK_MIN_MS
+  if (!nickWait.has(id) && now() >= due) return nickTake(id, d)
+  if (!nickWait.has(id)) setTimeout(() => { const w = nickWait.get(id); nickWait.delete(id); if (w) nickTake(id, w) }, due - now())
+  nickWait.set(id, d)
+}
+function nickTake(id, d) {
+  const p = roster.get(id)
+  if (!p || !conns.has(id)) return
+  nickAt.set(id, now())
+  if (hookFilters.has('join') || hooked['player.rename']) return hookRename(id, p, d)
+  const name = cleanName(d.name) || p.name
+  if (name !== p.name) { p.name = name; pushRoster() }
+}
 
 const conns = new Map()          // host only
 const inputs = new Map()         // host only
@@ -13983,7 +14004,7 @@ function openHostPeer(attempt) {
       hookGone.delete(id)
       if (players.has(id)) detachBody(players.get(id))
       players.delete(id); roster.delete(id); GAME.lifecycle.left(id); inputs.delete(id); pkSent.delete(id); tierSent.delete(id); objSent.delete(id)
-      inputSeq.delete(id); lastChatSeq.delete(id); lastChatAt.delete(id); lastSeen.delete(id)
+      inputSeq.delete(id); lastChatSeq.delete(id); lastChatAt.delete(id); lastSeen.delete(id); nickAt.delete(id); nickWait.delete(id)
       inQ.delete(id); inAck.delete(id)
       if (poll) { poll.yes.delete(id); poll.no.delete(id); countVote() }
       if (p) announce('§e' + p.name + ' left')
@@ -14150,9 +14171,10 @@ const HOST_MSGS = {
     const tnow = now()
     if (tnow - (lastChatAt.get(id) || 0) < CHAT_MIN_MS) return
     lastChatAt.set(id, tnow)
-    let text = String(d.m || '').slice(0, 160)
+    let text = cleanText(d.m || '')
+    if (!text) return
     if (hookFilters.has('chat') || hooked.chat) {
-      const v = hookFilter('chat', { player: hookPlayer(id), text, action: !!d.a }, (v, r) => typeof r.text === 'string' ? { ...v, text: r.text.slice(0, 160) } : v)
+      const v = hookFilter('chat', { player: hookPlayer(id), text, action: !!d.a }, (v, r) => typeof r.text === 'string' ? { ...v, text: cleanText(r.text) } : v)
       if (!v?.text) return
       text = v.text
       if (hooked.chat) hookEmit('chat', v)
@@ -14161,11 +14183,7 @@ const HOST_MSGS = {
     broadcast({ k: 'c', id, m: text, a: !!d.a, s: d.s }, id)
     return
   } },
-  nick: { apply: (id, d) => {
-    const p = roster.get(id)
-    if (p && (hookFilters.has('join') || hooked['player.rename'])) return hookRename(id, p, d)
-    if (p) { p.name = cleanName(d.name) || p.name; pushRoster() }
-  } },
+  nick: { apply: (id, d) => { nickLater(id, d) } },
   vote: { apply: (id, d) => callVote(id, d.lv) },
   ballot: { validate: d => typeof d.y === 'boolean' ? d : null, apply: (id, d) => ballot(id, d.y) },
   bye: { apply: (id, d) => {
