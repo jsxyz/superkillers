@@ -102,6 +102,10 @@ Each event is one JSON object, the same on stdout and to a webhook:
 Every `match.start` is followed by one `match.end`. A level change, a restart or the room emptying ends it as
 `restart`. Hook modules can add types of their own.
 
+Joins and leaves can come in bursts, as when a crowd joins at once or one player reconnects over and over. Every join and
+leave is an event; the players' chat summarises them when they come faster than one a second. A webhook keeps at most
+the newest 10,000 events it has not delivered.
+
 **Names and chat are typed by players.** They are capped (16 and 160 characters) and stripped of control characters,
 bidi overrides included. Names also lose `§` colour codes; chat may carry them. Neither is authenticated or unique.
 Escape them wherever you show them, and never treat them as identity. No event carries the room code, the room's only
