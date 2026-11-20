@@ -120,6 +120,11 @@ off in the settings.
 
 - The URL must be https, and the stream's server must allow the game's page (`https://jsxyz.github.io`) by CORS.
   Without that, the screens keep their idle look, and each player is told why once.
+- A stream on a player's own machine or network is refused: localhost and `.local` names, and loopback, private,
+  link-local and carrier-grade NAT addresses. Each player's browser refuses one from the public page, so the server
+  refuses `BROADCAST_URL` at start and `POST /broadcast` with a 400 saying so. A `JOIN_URL` on such a host itself (a
+  game served on a LAN) allows one. A public name that resolves to a private address cannot be told apart from any
+  other: there only the browser's own Local Network Access stands between the stream and the player's network.
 - HLS (an `.m3u8` URL) plays through hls.js, at the best rendition whose shorter side is 360 or less, else the smallest.
   MP4 and WebM play as the browser plays them.
 - A stream may be lying or standing: one larger than 1920x1080 either way round (1080x1920 standing) is refused, and

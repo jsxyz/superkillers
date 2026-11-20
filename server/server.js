@@ -12,6 +12,21 @@ const sleep = ms => new Promise(ok => setTimeout(ok, ms))
 const blank = v => v === undefined || v === ''
 // a broadcast the game takes, as the page judges it too
 const streamOk = u => { try { const p = new URL(u); return u.length <= 1024 && p.protocol === 'https:' && !p.username && !p.password } catch (e) { return false } }
+// a host on this machine or its network, as the game judges it: players' browsers refuse a stream there unless the page
+// they join from (JOIN_URL) is there too, or a file
+function localHost(h) {
+  if (/(^|\.)localhost\.?$|\.local\.?$/.test(h)) return true
+  const v6 = /^\[(.+)\]$/.exec(h)?.[1], m = v6 && /^::ffff:([\da-f]{1,4}):([\da-f]{1,4})$/.exec(v6)
+  if (v6 && !m) return v6 === '::' || v6 === '::1' || /^(f[cd][\da-f]{2}|fe[89ab][\da-f]):/.test(v6)
+  const ip = m ? [m[1], m[2]].flatMap(g => [parseInt(g, 16) >> 8, parseInt(g, 16) & 255]) : /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(h)?.slice(1).map(Number)
+  if (!ip) return false
+  const [a, b] = ip
+  return a === 0 || a === 10 || a === 127 || a === 100 && b >= 64 && b < 128 || a === 169 && b === 254 || a === 172 && b >= 16 && b < 32 ||
+    a === 192 && b === 168 || a === 198 && (b === 18 || b === 19)
+}
+const localUrl = u => { try { const p = new URL(u); return !/^https?:$/.test(p.protocol) || localHost(p.hostname) } catch (e) { return false } }
+const streamLocal = u => localUrl(u) && !localUrl(env.JOIN_URL)
+const LOCAL_STREAM = "a stream on this machine or a private network is refused, as players' browsers refuse it from the public page; a JOIN_URL on one allows it"
 // A setting's file. Its errors name the setting, never the path, which may be the secret itself given by mistake
 const readFile = (f, what) => { try { return fs.readFileSync(f, 'utf8') } catch (e) { die(what + ': cannot read the file (' + (e.code || e.name) + ')') } }
 const read = (f, what) => readFile(f, what).trim()
@@ -128,8 +143,8 @@ const CFG = {
   game: env.GAME_FILE || path.join(__dirname, 'game.html'),
   joinUrl: env.JOIN_URL || '',
   hooksDir: path.resolve(env.HOOKS_DIR || '/hooks'),
-  broadcast: blank(env.BROADCAST_URL) ? '' : streamOk(env.BROADCAST_URL) ? env.BROADCAST_URL
-    : die('BROADCAST_URL: an https URL with no credentials in it, at most 1024 characters'),
+  broadcast: blank(env.BROADCAST_URL) ? '' : !streamOk(env.BROADCAST_URL) ? die('BROADCAST_URL: an https URL with no credentials in it, at most 1024 characters')
+    : streamLocal(env.BROADCAST_URL) ? die('BROADCAST_URL: ' + LOCAL_STREAM) : env.BROADCAST_URL,
   stdout: types(env.STDOUT_EVENTS || '*', 'STDOUT_EVENTS'),
   serve: Object.fromEntries(Object.entries({
     code: env.ROOM_CODE, level: env.LEVEL, mode: env.MODE, name: env.SERVER_NAME,
@@ -201,7 +216,8 @@ function actionApi(page) {
     'POST /minutes': async b => [200, { done: await act('setMatchMinutes', b.minutes) }],
     'POST /enemies': async b => [200, { done: await act('setEnemies', b.enemies) }],
     'POST /restart': async () => [200, { done: await act('restart') }],
-    'POST /broadcast': async b => [200, { done: await act('broadcast', b.url ?? null) }],
+    'POST /broadcast': async b => typeof b.url === 'string' && streamOk(b.url) && streamLocal(b.url) ? [400, { error: LOCAL_STREAM }]
+      : [200, { done: await act('broadcast', b.url ?? null) }],
   }
   const api = http.createServer((req, res) => {
     const send = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ ok: code === 200, ...o }) + '\n') }
