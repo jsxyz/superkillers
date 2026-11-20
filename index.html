@@ -14702,11 +14702,26 @@ let bcastUrl = '', bcastN = 0, bcastSaidAt = 0, bcastTimer = 0
 const bc = { url: '', n: -1, heard: 0, tokens: BCAST_BURST, refill: 0, playing: '', video: null, hls: null, told: '',
              last: '', retries: 0, retryAt: 0, played: false }
 
-// an https URL with no credentials in it, at most BCAST_URL_MAX characters; '' is none
+// a host on this machine or its network, as `new URL` writes it: localhost and .local names, and addresses unspecified,
+// loopback, private, carrier-grade NAT, link-local or for benchmarking, IPv4-mapped ones among them
+function localHost(h) {
+  if (/(^|\.)localhost\.?$|\.local\.?$/.test(h)) return true
+  const v6 = /^\[(.+)\]$/.exec(h)?.[1], m = v6 && /^::ffff:([\da-f]{1,4}):([\da-f]{1,4})$/.exec(v6)
+  if (v6 && !m) return v6 === '::' || v6 === '::1' || /^(f[cd][\da-f]{2}|fe[89ab][\da-f]):/.test(v6)
+  const ip = m ? [m[1], m[2]].flatMap(g => [parseInt(g, 16) >> 8, parseInt(g, 16) & 255]) : /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(h)?.slice(1).map(Number)
+  if (!ip) return false
+  const [a, b] = ip
+  return a === 0 || a === 10 || a === 127 || a === 100 && b >= 64 && b < 128 || a === 169 && b === 254 || a === 172 && b >= 16 && b < 32 ||
+    a === 192 && b === 168 || a === 198 && (b === 18 || b === 19)
+}
+// a page served from this machine or its network, or from a file
+const pageLocal = () => !/^https?:$/.test(location.protocol) || localHost(location.hostname)
+// an https URL with no credentials in it, at most BCAST_URL_MAX characters, on this machine or its network only from a page
+// there too, as browsers allow it; '' is none
 function bcastOk(u) {
   if (u === '') return true
   if (typeof u !== 'string' || u.length > BCAST_URL_MAX) return false
-  try { const p = new URL(u); return p.protocol === 'https:' && !p.username && !p.password } catch (e) { return false }
+  try { const p = new URL(u); return p.protocol === 'https:' && !p.username && !p.password && (pageLocal() || !localHost(p.hostname)) } catch (e) { return false }
 }
 const bcastOrigin = u => { try { return new URL(u).origin } catch (e) { return '' } }
 
