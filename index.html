@@ -5404,12 +5404,14 @@ const linkBase = (L = location) => /^https?:$/.test(L.protocol) && !/^(localhost
 const qrText = (code, base = linkBase()) => base ? base + '#' + code : code
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 // a room code, bare or after this page's own link and '#'; '' for anything else
-function codeOf(text, base = linkBase()) {
+// a room code, or this page's link to it, and after a dot the fingerprint of its server's key when the link carries one
+function joinOf(text, base = linkBase()) {
   let t = String(text || '').trim()
   if (base && t.startsWith(base + '#')) t = t.slice(base.length + 1)
-  t = t.toUpperCase()
-  return t.length === 6 && [...t].every(ch => CODE_ALPHABET.includes(ch)) ? t : ''
+  const [c, f, ...more] = t.split('.'), code = c.toUpperCase()
+  return !more.length && code.length === 6 && [...code].every(ch => CODE_ALPHABET.includes(ch)) && (f === undefined || /^[\w-]{22}$/.test(f)) ? { code, fp: f || '' } : { code: '', fp: '' }
 }
+const codeOf = (text, base) => joinOf(text, base).code
 
 // ---------------------------------------------------------------- avatars
 
@@ -12799,9 +12801,9 @@ async function openScan() {
       try { text = await decodeFrame(g.getImageData(0, 0, cw, ch).data, cw, ch) }
       catch (e) { scanNote('The QR reader could not load. Type the code instead.'); return }
       if (!scanStream) return
-      const code = codeOf(text)
-      if (code) {
-        el('#join-code').value = code
+      const j = joinOf(text)
+      if (j.code) {
+        el('#join-code').value = j.code + (j.fp ? '.' + j.fp : '')
         closeScan()
         return
       }
@@ -14030,8 +14032,7 @@ function openHostPeer(attempt) {
       conns.set(id, c)
       lastSeen.set(id, now())
       watchLink(c, id)
-      c.send(welcome(id)); c.send({ k: 'roster', list: rosterList() })
-      if (bcastUrl) bcastSay(c)
+      greet(c, id)
     })
     c.on('data', raw => { if (conns.get(id) !== c) return; countDown(raw); lastSeen.set(id, now()); onHostData(id, decode(raw)) })
     c.on('close', () => {
@@ -14043,7 +14044,7 @@ function openHostPeer(attempt) {
       if (players.has(id)) detachBody(players.get(id))
       players.delete(id); roster.delete(id); GAME.lifecycle.left(id); inputs.delete(id); pkSent.delete(id); tierSent.delete(id); objSent.delete(id)
       inputSeq.delete(id); lastChatSeq.delete(id); lastChatAt.delete(id); lastSeen.delete(id); nickAt.delete(id); nickWait.delete(id)
-      inQ.delete(id); inAck.delete(id)
+      inQ.delete(id); inAck.delete(id); voteCalled.delete(id); voteRefused.delete(id)
       if (poll) { poll.yes.delete(id); poll.no.delete(id); countVote() }
       if (p) churnSay(p.name, 'left')
       if (gone) hookEmit('player.leave', gone)
@@ -14115,6 +14116,15 @@ function drawPoll() {
 }
 
 const welcome = id => ({ k: 'welcome', id, code: roomCodeStr, lv: levelId, ...levelSeed() })
+// the first welcome on a link, then the roster: a server with a key signs it over the guest's nonce and both ends' DTLS
+// fingerprints. The nonce is read only in its fixed shape
+function greet(c, id) {
+  const go = w => { if (conns.get(id) !== c) return; c.send(w); c.send({ k: 'roster', list: rosterList() }); if (bcastUrl) bcastSay(c) }
+  const m = c.metadata, n = m && typeof m === 'object' && typeof m.n === 'string' && /^[0-9a-f]{32}$/.test(m.n) ? m.n : '', pc = c.peerConnection
+  const host = sdpPrint(pc?.localDescription?.sdp), guest = sdpPrint(pc?.remoteDescription?.sdp)
+  if (!serving || typeof globalThis.hostSign !== 'function' || !n || !host || !guest) return go(welcome(id))
+  Promise.resolve(globalThis.hostSign(n, host, guest)).then(s => go(s && typeof s.key === 'string' && typeof s.sig === 'string' ? { ...welcome(id), hk: s.key, hs: s.sig } : welcome(id)), () => go(welcome(id)))
+}
 
 // BOTS row i = BOT_ID0 + i; other ids below it, wrapping, skipping any in use
 // the guests a room takes: its size, less the host's own player
@@ -14271,6 +14281,46 @@ function onHostData(id, d) {
   if (M) { const v = M.validate ? M.validate(d) : d; return v ? M.apply(id, v) : undefined }
 }
 
+// a server's key, remembered by its room code the first time this page joins it, or from a join link that carries its
+// fingerprint: every later join is checked against it before anything of the room is taken. A room with no key is neither
+// remembered nor checked, nor is any on a page without WebCrypto (plain http)
+const PINS = 'arena.pins.v1', PIN_KEEP = 50, GATE_BYTES = 2 << 20, SIGNED = 'superkillers welcome v1\n'
+let trustNext = ''                   // the code whose next server is taken as it is: the player's "Join anyway"
+let pinMem = {}, pinStore = true     // the page's own, kept in localStorage while it can be
+const pinsRead = () => { if (pinStore) try { const p = JSON.parse(localStorage.getItem(PINS) || '{}'); if (p && typeof p === 'object' && !Array.isArray(p)) pinMem = p } catch (e) { pinStore = false } return pinMem }
+function pinSet(code, f) {
+  const p = { ...pinsRead() }
+  if (f) p[code] = { f, t: Date.now() }; else delete p[code]
+  pinMem = Object.fromEntries(Object.entries(p).filter(([, v]) => v && typeof v.f === 'string').sort((a, b) => (b[1].t || 0) - (a[1].t || 0)).slice(0, PIN_KEEP))
+  if (pinStore) try { localStorage.setItem(PINS, JSON.stringify(pinMem)) } catch (e) { pinStore = false }
+}
+// a link's key is taken for a code this page does not know yet
+const pinLink = j => { if (j.code && j.fp && globalThis.crypto?.subtle && !pinsRead()[j.code]) pinSet(j.code, j.fp) }
+// a link's DTLS fingerprint in an SDP, as 'sha-256 AB:…': '' unless it has exactly one, of SHA-256
+const sdpPrint = sdp => { const all = String(sdp || '').match(/^a=fingerprint:.*$/gm) || [], m = all.length === 1 && /^a=fingerprint:sha-256 ((?:[0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2})\s*$/.exec(all[0]); return m ? 'sha-256 ' + m[1].toUpperCase() : '' }
+// a key's fingerprint: the first 16 bytes of its SPKI's SHA-256, base64url
+const keyPrint = h => btoa(String.fromCharCode(...h.subarray(0, 16))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+// the fingerprint of the key a welcome proves its server holds: a signature over this join's code, its nonce and both
+// ends' DTLS fingerprints as this page sees them. '' for none, a malformed one, or one that does not verify
+async function welcomePrint(code, nonce, pc, d) {
+  const S = globalThis.crypto?.subtle, me = sdpPrint(pc?.localDescription?.sdp), host = sdpPrint(pc?.remoteDescription?.sdp)
+  if (!S || !nonce || !me || !host || typeof d.hk !== 'string' || typeof d.hs !== 'string' || !/^[A-Za-z0-9+/]{122}==$/.test(d.hk) || !/^[A-Za-z0-9+/]{86}==$/.test(d.hs)) return ''
+  try {
+    const bytes = t => Uint8Array.from(atob(t), ch => ch.charCodeAt(0)), spki = bytes(d.hk)
+    const key = await S.importKey('spki', spki, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify'])
+    if (!await S.verify({ name: 'ECDSA', hash: 'SHA-256' }, key, bytes(d.hs), new globalThis.TextEncoder().encode(SIGNED + code + '\n' + nonce + '\n' + host + '\n' + me))) return ''
+    return keyPrint(new Uint8Array(await S.digest('SHA-256', spki)))
+  } catch (e) { return '' }
+}
+// whether this server is the one remembered for its code; the first one with a key is remembered
+async function hostKnown(code, nonce, pc, d) {
+  if (!globalThis.crypto?.subtle) return true
+  const f = await welcomePrint(code, nonce, pc, d), pin = pinsRead()[code]?.f
+  if (trustNext === code) { trustNext = ''; pinSet(code, f); return true }
+  if (!pin) { if (f) pinSet(code, f); return true }
+  if (f === pin) { pinSet(code, f); return true }
+  return false
+}
 function startJoin(code, again) {
   isHost = false; phase = 'connecting'
   scarsLater = false; if (!scarMesh) prepareScars()
@@ -14280,6 +14330,7 @@ function startJoin(code, again) {
   clearTimeout(relinkTimer); relinkTimer = 0; relinkTries = 0
   const t0 = now(), stage = t => phase === 'connecting' && setStatus('Connecting… ' + t)
   stage('to the signaling server')
+  const asked = roomCodeStr, nonce = globalThis.crypto?.getRandomValues ? [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('') : ''
   peer = new Peer()
   // signaling only finds the host: while the link to it is open, an error there or a drop is not the game's end, and
   // the signaling link comes back by itself
@@ -14297,26 +14348,48 @@ function startJoin(code, again) {
   peer.on('open', () => {
     relinkTries = 0
     if (conns.has(0)) return            // signaling back after a drop: the link to the host is the one it had
-    const c = peer.connect(roomCodeStr, { reliable: false, serialization: 'json' })
+    const c = peer.connect(roomCodeStr, { reliable: false, serialization: 'json', metadata: nonce ? { n: nonce } : undefined })
     conns.set(0, c)
     stage('asking the host')
     // each second the link's state; after 15 s without a channel, where it stopped
     const watch = setInterval(() => {
-      if (phase !== 'connecting' || c.open) return clearInterval(watch)
-      const p = c.peerConnection, at = p ? 'ICE ' + p.iceConnectionState + ', link ' + p.connectionState : 'no answer from the host'
+      if (phase !== 'connecting' || c.open && !gate) return clearInterval(watch)
+      const p = c.peerConnection, at = c.open ? 'no welcome from the host' : p ? 'ICE ' + p.iceConnectionState + ', link ' + p.connectionState : 'no answer from the host'
       if (now() - t0 < 15000) return stage('(' + at + ')')
       clearInterval(watch)
       setStatus('Could not reach the host after 15 s (' + at + '). The room may be closed, or the network blocks a direct link.', 'err')
       rejoinMissed('no answer')
+      if (c.open) c.close()
     }, 1000)
     c.on('error', e => setStatus('Could not connect. ' + failWords(failType(e), !!rejoinTry), 'err'))
-    c.on('open', () => {
-      connected = true
-      watchLink(c, null)
+    // a code with a key remembered is taken once its server's first welcome is checked: until then nothing of the room
+    // is shown and nothing is sent, but a full room says so. What waits is bounded, and so is the wait: the watch above
+    // lets the link go. Any other code is taken at once, and a key its first welcome proves is remembered
+    let gate = [], kept = 0, asking = false
+    const pass = () => {
+      const held = gate; gate = null; connected = true
       beginPlay()
       if (!picking) hello()
+      for (const d of held) onGuestData(d)
+    }
+    const refuse = () => {
+      endSession('This room has changed hands', 'The server answering ' + asked + ' is not the one this page played with before, so someone else may have ' +
+        'taken its code. Nothing of it was shown, and this page will not go back to it by itself.', true)
+      el('#end-rejoin').textContent = 'Join anyway'; trustNext = asked
+    }
+    c.on('open', () => { watchLink(c, null); if (!globalThis.crypto?.subtle || !pinsRead()[asked]) pass() })
+    c.on('data', raw => {
+      countDown(raw)
+      const d = decode(raw)
+      if (!d) return
+      if (!gate) { if (d.k === 'welcome' && !asking) { asking = true; hostKnown(asked, nonce, c.peerConnection, d).catch(() => {}) } return onGuestData(d) }
+      if (d.k === 'full') return onGuestData(d)
+      if ((kept += typeof raw === 'string' ? raw.length : JSON.stringify(raw).length) > GATE_BYTES) return void c.close()
+      gate.push(d)
+      if (d.k !== 'welcome' || asking) return
+      asking = true
+      hostKnown(asked, nonce, c.peerConnection, d).then(ok => { if (conns.get(0) === c && gate && phase === 'connecting') ok ? pass() : refuse() }, () => {})
     })
-    c.on('data', raw => { countDown(raw); onGuestData(decode(raw)) })
     c.on('close', () => {
       const froze = now() - last
       if (kickedBy) endSession('Kicked', kickedBy + ' removed you from the game.', true)
@@ -14565,6 +14638,7 @@ function clearSession() {
   const pe = el('#pause')
   if (pe) pe.classList.remove('open')
   for (const c of [...conns.values(), ...joining.values(), ...refusing]) { try { c.close() } catch (e) {} }
+  el('#end-rejoin').textContent = 'Rejoin'
   conns.clear(); joining.clear(); refusing.clear(); inputs.clear(); inputSeq.clear(); lastChatSeq.clear(); lastChatAt.clear()
   inQ.clear(); inAck.clear()
   players.clear(); roster.clear()
@@ -14646,7 +14720,7 @@ function resetToMenu() {
 }
 
 function initEndModal() {
-  el('#end-menu').onclick = resetToMenu
+  el('#end-menu').onclick = () => { trustNext = ''; resetToMenu() }
   el('#end-rejoin').onclick = () => {
     const code = roomCodeStr
     resetToMenu()
@@ -16624,8 +16698,9 @@ function wireMenu() {
   el('#menu-set').onclick = openSettings
   el('#serve-btn').onclick = go(startServer)
   el('#join-btn').onclick = go(() => {
-    const v = el('#join-code').value
-    if (v.trim()) startJoin(v)
+    const v = el('#join-code').value, j = joinOf(v)
+    pinLink(j)
+    if (v.trim()) startJoin(j.code || v)
   })
   // getUserMedia is absent over plain http
   const scanBtn = el('#join-scan')
@@ -16640,8 +16715,9 @@ function wireMenu() {
 // Its first gesture is the picker's tap
 const joinGesture = () => { if (IS_TOUCH && FS_OK && !isFullscreen()) enterFullscreen(); GAME.audio.gesture() }
 function joinLink() {
-  const code = codeOf(location.hash.slice(1), '')
+  const j = joinOf(location.hash.slice(1), ''), code = j.code
   if (!code) return
+  pinLink(j)
   try { window.history.replaceState(null, '', location.pathname + location.search) } catch (e) {}
   el('#join-code').value = code
   nameNow()
