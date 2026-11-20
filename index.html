@@ -14770,8 +14770,8 @@ function bcastPlay() {
     const H = window.Hls
     if (bc.video !== v) return
     if (!H.isSupported()) return v.canPlayType('application/vnd.apple.mpegurl') ? void (v.src = u, v.play().catch(() => {})) : fail('this browser cannot play HLS', true)
-    const h = bc.hls = new H({ lowLatencyMode: true, maxBufferLength: 8, backBufferLength: 4,
-      xhrSetup: xhr => bcastCap(xhr, () => fail('it is larger than this game will load')) })
+    const big = () => fail('it is larger than this game will load')
+    const h = bc.hls = new H({ lowLatencyMode: true, maxBufferLength: 8, backBufferLength: 4, xhrSetup: xhr => bcastCap(xhr, big), fLoader: bcastSegLoader(big) })
     // the best rendition whose shorter side is at or under the cap, else the smallest: none is refused for its size alone
     h.on(H.Events.MANIFEST_PARSED, (e, d) => { const L = d.levels, side = i => Math.min(L[i].width || L[i].height || 0, L[i].height || L[i].width || 0)
       const under = L.map((l, i) => i).filter(i => side(i) <= BCAST_H)
@@ -14790,6 +14790,46 @@ function bcastCap(xhr, refuse) {
   const over = n => { if (n > (xhr.responseType === 'arraybuffer' ? BCAST_SEG_MAX : BCAST_LIST_MAX) && !xhr.bcastOver) { xhr.bcastOver = true; xhr.abort(); setTimeout(refuse) } }
   xhr.addEventListener('readystatechange', () => { if (xhr.readyState === 2) over(+xhr.getResponseHeader('content-length') || 0) })
   xhr.addEventListener('progress', e => over(Math.max(e.loaded, xhr.responseType === '' || xhr.responseType === 'text' ? xhr.responseText.length : 0)))
+}
+// a stream's segments, on fetch so that their decoded bytes can be counted as the body streams in: past BCAST_SEG_MAX the
+// load is given up and the stream refused. hls.js's loader interface: load, abort, destroy, its stats and its context
+const bcastStats = () => ({ aborted: false, loaded: 0, retry: 0, total: 0, chunkCount: 0, bwEstimate: 0,
+  loading: { start: 0, first: 0, end: 0 }, parsing: { start: 0, end: 0 }, buffering: { start: 0, first: 0, end: 0 } })
+function bcastSegLoader(refuse) {
+  return class {
+    constructor() { this.stats = bcastStats(); this.context = this.callbacks = this.ctl = null; this.timer = 0; this.done = false }
+    load(context, config, callbacks) {
+      const stats = this.stats, ctl = this.ctl = new AbortController(), P = config.loadPolicy, t0 = performance.now()
+      Object.assign(this, { context, callbacks })
+      const wait = (ms, then) => { clearTimeout(this.timer); this.timer = isFinite(ms) && ms > 0 ? setTimeout(then, ms) : 0 }
+      const timedOut = () => { this.abortInternal(); this.callbacks?.onTimeout(stats, context, null) }
+      const failed = (code, text, r) => { if (stats.aborted || this.done) return; this.abortInternal(); this.done = true; this.callbacks?.onError({ code, text }, context, r, stats) }
+      stats.loading.start = t0
+      wait(P.maxTimeToFirstByteMs || P.maxLoadTimeMs, timedOut)
+      const headers = context.rangeEnd ? { Range: 'bytes=' + context.rangeStart + '-' + (context.rangeEnd - 1) } : {}
+      fetch(context.url, { headers, signal: ctl.signal, credentials: 'omit' }).then(async r => {
+        if (!r.ok) return failed(r.status, r.statusText, r)
+        stats.loading.first = Math.max(performance.now(), t0)
+        wait(P.maxLoadTimeMs - (stats.loading.first - t0), timedOut)
+        stats.total = +r.headers.get('content-length') || 0
+        const reader = r.body.getReader(), parts = []
+        for (let c; !(c = await reader.read()).done;) {
+          if (stats.aborted) return
+          stats.loaded += c.value.byteLength          // chunkCount stays 0: hls.js reads it as a progressive load's chunk number
+          if (stats.loaded > BCAST_SEG_MAX) { this.abortInternal(); return void setTimeout(refuse) }
+          parts.push(c.value)
+        }
+        const data = new Uint8Array(stats.loaded); let at = 0
+        for (const p of parts) { data.set(p, at); at += p.byteLength }
+        clearTimeout(this.timer); this.done = true; stats.loading.end = Math.max(performance.now(), stats.loading.first); stats.total ||= stats.loaded
+        this.callbacks?.onSuccess({ url: r.url, data: data.buffer, code: r.status }, stats, context, r)
+      }).catch(e => failed(0, e?.message || String(e)))
+    }
+    // a load that is over is not marked aborted: hls.js destroys each loader once it is done with it
+    abortInternal() { clearTimeout(this.timer); if (this.done) return; this.stats.aborted = true; this.ctl?.abort() }
+    abort() { this.abortInternal(); this.callbacks?.onAbort?.(this.stats, this.context, null) }
+    destroy() { this.abortInternal(); this.callbacks = null }
+  }
 }
 // why one cannot show here: said once a URL, by its origin alone, as its path and query may carry a token. Unless the
 // refusal is final, it is tried again while still named: at once if it played since its last failure, else each wait
