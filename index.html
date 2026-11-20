@@ -13561,6 +13561,7 @@ const LINK_DEAD_MS = 8000        // guest: host silence
 const ICE_GRACE_MS = 4000        // 'disconnected' can recover; 'failed' cannot
 const GUEST_DEAD_MS = 12000      // host: guest silence
 const GUEST_LOAD_MS = 180000     // host: a joiner's silence before its first input, while its level builds
+const JOIN_OPEN_MS = 20000       // host: a joiner's link that has not opened by then is closed
 let lastRecvAt = 0
 const lastSeen = new Map()
 let myId = 0, myCid = START, myName = ''
@@ -13600,6 +13601,8 @@ function nickTake(id, d) {
 }
 
 const conns = new Map()          // host only
+const joining = new Map()        // host: links not yet open, by the id each holds
+const refusing = new Set()       // host: links refused, to be told so once open
 const inputs = new Map()         // host only
 const inputSeq = new Map()
 const inQ = new Map()      // not yet simulated
@@ -14004,28 +14007,36 @@ function openHostPeer(attempt) {
   peer.on('connection', c => {
     // JSON only: 'binary' (PeerJS default) BinaryPack trusts attacker lengths -> hang/OOM
     if (c.serialization !== 'json') { try { c.close() } catch (e) {} ; return }
-    const id = conns.size < MAX_PLAYERS - (serving ? 0 : 1) && takeId(), t0 = now()
-    // a refusal is said once the channel opens; a joiner that never connects is said too
-    if (!id) return void c.on('open', () => { c.send({ k: 'full', n: MAX_PLAYERS }); setTimeout(() => { try { c.close() } catch (e) {} }, 150) })
-    joinNote('joining')
+    // a link holds its id and its place from here until it opens or closes; one not open in JOIN_OPEN_MS is let go and
+    // closed. A refusal is said once the channel opens, to a room's worth of links at most
+    const id = conns.size + joining.size < roomCap() && takeId(), t0 = now()
+    if (id) joining.set(id, c)
+    else if (refusing.size < MAX_PLAYERS) refusing.add(c)
+    else { try { c.close() } catch (e) {} ; return }
+    if (id) joinNote('joining')
+    // PeerJS says no 'close' for a link that never opened, so one let go is forgotten as it goes
+    const forget = () => { clearInterval(watch); refusing.delete(c); if (joining.get(id) === c) joining.delete(id) }
     const watch = setInterval(() => {
       if (c.open || !peer || peer.destroyed) return clearInterval(watch)
-      if (now() - t0 < 15000) return
-      clearInterval(watch)
+      if (now() - t0 < JOIN_OPEN_MS) return
+      forget()
       const p = c.peerConnection
-      joinNote('never connected (' + (p ? 'ICE ' + p.iceConnectionState + ', link ' + p.connectionState : 'no link') + ')')
+      if (id) joinNote('never connected (' + (p ? 'ICE ' + p.iceConnectionState + ', link ' + p.connectionState : 'no link') + ')')
+      try { c.close() } catch (e) {}
     }, 1000)
     c.on('open', () => {
-      if (gameMode === 'waves' && conns.size >= WAVES_PLAYERS - (serving ? 0 : 1)) {
-        c.send({ k: 'full', n: WAVES_PLAYERS }); setTimeout(() => { try { c.close() } catch (e) {} }, 150); return }
+      forget()
+      if (!id || conns.size >= roomCap()) { c.send({ k: 'full', n: roomSize() }); setTimeout(() => { try { c.close() } catch (e) {} }, 150); return }
       conns.set(id, c)
       lastSeen.set(id, now())
       watchLink(c, id)
       c.send(welcome(id)); c.send({ k: 'roster', list: rosterList() })
       if (bcastUrl) bcastSay(c)
     })
-    c.on('data', raw => { if (!conns.has(id)) return; countDown(raw); lastSeen.set(id, now()); onHostData(id, decode(raw)) })
+    c.on('data', raw => { if (conns.get(id) !== c) return; countDown(raw); lastSeen.set(id, now()); onHostData(id, decode(raw)) })
     c.on('close', () => {
+      forget()
+      if (conns.get(id) !== c) return
       const had = conns.delete(id), p = roster.get(id)
       const gone = p && hooked['player.leave'] && players.has(id) && { player: hookWho(players.get(id)), reason: hookGone.get(id) || 'left' }
       hookGone.delete(id)
@@ -14106,10 +14117,13 @@ function drawPoll() {
 const welcome = id => ({ k: 'welcome', id, code: roomCodeStr, lv: levelId, ...levelSeed() })
 
 // BOTS row i = BOT_ID0 + i; other ids below it, wrapping, skipping any in use
+// the guests a room takes: its size, less the host's own player
+const roomSize = () => gameMode === 'waves' ? WAVES_PLAYERS : MAX_PLAYERS, roomCap = () => roomSize() - (serving ? 0 : 1)
 function takeId() {
   for (let n = 1; n < BOT_ID0; n++) {
     const id = nextId
     nextId = nextId + 1 < BOT_ID0 ? nextId + 1 : 1
+    if (joining.has(id)) continue
     if (!conns.has(id) && !players.has(id) && !roster.has(id) && !lastSeen.has(id)) return id
   }
   return 0
@@ -14550,8 +14564,8 @@ function clearSession() {
   endServing()                       // first: nothing below may think it serves
   const pe = el('#pause')
   if (pe) pe.classList.remove('open')
-  for (const [, c] of conns) { try { c.close() } catch (e) {} }
-  conns.clear(); inputs.clear(); inputSeq.clear(); lastChatSeq.clear(); lastChatAt.clear()
+  for (const c of [...conns.values(), ...joining.values(), ...refusing]) { try { c.close() } catch (e) {} }
+  conns.clear(); joining.clear(); refusing.clear(); inputs.clear(); inputSeq.clear(); lastChatSeq.clear(); lastChatAt.clear()
   inQ.clear(); inAck.clear()
   players.clear(); roster.clear()
   try { if (peer) peer.destroy() } catch (e) {}
