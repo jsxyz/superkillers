@@ -4249,7 +4249,7 @@ function dropChunk(c) {
 }
 
 // chunk = f(seed, cell): grown alike on host and guest, never sent nor dropped; host reach is Normal's view end
-let grown = new Set(), parked = new Map()
+let grown = new Set(), grownCells = new Uint8Array(0), parked = new Map()      // grownCells: grown's cells as ci * S + cj, for the scans
 const growReach = () => (isHost ? viewEnd(1) : viewEnd()) + 96
 // fogGrown.x: the fog's reach past its end, to the nearest cell not grown less how far the camera strays from the player growth
 // follows (a first-person eye anywhere on the largest vehicle from its seat, and a tick drawn ahead); none while nothing grows
@@ -4263,7 +4263,7 @@ function growNear(points, all, R = growReach(), look) {
   let best = null, bd = Infinity
   for (const [x, z] of points) for (let ci = lo(x); ci <= hi(x); ci++) for (let cj = lo(z); cj <= hi(z); cj++) {
     const X = ci * 96 - ARENA, Z = cj * 96 - ARENA, d = Math.hypot(Math.max(X - x, 0, x - X - 96), Math.max(Z - z, 0, z - Z - 96))
-    if (d > R || grown.has(ci + ' ' + cj)) continue
+    if (d > R || grownCells[ci * G.S + cj]) continue
     if (all) growChunk(ci, cj); else if (d < bd) { bd = d; best = [ci, cj] }
   }
   if (best && !look) growChunk(...best)
@@ -4274,7 +4274,7 @@ const chunkBoxes = (G, A, pad, ci, cj, c = cityChunk(G.seed, G.S, ci, cj, undefi
 function growChunk(ci, cj) {
   const G = LV.grow, [c, boxes] = chunkBoxes(G, ARENA, LV.theme.pad, ci, cj)
   const scenery = roofs(boxes, c.scenery.map(s => ({ ...s, boxes: s.boxes?.map(i => boxes[i]), box: boxes[s.box] })))
-  grown.add(ci + ' ' + cj)
+  grown.add(ci + ' ' + cj); grownCells[ci * G.S + cj] = 1
   const jumps = jumpsFrom(boxes)
   BOXES.push(...boxes); JUMPS.push(...jumps); LV.scenery.push(...scenery)
   addChunk(boxes, [ci, cj], [], trunksOf(scenery), false, crownsOf(scenery, boxes))
@@ -4366,6 +4366,7 @@ function loadLevel(id, gen) {
   craterClear()
   if (world) loadStatics()
   grown = new Set(LV.grow ? LV.grow.ring.map(c => c.join(' ')) : []); parked.clear()
+  grownCells = new Uint8Array(LV.grow ? LV.grow.S * LV.grow.S : 0); for (const [i, j] of LV.grow?.ring || []) grownCells[i * LV.grow.S + j] = 1
   craterEnsure()
   spawnObjects()
   GAME.level.loaded()
