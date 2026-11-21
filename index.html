@@ -11682,7 +11682,9 @@ function facing(yaw) {
   return COMPASS[Math.round(a / (Math.PI / 4)) % 8]
 }
 
-// the optimizer is off (Edge's 'Enhance your security') when no warm run, in up to three windows 2 s apart, is 6x the cold one
+// the optimizer is off (Edge's 'Enhance your security') when, in three windows 2 s apart, the first calls of fresh copies
+// of a loop average under 3x its warm calls, each side timed whole so a coarse clock sees it; where new code is refused,
+// when no warm run in the three windows is 6x the cold one
 function jitLoop(n) {
   let x = 0.5, y = 0.25, z = 0.125, s = 0
   const v = { x: 1, y: 2, z: 3 }
@@ -11695,10 +11697,20 @@ function jitLoop(n) {
 }
 const jit = { cold: 0, best: Infinity, windows: 0, off: null }
 function jitWindow() {
-  let t = now()
-  if (!jit.windows) { jitLoop(500); jit.cold = now() - t }
-  for (let k = 0; k < 40; k++) { t = now(); jitLoop(500); jit.best = Math.min(jit.best, now() - t) }
-  const slow = jit.cold / jit.best < 6
+  let slow, t
+  try {
+    // a call runs cold only in a copy never run before, so each copy is compiled from its own source
+    const runs = Array.from({ length: 20 }, (_, k) => new Function('return ' + jitLoop + '\n// ' + jit.windows + ' ' + k)())
+    t = now(); for (const f of runs) f(500); jit.cold = (now() - t) / 20
+    for (let k = 0; k < 40; k++) runs[0](500)
+    t = now(); for (let k = 0; k < 40; k++) runs[0](500); jit.best = (now() - t) / 40
+    slow = jit.cold / jit.best < 3
+  } catch {
+    t = now()
+    if (!jit.windows) { jitLoop(500); jit.cold = now() - t }
+    for (let k = 0; k < 40; k++) { t = now(); jitLoop(500); jit.best = Math.min(jit.best, now() - t) }
+    slow = jit.cold / jit.best < 6
+  }
   if (slow && ++jit.windows < 3) return void setTimeout(jitWindow, 2000)
   jit.off = slow; jitTip()
 }
