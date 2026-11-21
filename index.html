@@ -4395,7 +4395,7 @@ const craterHeld = cr => craters.every((e, i) => Array.isArray(cr[i]) && e.every
 function takeCraters(cr, cv) {
   if (cr !== undefined && (cv | 0) !== craterV && GAME.crater.spec()) {
     if (craterOk(cr)) { const n = craters.length; craters = cr.map(e => e.slice()); craterV = cv | 0; if (cr.length > n) buildCrater(n) }
-    else if (!craterBehind) sysMsg('§cRefused the host\'s craters.')
+    else if (!craterBehind && hostLine()) sysMsg('§cRefused the host\'s craters.')
   }
   craterBehind = cv !== undefined && (cv | 0) !== craterV
 }
@@ -13896,17 +13896,18 @@ function watchLink(c, id) {
 // a link's messages, before PeerJS decodes and parses them: one past what its json sender sends at once (it refuses 16300
 // bytes or more), or past the link's byte budget, comes only from a modified client, and is refused with the link closed.
 // A guest's link carries the room, a host's link from a guest its inputs; each budget refills at its rate, and its burst
-// is what the link can owe after the longest stall the other side keeps it through. A link that cannot be guarded closes
+// is what the link can owe after the longest stall the other side keeps it through. A message costs at least rate / msgs,
+// so however small they are a link takes at most msgs a second. A link that cannot be guarded closes
 const LINK_MSG_MAX = 16299
-const FROM_HOST = { rate: 1 << 20, burst: (1 << 20) * GUEST_DEAD_MS / 1000 }, FROM_GUEST = { rate: 64 << 10, burst: (64 << 10) * LINK_DEAD_MS / 1000 }
-function guardLink(c, { rate, burst }) {
+const FROM_HOST = { rate: 1 << 20, burst: (1 << 20) * GUEST_DEAD_MS / 1000, msgs: 512 }, FROM_GUEST = { rate: 64 << 10, burst: (64 << 10) * LINK_DEAD_MS / 1000, msgs: 256 }
+function guardLink(c, { rate, burst, msgs = Infinity }) {
   const take = typeof c._handleDataMessage === 'function' ? c._handleDataMessage.bind(c) : null
   if (!take) { try { c.close() } catch (e) {} ; return false }
   let credit = burst, at = now()
   c._handleDataMessage = e => {
     const d = e && e.data, n = d == null ? 0 : d.byteLength ?? d.length ?? 0, t = now()
     credit = Math.min(burst, credit + (t - at) * rate / 1000); at = t
-    if (n > LINK_MSG_MAX || (credit -= n) < 0) { try { c.close() } catch (x) {} ; return }
+    if (n > LINK_MSG_MAX || (credit -= Math.max(n, rate / msgs)) < 0) { try { c.close() } catch (x) {} ; return }
     take(e)
   }
   return true
@@ -13979,6 +13980,7 @@ function applyRoster(list) {
     tracks.delete(id)
     lastChatSeq.delete('p' + id)
   }
+  for (const k of [...lastChatSeq.keys()]) if (typeof k === 'string' && !seen.has(+k.slice(1))) lastChatSeq.delete(k)
   prepareRows([...roster].map(([id, p]) => [id, p.cid]))
 }
 
@@ -14435,8 +14437,8 @@ function startJoin(code, again) {
   })
 }
 
-// host's level: only one this page has, <= 1 switch a second, a missing one said once
-const LEVEL_SWITCH_MS = 1000
+// host's level: only one this page has, <= 1 switch in LEVEL_SWITCH_MS, a missing one said once
+const LEVEL_SWITCH_MS = 5000
 let levelSwitchAt = -Infinity, levelMissTold = false
 function hostLevel(lv, ls, lh) {
   lv |= 0
@@ -14458,6 +14460,37 @@ function hostLevel(lv, ls, lh) {
 }
 
 // a host message k, as a guest takes it: validate (optional, no side effects) returns the packet or null; apply acts on it
+// a host's lines in the chat: LINE_BURST at once, then LINE_PER_S a second; past that they are counted, and told as one
+// line when the second is up
+const LINE_BURST = 40, LINE_PER_S = 20, CHAT_SEQ_MAX = 4 * MAX_PLAYERS
+let lineTokens = LINE_BURST, lineAt = 0, linesDropped = 0, linesLater = 0
+function hostLine() {
+  const t = now()
+  lineTokens = Math.min(LINE_BURST, lineTokens + (t - lineAt) * LINE_PER_S / 1000); lineAt = t
+  if (lineTokens >= 1) { lineTokens--; return true }
+  linesDropped++
+  if (!linesLater) linesLater = setTimeout(linesTell, 1000)
+  return false
+}
+function linesTell() { linesLater = 0; const n = linesDropped; linesDropped = 0; if (n) sysMsg('§8' + n + (n > 1 ? ' lines' : ' line') + ' from the host not shown') }
+// a host's roster is whole each time, so the latest stands for any before it: at most ENTITY_MAX entries (players and
+// bots), taken at most twice ROSTER_PER_S a second, one that comes sooner kept until then
+let rosterNext = null, rosterTookAt = -Infinity, rosterWait = 0
+function takeRoster(list) {
+  list = Array.isArray(list) ? list : []
+  if (list.length > ENTITY_MAX) { snapDropped += list.length - ENTITY_MAX; list = list.slice(0, ENTITY_MAX) }
+  rosterNext = list
+  if (rosterWait) return
+  const due = rosterTookAt + 500 / ROSTER_PER_S - now()
+  if (due > 0) rosterWait = setTimeout(rosterTake, Math.ceil(due))
+  else rosterTake()
+}
+function rosterTake() {
+  rosterWait = 0; rosterTookAt = now()
+  const list = rosterNext; rosterNext = null
+  applyRoster(list); if (pickOpen) paintPicker()
+  if (rejoinPick && roster.has(myId)) { rejoinPick = false; if (roster.get(myId).cid !== myCid) openCharPick() }
+}
 const GUEST_MSGS = {
   welcome: { apply: d => {
     myId = d.id | 0
@@ -14466,11 +14499,7 @@ const GUEST_MSGS = {
     if (d.lv === levelId) takeCraters(d.cr, d.cv)      // other level: resent after the switch
     return
   } },
-  roster: { apply: d => {
-    applyRoster(d.list || []); if (pickOpen) paintPicker()
-    if (rejoinPick && roster.has(myId)) { rejoinPick = false; if (roster.get(myId).cid !== myCid) openCharPick() }
-    return
-  } },
+  roster: { apply: d => { takeRoster(d.list) } },
   pong: {
     validate: d => (d.s | 0) === rttSeq ? d : null,
     apply: d => {
@@ -14484,7 +14513,7 @@ const GUEST_MSGS = {
   },
   lag: { apply: d => { onLag(d.n) } },
   say: { apply: d => { GAME.audio.say(String(d.w), d.i | 0) } },
-  sys: { apply: d => { sysMsg(String(d.m || '').slice(0, 200)) } },
+  sys: { apply: d => { sysMsg(String(d.m || '').slice(0, 200)) }, validate: d => hostLine() ? d : null },
   poll: { apply: d => {
     takePoll(d); return
   } },
@@ -14495,9 +14524,11 @@ const GUEST_MSGS = {
     else endSession('Host left', 'The host closed the game.', true) } },
   bcast: { validate: d => typeof d.u === 'string' && Number.isInteger(d.n) && d.n >= 0 && bcastOk(d.u) ? d : null, apply: d => { bcastHear(d.u, d.n) } },
   c: { apply: d => {
-    const key = 'p' + d.id
+    const key = 'p' + (d.id | 0)
     if ((lastChatSeq.get(key) || -1) >= d.s) return
     lastChatSeq.set(key, d.s)
+    if (lastChatSeq.size > CHAT_SEQ_MAX) lastChatSeq.delete(lastChatSeq.keys().next().value)
+    if (!hostLine()) return
     showChat(d.id | 0, String(d.m || '').slice(0, 160), !!d.a)
     return
   } },
@@ -14693,6 +14724,7 @@ function clearSession() {
   spawnObjects()
   lastRecvAt = 0; lastSeen.clear()
   levelSwitchAt = -Infinity; levelMissTold = false
+  clearTimeout(rosterWait); rosterWait = 0; rosterNext = null; rosterTookAt = -Infinity
   outSeq = 0; spawnAvoid = []
   pending.length = 0; replaySteps = 0; reconcileErr = 0; predJump = false; tickSamples.clear()
   inqFloor.clear(); inqAt = 0; lagOwed = 0; lagGive = 0
