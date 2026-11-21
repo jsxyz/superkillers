@@ -8269,7 +8269,7 @@ function buildWorld() {
   skipStill(worldGroup); skipStill(objGroup)
   scene.onBeforeRender = (r, s, cam) => cullView(cam)
   const render = renderer.render.bind(renderer)
-  renderer.render = (s, cam) => { if (s === scene && drawSkip) return; try { render(s, cam) } finally { for (const o of culled.splice(0)) o.visible = true } }
+  renderer.render = (s, cam) => { if (s === scene) { if (drawSkip || worldHidden()) return; if (pickOpen) worldAt = now() } try { render(s, cam) } finally { for (const o of culled.splice(0)) o.visible = true } }
   avatarGroup = new THREE.Group(); scene.add(avatarGroup)
   pickGroup = new THREE.Group(); scene.add(pickGroup)
   tracerGroup = new THREE.Group(); scene.add(tracerGroup)
@@ -8584,7 +8584,7 @@ function prepareDamage(id, cid) {
 }
 function prepareStep() {
   const t0 = now(), idle = offPlay(), more = () => now() - t0 < (idle ? PREP_MS : 1)
-  for (let i = prepShown.length - 1; i >= 0; i--) if (--prepShown[i][1] < 0) avatarGroup.remove(prepShown.splice(i, 1)[0][0])
+  if (!drawSkip) for (let i = prepShown.length - 1; i >= 0; i--) if (--prepShown[i][1] < 0) avatarGroup.remove(prepShown.splice(i, 1)[0][0])
   if (!idle && chunkDraws.length) return // in play, queued chunks go first
   let fresh = true
   while (prepQueue.length && more()) {
@@ -10825,6 +10825,11 @@ function effectBatch(kind, geometry, capacity) {
 // a mesh for each effect program play would link the first time it drew it, built as play builds it: each level and each shadow
 // change compiles them, then draws them a frame under the floor for their shadows' depth programs
 let fxWarmed = null
+// the pick screen covers the view: the world is drawn under it only for a frame that warms programs (a kept copy or the
+// effects under the floor) and once a WORLD_PEEK_MS, so what play first shows is compiled already
+const WORLD_PEEK_MS = 1000
+let worldAt = -Infinity
+const worldHidden = () => pickOpen && !prepShown.length && !fxWarmed?.parent && now() - worldAt < WORLD_PEEK_MS
 const fxBare = m => new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', dyn(9, 3)), m)
 function warmEffects() {
   if (renderHeadless || !camera || !scene.fog || !renderer.compileAsync) return
@@ -12594,11 +12599,13 @@ function openCharPick() {
   pickOpen = true
   pickPlan()
   show('charpick', 1)
+  feedWant()
 }
 function closeCharPick() {
   pickOpen = false
   show('charpick')
   pickDrop()
+  feedWant()
 }
 
 // join mode: a guest connected and not yet in; its hello waits for this pick
@@ -15046,9 +15053,9 @@ document.addEventListener('visibilitychange', () => {
   if (edge != null && edge - v.currentTime > BCAST_BEHIND_S) { v.currentTime = edge; v.play().catch(() => {}) }
 })
 // the want, told a framing page at each change: the frame rate a screen in view on a shown page wants of the room's
-// broadcast, 0 for none
+// broadcast, 0 for none. Under the pick screen, which hides the screens, it is asked only until the parent's first frame
 function feedWant(want = bcastWanted()) {
-  const fps = framed && want && !document.hidden && screenInView() ? BCAST_HZ : 0
+  const fps = framed && want && !document.hidden && (pickOpen ? !fed.on : screenInView()) ? BCAST_HZ : 0
   if (fps === fed.want) return
   fed.want = fps; fed.since = now()
   window.parent.postMessage({ type: 'stream-frame-want', v: 1, w: BCAST_W, h: BCAST_H, fps }, '*')
