@@ -8269,7 +8269,7 @@ function buildWorld() {
   skipStill(worldGroup); skipStill(objGroup)
   scene.onBeforeRender = (r, s, cam) => cullView(cam)
   const render = renderer.render.bind(renderer)
-  renderer.render = (s, cam) => { if (s === scene) { if (drawSkip || worldHidden()) return; if (pickOpen) worldAt = now() } try { render(s, cam) } finally { for (const o of culled.splice(0)) o.visible = true } }
+  renderer.render = (s, cam) => { if (s === scene) { if (drawSkip || worldHidden()) return; if (underCover) worldAt = now() } try { render(s, cam) } finally { for (const o of culled.splice(0)) o.visible = true } }
   avatarGroup = new THREE.Group(); scene.add(avatarGroup)
   pickGroup = new THREE.Group(); scene.add(pickGroup)
   tracerGroup = new THREE.Group(); scene.add(tracerGroup)
@@ -10825,11 +10825,11 @@ function effectBatch(kind, geometry, capacity) {
 // a mesh for each effect program play would link the first time it drew it, built as play builds it: each level and each shadow
 // change compiles them, then draws them a frame under the floor for their shadows' depth programs
 let fxWarmed = null
-// the pick screen covers the view: the world is drawn under it only for a frame that warms programs (a kept copy or the
+// under cover (the pick screen, the menu) the world is drawn only for a frame that warms programs (a kept copy or the
 // effects under the floor) and once a WORLD_PEEK_MS, so what play first shows is compiled already
 const WORLD_PEEK_MS = 1000
 let worldAt = -Infinity
-const worldHidden = () => pickOpen && !prepShown.length && !fxWarmed?.parent && now() - worldAt < WORLD_PEEK_MS
+const worldHidden = () => underCover && !prepShown.length && !fxWarmed?.parent && now() - worldAt < WORLD_PEEK_MS
 const fxBare = m => new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', dyn(9, 3)), m)
 function warmEffects() {
   if (renderHeadless || !camera || !scene.fog || !renderer.compileAsync) return
@@ -16190,7 +16190,7 @@ function frameFailed(where, e) {
 // a framed page left without input for IDLE_DRAW_MS draws IDLE_FPS frames a second until its next input; the sim runs
 // every frame regardless
 const IDLE_DRAW_MS = 30000, IDLE_FPS = 30
-let inputAt = 0, drawDue = 0, drawDt = 0, drawSkip = false
+let inputAt = 0, drawDue = 0, drawDt = 0, drawSkip = false, underCover = false
 for (const k of ['keydown', 'pointerdown', 'pointermove', 'touchstart', 'wheel'])
   addEventListener(k, () => { inputAt = now(); if (idleDraw) { idleDraw = false; applyPixels() } }, { capture: true, passive: true })
 function drawNow(t) {
@@ -16212,6 +16212,7 @@ function frameBody() {
   msSim = msSim * 0.9 + (now() - _s0) * 0.1
   drawDt += dt
   drawSkip = !drawNow(t)
+  underCover = pickOpen || phase === 'menu' || phase === 'connecting'     // the menu shows 7% of a world that holds still
   if (!drawSkip) {
     drawT0 = now()
     try { draw(drawDt, t) } catch (e) { frameFailed('draw', e) }
@@ -16737,6 +16738,7 @@ class Arena extends ENABLE3D.Scene3D {
 
   postRender() {
     if (drawT0) { msDraw = msDraw * 0.9 + (now() - drawT0) * 0.1; drawT0 = 0 }
+    drawSkip = underCover = false       // the loop's own render only
     if (stats) stats.end()
   }
 }
