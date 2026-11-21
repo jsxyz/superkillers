@@ -76,6 +76,11 @@ past its byte budget:
 - the server's link from each player, which carries that player's moves: 64 KiB a second, with a 512 KiB burst, eight
   seconds' worth (the longest a player waits on a silent server).
 
+Each message counts as at least 2 KiB on a player's link and 256 bytes on the server's, so however small they are a link
+carries at most 512 and 256 messages a second; the busiest real traffic sends about 100 and 64. A player's page also
+shows at most 20 lines a second from its server (40 at once, the rest counted in one line), applies at most 8 rosters a
+second of at most the room's players and enemies, and follows a level change at most every 5 seconds.
+
 The busiest real traffic is far below both: a 32-player City at the fastest snapshot rate sends a player about 190 KB in
 its busiest second, and a player sends about 11 KB a second. Only a modified page sends more. What the limits cannot do:
 
