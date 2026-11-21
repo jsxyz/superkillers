@@ -6773,51 +6773,66 @@ function* loftSteps(inst, skin, key) {
   bindCloth(rig, g, new THREE.MeshStandardMaterial({ map, vertexColors: !!L.join, roughness: costumeOf(key).legs ? 0.65 : 0.8, side: THREE.DoubleSide, ...costumeOf(key).metal && chrome() }), 'body')
 }
 
-const bodyMaps = new Map(), mapMade = new WeakMap()
+const bodyMaps = new Map(), mapMade = new WeakMap(), mapPaint = new WeakMap()
+// a restored context uploads every texture again from its image: a freed body map is painted again first
+let restoreWatched = false
+function watchRestore() {
+  if (restoreWatched) return
+  restoreWatched = true
+  renderer.domElement.addEventListener('webglcontextrestored', () => {
+    for (const map of bodyMaps.values()) if (map.image.width === 1) { map.image = mapPaint.get(map)(); map.needsUpdate = true }
+  })
+}
 function bodyMap(key, skin, L = costumeOf(key).loft, edges = []) {
   const made = [key, L, edges]
   if (L.join) key += ':' + meshDetail
   if (bodyMaps.has(key)) return bodyMaps.get(key)
-  const { parts, paint } = L, size = 1024, cv = document.createElement('canvas'), ctx = cv.getContext('2d', { willReadFrequently: true })
-  const hex = c => '#' + new THREE.Color(c).getHexString()
-  cv.width = cv.height = size
-  for (const { paint: slot, uv: [u0, v0, u1, v1] } of parts) { ctx.fillStyle = hex(skin[slot]); ctx.fillRect(u0 * size, (1 - v1) * size, (u1 - u0) * size, (v1 - v0) * size) }
-  // t: ring fraction (0 back, 0.5 front); a: row
-  const at = (name, t, a) => {
-    const { rows, uv: [u0, v0, u1, v1] } = parts.find(p => p.name === name), a0 = rows[0][0], a1 = rows.at(-1)[0]
-    return [inset(u0, u1, t) * size, (1 - inset(v0, v1, (a - a0) / (a1 - a0))) * size]
+  const { parts, paint } = L, size = 1024
+  const paintCanvas = () => {
+    const cv = document.createElement('canvas'), ctx = cv.getContext('2d', { willReadFrequently: true })
+    const hex = c => '#' + new THREE.Color(c).getHexString()
+    cv.width = cv.height = size
+    for (const { paint: slot, uv: [u0, v0, u1, v1] } of parts) { ctx.fillStyle = hex(skin[slot]); ctx.fillRect(u0 * size, (1 - v1) * size, (u1 - u0) * size, (v1 - v0) * size) }
+    // t: ring fraction (0 back, 0.5 front); a: row
+    const at = (name, t, a) => {
+      const { rows, uv: [u0, v0, u1, v1] } = parts.find(p => p.name === name), a0 = rows[0][0], a1 = rows.at(-1)[0]
+      return [inset(u0, u1, t) * size, (1 - inset(v0, v1, (a - a0) / (a1 - a0))) * size]
+    }
+    const spot = (name, x, a) => {
+      const { rows } = parts.find(p => p.name === name)
+      let k = 0
+      while (k < rows.length - 2 && rows[k + 1][0] < a) k++
+      const [p, q] = [rows[k], rows[k + 1]], hw = p[1] + (q[1] - p[1]) * (a - p[0]) / (q[0] - p[0])
+      return at(name, 0.5 + Math.asin(THREE.MathUtils.clamp(x / hw, -1, 1)) / (2 * Math.PI), a)
+    }
+    const poly = (name, points) => { ctx.beginPath(); for (const [x, a] of points) ctx.lineTo(...spot(name, x, a)); ctx.fill() }
+    const on = (name, x, a, draw) => {
+      const [px, py] = spot(name, x, a), [qx] = spot(name, x + 1, a), [, ry] = spot(name, x, a + 1)
+      ctx.setTransform(qx - px, 0, 0, ry - py, px, py); draw(); ctx.resetTransform()
+    }
+    const band = (name, from, to) => { const [x0, , x1] = region(name), [, y0] = spot(name, 0, from), [, y1] = spot(name, 0, to); ctx.fillRect(x0, Math.min(y0, y1), x1 - x0, Math.abs(y1 - y0)) }
+    const region = name => { const [u0, v0, u1, v1] = parts.find(p => p.name === name).uv; return [u0 * size, (1 - v1) * size, u1 * size, (1 - v0) * size] }
+    paint?.(ctx, { poly, on, band, region, at }, skin, hex)
+    if (edges.length) {
+      const rgba = ctx.getImageData(0, 0, size, size).data
+      const sample = (u, v) => { const i = (Math.floor((1-v)*size)*size + Math.floor(u*size))*4; return `rgb(${rgba[i]},${rgba[i+1]},${rgba[i+2]})` }
+      // pad edges with the colour across the physical join, edge texel included
+      edges.forEach(([id,u,v,x,y], i) => {
+        const b = edges[i+1], n = b && b[0] === id+1 && b[2] === v && b[1] > u ? Math.ceil((b[1]-u)*size) : 0
+        for (let j = 0; j <= n; j++) {
+          const t = n ? j/n : 0, lerp = (a,k) => a + (b ? b[k]-a : 0)*t
+          ctx.fillStyle = sample(lerp(x,3), lerp(y,4)); ctx.fillRect(Math.floor(lerp(u,1)*size)-1, Math.floor((1-lerp(v,2))*size)-1, 3, 3)
+        }
+      })
+    }
+    return cv
   }
-  const spot = (name, x, a) => {
-    const { rows } = parts.find(p => p.name === name)
-    let k = 0
-    while (k < rows.length - 2 && rows[k + 1][0] < a) k++
-    const [p, q] = [rows[k], rows[k + 1]], hw = p[1] + (q[1] - p[1]) * (a - p[0]) / (q[0] - p[0])
-    return at(name, 0.5 + Math.asin(THREE.MathUtils.clamp(x / hw, -1, 1)) / (2 * Math.PI), a)
-  }
-  const poly = (name, points) => { ctx.beginPath(); for (const [x, a] of points) ctx.lineTo(...spot(name, x, a)); ctx.fill() }
-  const on = (name, x, a, draw) => {
-    const [px, py] = spot(name, x, a), [qx] = spot(name, x + 1, a), [, ry] = spot(name, x, a + 1)
-    ctx.setTransform(qx - px, 0, 0, ry - py, px, py); draw(); ctx.resetTransform()
-  }
-  const band = (name, from, to) => { const [x0, , x1] = region(name), [, y0] = spot(name, 0, from), [, y1] = spot(name, 0, to); ctx.fillRect(x0, Math.min(y0, y1), x1 - x0, Math.abs(y1 - y0)) }
-  const region = name => { const [u0, v0, u1, v1] = parts.find(p => p.name === name).uv; return [u0 * size, (1 - v1) * size, u1 * size, (1 - v0) * size] }
-  paint?.(ctx, { poly, on, band, region, at }, skin, hex)
-  if (edges.length) {
-    const rgba = ctx.getImageData(0, 0, size, size).data
-    const sample = (u, v) => { const i = (Math.floor((1-v)*size)*size + Math.floor(u*size))*4; return `rgb(${rgba[i]},${rgba[i+1]},${rgba[i+2]})` }
-    // pad edges with the colour across the physical join, edge texel included
-    edges.forEach(([id,u,v,x,y], i) => {
-      const b = edges[i+1], n = b && b[0] === id+1 && b[2] === v && b[1] > u ? Math.ceil((b[1]-u)*size) : 0
-      for (let j = 0; j <= n; j++) {
-        const t = n ? j/n : 0, lerp = (a,k) => a + (b ? b[k]-a : 0)*t
-        ctx.fillStyle = sample(lerp(x,3), lerp(y,4)); ctx.fillRect(Math.floor(lerp(u,1)*size)-1, Math.floor((1-lerp(v,2))*size)-1, 3, 3)
-      }
-    })
-  }
-  const map = new THREE.CanvasTexture(cv)
+  const map = new THREE.CanvasTexture(paintCanvas())
   map.colorSpace = THREE.SRGBColorSpace
   map.userData.shared = true
-  bodyMaps.set(key, map); mapMade.set(map, made)
+  // its canvas goes once three has uploaded it
+  map.onUpdate = () => { map.image.width = map.image.height = 1; watchRestore() }
+  bodyMaps.set(key, map); mapMade.set(map, made); mapPaint.set(map, paintCanvas)
   return map
 }
 // a two-form costume's body map: the beast's as built, the man's painted once with the form's slots
