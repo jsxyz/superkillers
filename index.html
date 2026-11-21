@@ -4074,10 +4074,11 @@ function vehicleCamera(o, me, inp, cam, firstPerson) {
   const ox = -sx * len * Math.cos(el), oy = len * Math.sin(el), oz = -sz * len * Math.cos(el)
   const t = camBlock(x0, py, z0, ox / len, oy / len, oz / len, len)
   const cx = x0 + ox / len * t, cy = py + oy / len * t, cz = z0 + oz / len * t
-  cam.position.set(cx, cy, cz)
+  const lx = x0 + sx * L - cx, ly = py - cy, lz = z0 + sz * L - cz, ln = Math.hypot(lx, ly, lz) || 1, u = [lx / ln, ly / ln, lz / ln]
+  const s = camEase(chaseOut, t, Math.max(chase.v, chase.vb), [cx, cy, cz], u)
+  cam.position.set(cx + u[0] * s, cy + u[1] * s, cz + u[2] * s)
   cam.lookAt(x0 + sx * L, py, z0 + sz * L)
-  const lx = x0 + sx * L - cx, ly = py - cy, lz = z0 + sz * L - cz, ln = Math.hypot(lx, ly, lz) || 1
-  return { dist: t, hideSelf: false, fade: 1, seatRay: pass ? { x: cx, y: cy, z: cz, dx: lx / ln, dy: ly / ln, dz: lz / ln, near: t } : null }
+  return { dist: t - s, hideSelf: false, fade: 1, seatRay: pass ? { x: cx, y: cy, z: cz, dx: u[0], dy: u[1], dz: u[2], near: t } : null }
 }
 
 // on the wall the aim's pitch eases by WALL_LOOK times the run's share up (k, -1..1), so the camera looks the way it runs,
@@ -4102,7 +4103,16 @@ function lookStep(me, inp) {
   const o = !s && rideOf(me)
   if (o) chaseStep(o, inp)
 }
-const camHold = { r: 0, from: 0, to: 0, at: 0 }, camOut = { d: NaN, at: 0 }
+const camHold = { r: 0, from: 0, to: 0, at: 0 }, camOut = { d: NaN, at: 0 }, chaseOut = { d: NaN, at: 0 }
+// backing out from a wall a camera goes at most CAM.out m/s faster than what it follows (v), slid from its clear point p along
+// its line of sight u while that is clear; inward, or after a gap, at once: how far short of t it is drawn
+function camEase(o, t, v, p, u) {
+  const n = now()
+  let d = n - o.at > 250 || !(o.d < t) ? t : Math.min(t, o.d + (CAM.out + v) * (n - o.at) / 1000)
+  if (d < t && camBlock(p[0], p[1], p[2], u[0], u[1], u[2], t - d + CAM.pad) < t - d - 1e-3) d = t
+  o.d = d; o.at = n
+  return t - d
+}
 let heldF = 1
 function updateCamera(me, inp, cam, firstPerson) {
   const seat = !(me.dead > 0) && seatOf(me)
@@ -4119,16 +4129,11 @@ function updateCamera(me, inp, cam, firstPerson) {
   const R = heldR(me), e = camHold
   if (R !== e.to) Object.assign(e, { from: e.r, to: R, at: now() })
   e.r = e.from + (e.to - e.from) * Math.min(1, (now() - e.at) / 150)
-  const r = camRay(me, inp.yaw, inp.pitch, e.r), o = camOut, n = now()
-  // backing out from a wall it goes at most CAM.out m/s faster than the body, slid along its own line of sight (the aim's) while that is clear
-  let d = n - o.at > 250 || !(o.d < r.t) ? r.t : Math.min(r.t, o.d + (CAM.out + Math.hypot(me.vx || 0, me.vy || 0, me.vz || 0)) * (n - o.at) / 1000)
-  if (d < r.t && camBlock(r.x, r.y, r.z, r.dx, r.dy, r.dz, r.t - d + CAM.pad) < r.t - d - 1e-3) d = r.t
-  o.d = d; o.at = n
-  const s = r.t - d
+  const r = camRay(me, inp.yaw, inp.pitch, e.r), s = camEase(camOut, r.t, Math.hypot(me.vx || 0, me.vy || 0, me.vz || 0), [r.x, r.y, r.z], [r.dx, r.dy, r.dz])
   cam.position.set(r.x + r.dx * s, r.y + r.dy * s, r.z + r.dz * s)
   cam.lookAt(...r.aim)
-  const fade = clamp((d - CAM.fadeNear) / (CAM.fadeFar - CAM.fadeNear), 0.15, 1)
-  return { dist: d, hideSelf: false, fade, ray: r }
+  const fade = clamp((r.t - s - CAM.fadeNear) / (CAM.fadeFar - CAM.fadeNear), 0.15, 1)
+  return { dist: r.t - s, hideSelf: false, fade, ray: r }
 }
 
 // d along the camera ray; skips what is between camera and body unless the ray is inside it there
