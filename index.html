@@ -2443,8 +2443,9 @@ async function pinnedUrl(lib, type = 'text/javascript') {
   return URL.createObjectURL(new Blob([await r.arrayBuffer()], { type }))
 }
 async function pinnedImport(lib) { return import(await pinnedUrl(lib)) }
+// one object URL per worker's source, however often it is started
 const pinnedWorker = main =>
-  new Worker(URL.createObjectURL(new Blob([pinnedUrl + '\n' + pinnedImport + '\n(' + main + ')()'])))
+  new Worker(main.url ||= URL.createObjectURL(new Blob([pinnedUrl + '\n' + pinnedImport + '\n(' + main + ')()'])))
 // libraries as pinned script tags: the room's at startup, never blocking the page; the rest on first use. A failed load is forgotten so the next use retries
 const LIBS = {
   peer: { url: 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js',
@@ -3298,7 +3299,10 @@ function navWorkerMain() {
       va.copy(pos); ta.copy(idx); ch.init(va, ta, idx.length / 3, 256)
       const r = G.generateTileNavMeshData(va, ta, config, ch, { x, y, bmin: [X, -2, Z], bmax: [X + 96, top, Z + 96] }, { buildBvTree: true })
       if (r.success && r.data && R.statusFailed(nm.addTile(r.data, R.Detour.DT_TILE_FREE_DATA, 0).status)) r.data.destroy()
-      va.destroy(); ta.destroy()
+      // the generator keeps a built tile's polygon meshes; the tile's data is a copy of them
+      if (r.intermediates?.polyMesh) R.freePolyMesh(r.intermediates.polyMesh)
+      if (r.intermediates?.polyMeshDetail) R.freePolyMeshDetail(r.intermediates.polyMeshDetail)
+      va.destroy(); ta.destroy(); R.Raw.destroy(ch.raw)
     }
     return q
   }
@@ -3344,8 +3348,10 @@ function navWorkerMain() {
 }
 
 function startNav() {
-  try { navWorker = pinnedWorker(navWorkerMain) } catch (e) { navWorker = {}; navFail = 'no worker'; return }
-  navWorker.onmessage = ({ data }) => {
+  let w
+  try { w = navWorker = pinnedWorker(navWorkerMain) } catch (e) { navWorker = {}; navFail = 'no worker'; return }
+  w.onmessage = ({ data }) => {
+    if (w !== navWorker) return
     if (data.fail) { navFail = data.fail.slice(0, 120); navUp = false; return console.warn('nav: ' + data.fail) }
     if (data.up) { navUp = true; return }
     navMeshCount = data.meshes
@@ -3354,6 +3360,11 @@ function startNav() {
     Object.assign(b.ai, { way: data.way, navThere: data.there, navPad: data.pad, navEnd: data.end, navGot: true })
   }
   navWorker.postMessage({ libs: NAV_LIB })
+}
+// the worker holds one level: a load ends it, and the next ask starts another
+function endNav() {
+  if (navWorker?.terminate) navWorker.terminate()
+  navWorker = null; navUp = false; navFail = ''; navLevel = -1; navMeshCount = 0
 }
 
 function padBelow(b) {
@@ -15711,7 +15722,7 @@ GAME.msgs = { host: {
 } }
 
 // what a level load, a grown chunk and each tick hand the game: its pads, pickups and bot navigation
-GAME.level = { loaded() { eventWorld(); PADS = LV.pads; navQueue.length = 0; initPickups() }, grown(ci, cj) { if (navLevel === levelId) navQueue.push([ci, cj]) }, tick() { for (let n = 0; n < 4 && navQueue.length; n++) navTile(...navQueue.shift()) } }
+GAME.level = { loaded() { eventWorld(); PADS = LV.pads; navQueue.length = 0; endNav(); initPickups() }, grown(ci, cj) { if (navLevel === levelId) navQueue.push([ci, cj]) }, tick() { for (let n = 0; n < 4 && navQueue.length; n++) navTile(...navQueue.shift()) } }
 // the crater a smash leaves: the row's shape, and the widest any row can make
 GAME.crater = { spec: () => smashRow()?.smash, maxR: () => Math.max(...[...BOTS, ...CHARS].map(R => R.smash?.r || 0)) }
 
