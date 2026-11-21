@@ -186,6 +186,9 @@ off in the settings.
   from then the pictures replace it, and when they stop for about 2 s while wanted it fetches the stream again until they
   come back. Such a page can put any picture on its viewer's screens, as it could already cover them, and the asks tell it
   when a screen is in view. Nothing of it reaches other players.
+- A framed game that gets no key, pointer, touch or wheel input for about 30 s draws at most 30 frames a second, at one
+  pixel per CSS pixel at most, until its next input. Only its drawing slows: the game, its sound and the pictures it takes
+  keep their rates. A game that isn't framed draws as before.
 
 ## Webhooks
 
