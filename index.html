@@ -11267,6 +11267,8 @@ function pickFrame(t) {
   pickHeld = -1
   pickShoot(PICK_VIEW, pickAt, cv, 0, w, false, (t - pickAtT) / 2600, t)
 }
+// the preview shows its row, drawn: a framed page left idle holds it there
+const pickStill = () => pickHeld === -1 && pickAt >= 0 && avatars.get(PICK_VIEW)?.cid === pickAt
 function pickDrop() {
   for (const id of [PICK_VIEW, PICK_SHOT]) { avatars.get(id)?.mesh.removeFromParent(); dropAvatar(id) }
   pickDue.length = 0; pickBodies.clear()
@@ -16176,7 +16178,7 @@ function frameBody() {
     try { draw(drawDt, t) } catch (e) { frameFailed('draw', e) }
     drawDt = 0
   }
-  if (pickOpen && !drawSkip) try { hud('pickroom', el('#pick-room'), 'textContent', isHost && !serving ? 'Room ' + codeText() : ''); pickFrame(t) } catch (e) { frameFailed('pick', e) }
+  if (pickOpen && !drawSkip) try { hud('pickroom', el('#pick-room'), 'textContent', isHost && !serving ? 'Room ' + codeText() : ''); if (!(idleDraw && pickStill())) pickFrame(t) } catch (e) { frameFailed('pick', e) }
   if (startLog && phase === 'playing' && startLog.frames.length < 30) {
     if (!startLog.frames.length) markStart('frame 1')
     startLog.frames.push(t - (startLog.last ?? t)); startLog.last = t
