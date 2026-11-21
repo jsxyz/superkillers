@@ -3284,10 +3284,30 @@ const navTile = (ci, cj) => navWorker.postMessage({ level: levelId, tile: [ci, c
 function navWorkerMain() {
   let R = null, G = null
   const levels = new Map(), meshes = new Map(), near = { x: 1.5, y: 2, z: 1.5 }
-  // tiles still to add, one a turn so asks are answered between them
-  const todo = []
+  // tiles still to add, one a turn so asks are answered between them: the meshes in turn, each adding its tile nearest
+  // the line of an ask it has answered, from the asker to its target (a way needs both ends' tiles and those between)
+  const todo = new Map()
   let stepping = 0
-  const later = items => { todo.push(...items); stepping ||= setInterval(() => { const t = todo.shift(); if (t) t[0].add(t[1]); else { clearInterval(stepping); stepping = 0 } }, 0) }
+  const off = (q, { tile: [i, j] }) => {
+    const x = i * 96 - q.A + 48, z = j * 96 - q.A + 48
+    let d = Infinity
+    for (const [f, e] of q.lines.values()) {
+      const dx = e.x - f.x, dz = e.z - f.z, u = Math.max(0, Math.min(1, ((x - f.x) * dx + (z - f.z) * dz) / (dx * dx + dz * dz || 1)))
+      d = Math.min(d, Math.hypot(x - f.x - u * dx, z - f.z - u * dz))
+    }
+    return d
+  }
+  const step = () => {
+    const next = todo.entries().next().value
+    if (!next) { clearInterval(stepping); stepping = 0; return }
+    const [q, ts] = next
+    let k = 0
+    for (let i = 1; i < ts.length; i++) if (off(q, ts[i]) < off(q, ts[k])) k = i
+    const [t] = ts.splice(k, 1)
+    todo.delete(q); if (ts.length) todo.set(q, ts)
+    q.add(t)
+  }
+  const later = (q, tiles) => { todo.set(q, [...(todo.get(q) || []), ...tiles]); stepping ||= setInterval(step, 0) }
   // one mesh over the map, a tile per chunk as it grows (never rebuilt)
   const tiled = (A, top, cfg) => {
     const { config, tcs, orig, maxTiles, maxPolysPerTile } = G.buildTiledNavMeshRcConfig({
@@ -3322,7 +3342,7 @@ function navWorkerMain() {
       if (data.tile) {                       // kept; queued for the level's meshes built so far
         const L = levels.get(data.level) || levels.set(data.level, { A: data.A, top: data.top, tiles: [] }).get(data.level)
         L.tiles.push(data)
-        later([...meshes].filter(([key, q]) => q && q.add && key.startsWith(data.level + ' ')).map(([, q]) => [q, data]))
+        for (const [key, q] of meshes) if (q?.add && key.startsWith(data.level + ' ')) later(q, [data])
         return
       }
       if (data.pos) return levels.set(data.level, data)
@@ -3332,11 +3352,11 @@ function navWorkerMain() {
         // cs 50 cm, ch 5 cm: headroom 2 m; 1 m off walls (2x widest enemy) so early corners clear; an agent: [radius, height]
         const [rad, tall] = data.agent || [1, 2], L = levels.get(data.level), cfg = { cs: 0.5, ch: 0.05, walkableHeight: Math.round(tall / 0.05), walkableRadius: Math.ceil(rad / 0.5),
           maxSimplificationError: 0.5, walkableClimb: Math.round(data.climb / 0.05), maxEdgeLen: 0 }
-        if (L.tiles) { const q = tiled(L.A, L.top, cfg), off = t => Math.hypot(t.tile[0] * 96 - L.A + 48 - data.from.x, t.tile[1] * 96 - L.A + 48 - data.from.z)
-          meshes.set(key, q); later([...L.tiles].sort((a, b) => off(a) - off(b)).map(t => [q, t])) }
+        if (L.tiles) { const q = Object.assign(tiled(L.A, L.top, cfg), { A: L.A, lines: new Map() }); meshes.set(key, q); later(q, L.tiles) }
         else { const r = G.generateSoloNavMesh(L.pos, L.idx, cfg); meshes.set(key, r.success ? new R.NavMeshQuery(r.navMesh) : null) }
       }
       const q = meshes.get(key)
+      q?.lines?.set(data.ask, [data.from, data.to])
       let path = q ? q.computePath(data.from, data.to, { halfExtents: near, maxPathPolys: 4096 }).path : []
       const end = path[path.length - 1]
       const there = !!end && Math.hypot(end.x - data.to.x, end.z - data.to.z) < 1.5 && Math.abs(end.y - data.to.y) < 2
@@ -3387,6 +3407,7 @@ function navPlan(b, tgt, dt, car) {
     ai.navT = Math.min(0.25, 1 / b.speed); ai.navTgt = tgt.id
     if (navLevel !== levelId) {
       navLevel = levelId
+      for (const c of players.values()) if (c.ai) Object.assign(c.ai, { way: [], navGot: false, navThere: false, navPad: null, navEnd: null })
       if (LV.grow) navQueue.push(...[...grown].map(c => c.split(' ').map(Number)))
       else navWorker.postMessage({ level: levelId, ...navGeo(BOXES) })
     }
