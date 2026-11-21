@@ -3978,7 +3978,7 @@ function rayCapsule(ox, oy, oz, dx, dy, dz, c) {
 // ---------------------------------------------------------------- camera
 // m. Looks CAM.aim along the firing ray: screen centre = where the shot goes. far: furthest drawn.
 const CAM = { back: 4.3, up: 0.3, aim: 40, pad: 0.28, far: 320,
-              fadeNear: 1.0, fadeFar: 2.2 }
+              fadeNear: 1.0, fadeFar: 2.2, out: 15 }
 // short of pi/2, where lookAt's forward and up go parallel
 const PITCH_MAX = 1.54
 
@@ -4102,7 +4102,7 @@ function lookStep(me, inp) {
   const o = !s && rideOf(me)
   if (o) chaseStep(o, inp)
 }
-const camHold = { r: 0, from: 0, to: 0, at: 0 }
+const camHold = { r: 0, from: 0, to: 0, at: 0 }, camOut = { d: NaN, at: 0 }
 let heldF = 1
 function updateCamera(me, inp, cam, firstPerson) {
   const seat = !(me.dead > 0) && seatOf(me)
@@ -4119,11 +4119,16 @@ function updateCamera(me, inp, cam, firstPerson) {
   const R = heldR(me), e = camHold
   if (R !== e.to) Object.assign(e, { from: e.r, to: R, at: now() })
   e.r = e.from + (e.to - e.from) * Math.min(1, (now() - e.at) / 150)
-  const r = camRay(me, inp.yaw, inp.pitch, e.r)
-  cam.position.set(r.x, r.y, r.z)
+  const r = camRay(me, inp.yaw, inp.pitch, e.r), o = camOut, n = now()
+  // backing out from a wall it goes at most CAM.out m/s faster than the body, slid along its own line of sight (the aim's) while that is clear
+  let d = n - o.at > 250 || !(o.d < r.t) ? r.t : Math.min(r.t, o.d + (CAM.out + Math.hypot(me.vx || 0, me.vy || 0, me.vz || 0)) * (n - o.at) / 1000)
+  if (d < r.t && camBlock(r.x, r.y, r.z, r.dx, r.dy, r.dz, r.t - d + CAM.pad) < r.t - d - 1e-3) d = r.t
+  o.d = d; o.at = n
+  const s = r.t - d
+  cam.position.set(r.x + r.dx * s, r.y + r.dy * s, r.z + r.dz * s)
   cam.lookAt(...r.aim)
-  const fade = clamp((r.t - CAM.fadeNear) / (CAM.fadeFar - CAM.fadeNear), 0.15, 1)
-  return { dist: r.t, hideSelf: false, fade, ray: r }
+  const fade = clamp((d - CAM.fadeNear) / (CAM.fadeFar - CAM.fadeNear), 0.15, 1)
+  return { dist: d, hideSelf: false, fade, ray: r }
 }
 
 // d along the camera ray; skips what is between camera and body unless the ray is inside it there
