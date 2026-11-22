@@ -47,6 +47,11 @@
     background:#0d1117;border:1px solid #2d3441;border-radius:6px;color:#58a6ff;user-select:none}
   #status{margin-top:14px;color:#7d8590;min-height:1.5em}
   #status:empty{display:none}
+  #linkinfo{margin:6px 0 10px}
+  #linkinfo button{padding:3px 9px;font-size:12px}
+  #linkinfo-text{margin:6px 0 0;padding:8px;max-height:40vh;overflow:auto;white-space:pre-wrap;word-break:break-word;text-align:left;
+    font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;color:#9da7b3;background:#0d1117;border:1px solid #232936;border-radius:6px;
+    -webkit-user-select:text;user-select:text}
   #jittip{display:flex;color:#7d8590;font-size:12px}
   #jittip span{flex:1}
   #jittip button{padding:0 4px;font-size:12px;background:none;border:0}
@@ -328,6 +333,7 @@
   /* the pad's focus ring, while the pad was the last input */
   body.padnav .padon{outline:2px solid #e6edf3;outline-offset:3px}
   body.padnav #pick-cards .padon{outline-offset:-4px}
+  body:has(#pause.open) #vote{z-index:30}
   #padentry{z-index:32}
   #pe-slots{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin:16px 0}
   #pe-slots span{min-width:1.3em;padding:9px 5px;text-align:center;font-size:22px;border:1px solid #2d3441;border-radius:6px;
@@ -532,6 +538,7 @@
     </div>
   </div>
   <div id="status">Loading physics…</div>
+  <div id="linkinfo" hidden><button id="linkinfo-show" aria-expanded="false" aria-controls="linkinfo-text">Details</button> <button id="linkinfo-copy">Copy</button><pre id="linkinfo-text" hidden></pre></div>
   <div id="jittip" style="display:none"><span id="jittip-t">Edge's 'Enhance your security' is slowing this game down. To fix it: Settings → Privacy, search, and services → Enhance your security on the web → Exceptions → Add a site → paste this page's address.</span><button id="jittip-copy" title="Copy this page's address">copy</button><button id="jittip-x" aria-label="Dismiss">×</button></div>
 </div></div>
 
@@ -11402,9 +11409,9 @@ const INPUT_SCHEMA = {
   decode(t, seq) {
     const B = INPUT_SCHEMA.bit
     const bits = t[2] | 0
-    // guest-authored: a non-finite reaches Math.sin and NaNs the body
+    // guest-authored: a non-finite reaches Math.sin and NaNs the body; f and r are a stick's, within [-1, 1]
     const nf = x => Number.isFinite(x = +x) ? x : 0
-    return { s: seq, f: nf(t[0]), r: nf(t[1]), yaw: nf(t[3]), pitch: nf(t[4]), rt: nf(t[5]), d: nf(t[6]),
+    return { s: seq, f: clamp(nf(t[0]), -1, 1), r: clamp(nf(t[1]), -1, 1), yaw: nf(t[3]), pitch: nf(t[4]), rt: nf(t[5]), d: nf(t[6]),
              j: !!(bits & B.j), fire: !!(bits & B.fire),
              sh: !!(bits & B.sh), alt: !!(bits & B.alt), sw: !!(bits & B.sw), sprint: !!(bits & B.sprint), descend: !!(bits & B.descend), use: !!(bits & B.use) }
   },
@@ -13023,12 +13030,15 @@ function initPause() {
 // The screens, topmost first, and what B does on each (the pick screen backs out only once its room is joined)
 const PAD_SCREENS = [['padentry', () => padEntryClose()], ['endmodal', () => el('#end-menu').click()], ['codemodal', () => closeCodeModal()],
   ['scanmodal', () => closeScan()], ['settings', () => settingsBack()], ['hostset', () => settingsBack()],
-  ['charpick', () => joinPick() || pickBack()], ['pause', () => closePause()], ['ui', () => {}]]
+  ['charpick', () => joinPick() || pickBack()], ['pause', () => closePause()], ['results', () => {}], ['ui', () => {}]]
 const padAt = new Map()
-let padOn = null, padShown = false
+let padOn = null, padShown = false, padWas = ''
 const padShowing = e => !!e && !e.disabled && e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden'
-const padScreen = () => PAD_SCREENS.find(([id]) => { const s = el('#' + id); return s.id === 'ui' ? s.style.display !== 'none' : s.classList.contains('open') })
-const padTargets = s => [...el('#' + s).querySelectorAll('button, input, .card, #code')].filter(padShowing)
+// the results screen takes the pad only where it holds the host's level cards
+const padScreen = () => PAD_SCREENS.find(([id]) => { const s = el('#' + id)
+  return id === 'ui' ? s.style.display !== 'none' : id === 'results' ? s.style.display === 'grid' && s.classList.contains('host') : s.classList.contains('open') })
+// a level poll's buttons are the pause's
+const padTargets = s => [...el('#' + s).querySelectorAll('button, input, .card, #code'), ...s === 'pause' ? el('#vote').querySelectorAll('button') : []].filter(padShowing)
 function padRing(e) {
   if (padOn && padOn !== e) padOn.classList.remove('padon')
   padOn = e
@@ -13056,18 +13066,21 @@ function padFocus(e) {
 }
 padMenu = f => {
   const s = f.connected && !chatOpen && padScreen()
-  if (!s) { padRing(null); padShown = false; document.body.classList.remove('padnav'); return false }
+  if (!s) { padRing(null); padShown = false; padWas = ''; document.body.classList.remove('padnav'); return false }
   const [id, back] = s, p = f.pressed, been = padShown
+  // from play, what is held there is let go before it moves the ring
+  if (id !== padWas && (padWas = id) === 'results') pad.reset()
   if (id === 'padentry') { padShown = padLast; padEntryStep(f); return true }
   const list = padTargets(id)
   let at = padAt.get(id)
-  if (!list.includes(at)) at = list.find(e => e.matches('#pick-cards .sel, .go')) || list[0]
+  if (!list.includes(at)) at = list.find(e => e.matches('#pick-cards .sel, #reslevels .sel, .go')) || list[0]
   padShown = padLast && !!at
   document.body.classList.toggle('padnav', padShown)
   if (at) padAt.set(id, at)
   padRing(at || null)
   if (p[1]) { back(); return true }
   if (p[9] && id === 'pause') { closePause(); return true }
+  if (p[9] && id === 'results') { openPause(); return true }
   // the first touch only shows where the ring is
   if (!been || !at) return true
   const range = at.type === 'range'
@@ -13293,20 +13306,19 @@ function dropSelection() {
   if (sel && sel.removeAllRanges) sel.removeAllRanges()
 }
 
-async function copyCode() {
-  if (codeText() === OPENING) return
+// whether the text reached the clipboard. No navigator.clipboard on file://: selection trick, then give up
+async function copyText(text) {
   let ok = false
-  // no navigator.clipboard on file://: selection trick, then give up
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      await navigator.clipboard.writeText(roomCodeStr)
+      await navigator.clipboard.writeText(text)
       ok = true
     }
   } catch (e) {}
   if (!ok) {
     try {
       const ta = document.createElement('textarea')
-      ta.value = roomCodeStr
+      ta.value = text
       ta.setAttribute('readonly', '')
       ta.style.position = 'fixed'
       ta.style.opacity = '0'
@@ -13317,6 +13329,11 @@ async function copyCode() {
       dropSelection()
     } catch (e) {}
   }
+  return ok
+}
+async function copyCode() {
+  if (codeText() === OPENING) return
+  const ok = await copyText(roomCodeStr)
   el('#codenote').textContent = ok
     ? 'Copied — the code stays hidden.'
     : 'Clipboard unavailable here. Use View and type it out.'
@@ -14000,6 +14017,9 @@ const ICE_GRACE_MS = 4000        // 'disconnected' can recover; 'failed' cannot
 const GUEST_DEAD_MS = 12000      // host: guest silence
 const GUEST_LOAD_MS = 180000     // host: a joiner's silence before its first input, while its level builds
 const JOIN_OPEN_MS = 20000       // host: a joiner's link that has not opened by then is closed
+const JOIN_WAIT_MS = 15000       // guest: a join whose signaling or room has not come by then has failed
+const JOIN_TELL_MS = 10000       // host: a link that never opened is told in the chat at most this often
+let joinToldAt = -Infinity
 let lastRecvAt = 0
 const lastSeen = new Map()
 let myId = 0, myCid = START, myName = ''
@@ -14274,6 +14294,121 @@ function failWords(type, trying) {
     : "The room couldn't be reached."
 }
 
+// what a link saw from its start (ms since t0; -1 never), filled by its events, its stats and the game's own steps
+const linkFacts = host => ({ host, t0: now(), end: 0, sig: -1, err: '', said: '', linkErr: '', offer: -1, answer: -1, local: {}, stun: {}, remote: {},
+  pairs: {}, sent: 0, got: 0, ice: [], link: [], dtls: '', dc: '', welcome: -1, pin: '' })
+const countKind = (o, k) => { o[k] = (o[k] || 0) + 1 }
+const sinceLink = J => Math.round(now() - J.t0)
+const linkUp = J => [...J.ice, ...J.link].some(([s]) => s === 'connected' || s === 'completed')
+// a candidate's kind: its type and protocol from their fixed lists, else '?', and its address family; never the address or
+// any other word of the line, which the other side writes. An mDNS name stands in for a hidden address
+function candKind(c) {
+  const a = String(c.address || ''), mdns = /\.local$/i.test(a)
+  const type = /^(host|srflx|prflx|relay)$/.test(c.type) ? c.type : '?', p = String(c.protocol || '').toLowerCase(), proto = p === 'udp' || p === 'tcp' ? p : '?'
+  return (mdns ? 'mDNS' : type) + ' ' + proto + (mdns || !a ? '' : a.includes(':') ? ' v6' : ' v4')
+}
+function watchFacts(J, pc) {
+  if (!pc?.addEventListener) return
+  const on = (k, f) => pc.addEventListener(k, f)
+  on('signalingstatechange', () => {
+    if (pc.signalingState === 'have-local-offer' && J.offer < 0) J.offer = sinceLink(J)
+    else if (pc.signalingState === 'stable' && pc.remoteDescription && J.answer < 0) J.answer = sinceLink(J)
+  })
+  on('icecandidate', e => { if (e.candidate?.candidate) countKind(J.local, candKind(e.candidate)) })
+  // STUN servers only: the TURN entries PeerJS lists by default are long gone, and this game uses none
+  const host = u => /^(?:stuns?|turns?):([a-z][\w.-]*)/i.exec(u || '')?.[1]
+  const turn = new Set((pc.getConfiguration?.().iceServers || []).flatMap(s => [].concat(s.urls)).filter(u => /^turns?:/i.test(u)).map(host))
+  on('icecandidateerror', e => { const h = host(e.url); if (h && !turn.has(h)) countKind(J.stun, h + ' (' + e.errorCode + ')') })
+  on('iceconnectionstatechange', () => J.ice.push([pc.iceConnectionState, sinceLink(J)]))
+  on('connectionstatechange', () => J.link.push([pc.connectionState, sinceLink(J)]))
+}
+// the pairs and their checks, DTLS and, for a host, the guest's candidates, from the link's stats; `then` once they are
+// in, at once for a link without stats
+function linkStats(J, pc, then) {
+  if (!pc?.getStats) return then()
+  pc.getStats().then(rs => {
+    const pairs = {}, remote = {}
+    let sent = 0, got = 0
+    rs.forEach(r => {
+      if (r.type === 'candidate-pair') { countKind(pairs, r.state); sent += r.requestsSent || 0; got += r.responsesReceived || 0 }
+      else if (r.type === 'remote-candidate') countKind(remote, candKind({ type: r.candidateType, protocol: r.protocol, address: r.address }))
+      else if (r.type === 'transport' && r.dtlsState) J.dtls = r.dtlsState
+    })
+    Object.assign(J, { pairs, sent, got }, J.host && { remote })
+  }, () => {}).then(then)
+}
+// where a link stopped, why, and what to try: [stop, cause, what to try]. `trying`: the room is asked again by itself
+function joinVerdict(J, trying) {
+  const has = (o, re) => Object.keys(o).some(k => re.test(k))
+  if (J.err === 'peer-unavailable') return trying ? ['room', "The room isn't open yet.", 'This page keeps asking for it.']
+    : ['room', 'No room has that code.', 'Check the code with the host, or ask whether the room is still open.']
+  if (J.err === 'browser-incompatible') return ['browser', "This browser can't make direct links: WebRTC is missing or turned off.",
+    'Allow WebRTC in its settings or extensions, or use another browser.']
+  if (J.err === 'unavailable-id') return ['room code', 'The room code is taken.', 'Try again in a minute.']
+  const sigErr = SIGNALING_DOWN.has(J.err) || /^(disconnected|ssl-unavailable|invalid-key)$/.test(J.err)
+  if (J.err && !sigErr) return J.host ? ['room', "The room couldn't be opened.", 'Reload the page and host again.'] : ['link', "This browser couldn't start the link.", 'Reload the page and join again.']
+  if (J.sig < 0 || sigErr) return ['signaling', "The signaling server can't be reached.", 'Check your connection and try again in a minute; a VPN, a firewall or a filter may block it.']
+  if (J.answer < 0) return ['answer', "The host didn't answer.", 'Ask the host whether the room is still open (a closed or sleeping page drops it), then join again.']
+  if (J.dc === 'open') return ['room', 'The link opened but the room never came.', "Join again; if it keeps happening, the host's page may be stuck: ask them to reload it."]
+  if (linkUp(J)) return ['channel', "The link came up but the game's channel didn't open.", 'Reload the page and join again.']
+  if (!Object.keys(J.remote).length) return ["host's addresses", "The host's addresses never arrived.", 'Ask the host to reload and open the room again.']
+  if (!has(J.local, /^(srflx|relay)/)) return ['your address', 'Your network gave this browser no public address: STUN got no reply, so UDP is blocked, ' +
+    'or a VPN, a firewall or a browser setting limits WebRTC.', 'Turn off the VPN, try another network or a phone hotspot, or allow WebRTC in this browser.']
+  if (!has(J.remote, /^(srflx|relay|prflx)/)) return ["host's address", "The host's network gave it no public address.", 'Ask the host to try another network, or host the game yourself.']
+  return ['checks', 'Both sides have public addresses, but ' + (J.sent ? 'none of ' + J.sent + ' checks' : 'no check') + ' got a reply: a strict NAT or firewall on one side.',
+    'Try another network or a phone hotspot, let the other player host, or play on a dedicated server.']
+}
+const joinSay = (J, trying) => joinVerdict(J, trying).slice(1).join(' ')
+// where a guest's link stopped, as its host sees it: [short, in words]
+function guestStop(F, pc) {
+  if (!pc) return ['no link', 'their offer never made a link.']
+  if (/^(connected|completed)$/.test(pc.iceConnectionState)) return ['no channel', "the link came up but the channel didn't open."]
+  if (!Object.keys(F.remote).length) return ['no addresses', 'their addresses never arrived.']
+  return [F.sent + ' checks, ' + F.got + ' replies', (F.got ? 'no route to them worked' : F.sent + ' checks got no reply') + ' (their network or yours blocks direct links).']
+}
+// the browser by its name and major version, the system by its family: nothing more of the user agent
+function browserName() {
+  const ua = String(navigator.userAgent || ''), B = [['Edge', /Edg\w*\/(\d+)/], ['Opera', /OPR\/(\d+)/], ['Firefox', /F(?:irefox|xiOS)\/(\d+)/],
+    ['Chrome', /C(?:hrome|riOS)\/(\d+)/], ['Safari', /Version\/(\d+).*Safari/]].find(([, re]) => re.test(ua))
+  const os = [['Android', /Android/], ['iOS', /iPhone|iPad|iPod/], ['Windows', /Windows/], ['ChromeOS', /CrOS/], ['macOS', /Macintosh|Mac OS X/], ['Linux', /Linux/]].find(([, re]) => re.test(ua))
+  return (B ? B[0] + ' ' + B[1].exec(ua)[1] : 'an unknown browser') + ' on ' + (os ? os[0] : 'an unknown system')
+}
+// this copy of the game: a hash of its scripts, the same in every report from one build
+let buildTag = ''
+function gameBuild() {
+  if (!buildTag) {
+    let h = 2166136261
+    for (const s of document.scripts || []) for (let i = 0, t = s.text || ''; i < t.length; i++) h = Math.imul(h ^ t.charCodeAt(i), 16777619)
+    buildTag = (h >>> 0).toString(16).padStart(8, '0')
+  }
+  return buildTag
+}
+// PeerJS's words for a failure, without the room code, an address or a port
+const scrubbed = t => (roomCodeStr ? String(t).split(roomCodeStr).join('(the code)') : String(t))
+  .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b|\[?[0-9a-f]*:[0-9a-f.]*:[0-9a-f:.]*\]?/gi, '(an address)').replace(/:\d+/g, '').slice(0, 120)
+function joinReport(J, trying) {
+  const [stop, cause] = joinVerdict(J, trying), s = t => t < 0 ? 'never' : (t / 1000).toFixed(1) + ' s'
+  const list = o => Object.entries(o).map(([k, n]) => n + ' ' + k).join(', ') || 'none', steps = a => a.map(([k, t]) => k + ' ' + s(t)).join(', ') || 'none'
+  const out = [(document.title || 'Game') + ' connection report, ' + new Date().toISOString().slice(0, 19).replace('T', ' ') + ' UTC, build ' + gameBuild() + ', ' + browserName(),
+    (J.host ? 'Hosting' : 'Joining') + ': stopped at ' + stop + ' after ' + s(J.end - J.t0) + '. ' + cause,
+    'Signaling: ' + (J.sig < 0 ? 'not open' : 'open at ' + s(J.sig)) + (J.err ? ', error ' + J.err + (J.said ? ' (' + scrubbed(J.said) + ')' : '') : '')]
+  if (!J.host && J.sig >= 0) out.push('Host: offer sent ' + s(J.offer) + ', answered ' + s(J.answer) + (J.linkErr ? ', link error ' + J.linkErr : ''),
+    'Your addresses: ' + list(J.local) + (Object.keys(J.stun).length ? '; STUN with no reply: ' + list(J.stun) : ''),
+    "Host's addresses: " + list(J.remote),
+    'Checks: ' + list(J.pairs) + '; ' + J.sent + ' sent, ' + J.got + ' answered',
+    'ICE ' + steps(J.ice) + '; link ' + steps(J.link) + '; DTLS ' + (J.dtls || 'none') + '; channel ' + (J.dc || 'none'),
+    'Room: ' + (J.welcome < 0 ? 'no welcome' : 'welcome at ' + s(J.welcome)) + '; key check ' + (J.pin || 'none'))
+  return out.join('\n')
+}
+// the Details and Copy under a failure: one box, moved under the line it explains; '' takes it away
+function linkInfo(report, under) {
+  const box = el('#linkinfo'), text = el('#linkinfo-text')
+  if (!box) return
+  box.hidden = !report; text.hidden = true; text.textContent = report || ''
+  el('#linkinfo-show').setAttribute('aria-expanded', 'false'); el('#linkinfo-copy').textContent = 'Copy'
+  if (report) under.after?.(box)
+}
+
 function snapHz(n) { return n <= 4 ? 30 : n <= 12 ? 22 : n <= 20 ? 16 : 12 }
 function snapRateNow() {
   return settings.rate ? clamp(settings.rate, SNAP_MIN, SNAP_MAX) : snapHz(players.size)
@@ -14427,6 +14562,7 @@ function startHost() {
 function openHostPeer(attempt) {
   clearTimeout(relinkTimer); relinkTimer = 0; relinkTries = 0
   peer = new Peer(roomCodeStr)
+  const F = linkFacts(true)
   peer.on('error', e => {
     // open room: its code IS the room; re-rolling on 'unavailable-id' kills every guest's peer
     if (phase === 'playing' && roomOpen) {
@@ -14448,12 +14584,14 @@ function openHostPeer(attempt) {
       openHostPeer(attempt + 1)
       return
     }
-    if (e.type === 'unavailable-id') { note('Could not claim a room code.', 'err'); return }
-    const type = failType(e)
-    note(SIGNALING_DOWN.has(type) ? failWords(type) : 'Could not open the room.', 'err')
+    // the room's own failure, its report under the status, or for a host already playing in the pause menu
+    Object.assign(F, { end: now(), err: e.type === 'unavailable-id' ? e.type : failType(e), said: e?.message || '' })
+    note(joinSay(F) + (phase === 'playing' ? ' Details are in the pause menu.' : ''), 'err')
+    linkInfo(joinReport(F), el(phase === 'playing' ? '#pause-note' : '#status'))
   })
   peer.on('open', () => {
     relinkTries = 0
+    if (F.sig < 0) F.sig = sinceLink(F)
     if (!roomOpen) { roomOpen = true; setRoomTag(roomTagOn)
       if (el('#codereveal')?.textContent === OPENING) revealCode()
       if (el('#codeqr')?.textContent === OPENING) drawCodeQR() }
@@ -14480,8 +14618,14 @@ function openHostPeer(attempt) {
       if (now() - t0 < JOIN_OPEN_MS) return
       forget()
       const p = c.peerConnection
-      if (id) joinNote('never connected (' + (p ? 'ICE ' + p.iceConnectionState + ', link ' + p.connectionState : 'no link') + ')')
-      try { c.close() } catch (e) {}
+      if (!id) { try { c.close() } catch (e) {} ; return }
+      const F = linkFacts(true)
+      linkStats(F, p, () => {
+        const [short, words] = guestStop(F, p)
+        joinNote('never connected (' + short + ')')
+        if (now() - joinToldAt >= JOIN_TELL_MS) { joinToldAt = now(); sysMsg("§7A player couldn't connect: " + words) }
+        try { c.close() } catch (e) {}
+      })
     }, 1000)
     c.on('open', () => {
       forget()
@@ -14788,7 +14932,23 @@ function startJoin(code, again) {
   const t0 = now(), stage = t => phase === 'connecting' && setStatus('Connecting… ' + t)
   stage('to the signaling server')
   const asked = roomCodeStr, nonce = globalThis.crypto?.getRandomValues ? [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('') : ''
-  peer = new Peer()
+  // this join's facts and its one failure: the words in the status, the report under them, then the rejoin's next step
+  const J = linkFacts(false), fail = after => {
+    if (J.end || phase !== 'connecting' || peer !== me) return
+    J.end = now()
+    const c = conns.get(0)
+    J.dc = c?.dataChannel?.readyState || ''
+    linkStats(J, c?.peerConnection, () => {
+      // overtaken by the join going on, it is no failure
+      if (phase !== 'connecting' || peer !== me) { if (peer === me) J.end = 0; return }
+      setStatus('Could not connect. ' + joinSay(J, !!rejoinTry), 'err'); linkInfo(joinReport(J, !!rejoinTry), el('#status'))
+      rejoinMissed(J)
+      after?.()
+    })
+  }
+  linkInfo('')
+  const me = peer = new Peer()
+  setTimeout(() => { if (J.sig < 0) fail() }, JOIN_WAIT_MS)
   // signaling only finds the host: while the link to it is open, an error there or a drop is not the game's end, and
   // the signaling link comes back by itself
   const linked = () => phase === 'playing' && !!conns.get(0)?.open
@@ -14796,7 +14956,9 @@ function startJoin(code, again) {
     if (linked()) return
     const type = failType(e)
     if (phase === 'playing') endSession('Disconnected', failWords(type, true), 'lost')
-    else { setStatus('Could not connect. ' + failWords(type, !!rejoinTry), 'err'); rejoinMissed(type) }
+    // a link's own error while it tries (a candidate before the answer) is only a fact: its watch decides
+    else if (type === 'webrtc' && conns.has(0)) J.linkErr ||= type
+    else { J.err ||= type; J.said ||= e?.message || ''; fail() }
   })
   peer.on('disconnected', () => { if (linked()) relinkLater() })
   peer.on('close', () => {
@@ -14804,22 +14966,27 @@ function startJoin(code, again) {
   })
   peer.on('open', () => {
     relinkTries = 0
-    if (conns.has(0)) return            // signaling back after a drop: the link to the host is the one it had
+    if (J.sig < 0) J.sig = sinceLink(J)
+    if (conns.has(0) || J.end) return            // signaling back after a drop: the link to the host is the one it had
     const c = peer.connect(roomCodeStr, { reliable: false, serialization: 'json', metadata: nonce ? { n: nonce } : undefined })
     guardLink(c, FROM_HOST)
     conns.set(0, c)
+    watchFacts(J, c.peerConnection)
+    // the host's candidates as signaling brings them: by kind, from their own line
+    peer.socket?.on?.('message', m => {
+      const s = m?.type === 'CANDIDATE' && m.payload?.connectionId === c.connectionId && m.payload.candidate?.candidate
+      if (s) { const [, , protocol, , address, , , type] = s.split(' '); countKind(J.remote, candKind({ type, protocol, address })) }
+    })
     stage('asking the host')
-    // each second the link's state; after 15 s without a channel, where it stopped
+    // each second the link's stage; after JOIN_WAIT_MS without the room, the join has failed
     const watch = setInterval(() => {
       if (phase !== 'connecting' || c.open && !gate) return clearInterval(watch)
-      const p = c.peerConnection, at = c.open ? 'no welcome from the host' : p ? 'ICE ' + p.iceConnectionState + ', link ' + p.connectionState : 'no answer from the host'
-      if (now() - t0 < 15000) return stage('(' + at + ')')
+      if (J.end) return clearInterval(watch)
+      if (now() - t0 < JOIN_WAIT_MS) return stage(c.open ? 'waiting for the room' : J.answer < 0 ? 'asking the host' : linkUp(J) ? 'opening the channel' : 'finding a route to the host')
       clearInterval(watch)
-      setStatus('Could not reach the host after 15 s (' + at + '). The room may be closed, or the network blocks a direct link.', 'err')
-      rejoinMissed('no answer')
-      if (c.open) c.close()
+      fail(() => { if (c.open) c.close() })
     }, 1000)
-    c.on('error', e => setStatus('Could not connect. ' + failWords(failType(e), !!rejoinTry), 'err'))
+    c.on('error', e => { J.linkErr ||= failType(e) })
     // a code with a key remembered is taken once its server's first welcome is checked: until then nothing of the room
     // is shown and nothing is sent, but a full room says so. What waits is bounded, and so is the wait: the watch above
     // lets the link go. Any other code is taken at once, and a key its first welcome proves is remembered
@@ -14835,20 +15002,22 @@ function startJoin(code, again) {
         'taken its code. Nothing of it was shown, and this page will not go back to it by itself.', true)
       el('#end-rejoin').textContent = 'Join anyway'; trustNext = asked
     }
-    c.on('open', () => { watchLink(c, null); if (!globalThis.crypto?.subtle || !pinsRead()[asked]) pass() })
+    c.on('open', () => { watchLink(c, null); const known = !!globalThis.crypto?.subtle && !!pinsRead()[asked]; J.pin = known ? 'waiting' : 'none'; if (!known) pass() })
     c.on('data', raw => {
       countDown(raw)
       const d = decode(raw)
       if (!d) return
+      if (d.k === 'welcome' && J.welcome < 0) J.welcome = sinceLink(J)
       if (!gate) { if (d.k === 'welcome' && !asking) { asking = true; hostKnown(asked, nonce, c.peerConnection, d).catch(() => {}) } return onGuestData(d) }
       if (d.k === 'full') return onGuestData(d)
       if ((kept += typeof raw === 'string' ? raw.length : JSON.stringify(raw).length) > GATE_BYTES) return void c.close()
       gate.push(d)
       if (d.k !== 'welcome' || asking) return
       asking = true
-      hostKnown(asked, nonce, c.peerConnection, d).then(ok => { if (conns.get(0) === c && gate && phase === 'connecting') ok ? pass() : refuse() }, () => {})
+      hostKnown(asked, nonce, c.peerConnection, d).then(ok => { J.pin = ok ? 'passed' : 'refused'; if (conns.get(0) === c && gate && phase === 'connecting') ok ? pass() : refuse() }, () => {})
     })
     c.on('close', () => {
+      if (J.end) return             // a failed join, told already
       const froze = now() - last
       if (kickedBy) endSession('Kicked', kickedBy + ' removed you from the game.', true)
       // a page frozen longer than the host waits for word from it: that is why the host let it go
@@ -15120,6 +15289,7 @@ function reconcile(a) {
 
 function clearSession() {
   pauseOpen = false; closeSettings(); closeCharPick(); picking = false; poll = pollSeen = null
+  linkInfo('')
   if (isHost) hookMatchEnd('stop', null)
   endServing()                       // first: nothing below may think it serves
   const pe = el('#pause')
@@ -15189,10 +15359,11 @@ function rejoinLater(code, restart) {
 function rejoinStop() { clearTimeout(rejoinTimer); rejoinTimer = 0; rejoinTry = 0 }
 // an attempt that failed before it was linked (no signaling, no answer): the next one; once none follows, the end
 // screen's words stop waiting
-const rejoinMissed = type => {
+const rejoinMissed = J => {
   if (!rejoinTry || phase !== 'connecting') return
-  endSession('Disconnected', failWords(type, true), 'lost')
-  if (!rejoinTry) el('#end-msg').textContent = failWords(type, false)
+  endSession('Disconnected', joinSay(J, true), 'lost')
+  if (!rejoinTry) el('#end-msg').textContent = joinSay(J, false)
+  linkInfo(joinReport(J, !!rejoinTry), el('#end-msg'))
 }
 
 function resetToMenu() {
@@ -15209,6 +15380,13 @@ function resetToMenu() {
 
 function initEndModal() {
   el('#end-menu').onclick = () => { trustNext = ''; resetToMenu() }
+  el('#linkinfo-show').onclick = () => { const t = el('#linkinfo-text'); t.hidden = !t.hidden; el('#linkinfo-show').setAttribute('aria-expanded', String(!t.hidden)) }
+  // copied, or where the clipboard refuses, shown to be selected
+  el('#linkinfo-copy').onclick = async () => {
+    const ok = await copyText(el('#linkinfo-text').textContent)
+    el('#linkinfo-copy').textContent = ok ? 'Copied' : 'Select it below'
+    if (!ok) { el('#linkinfo-text').hidden = false; el('#linkinfo-show').setAttribute('aria-expanded', 'true') }
+  }
   el('#end-rejoin').onclick = () => {
     const code = roomCodeStr
     resetToMenu()
