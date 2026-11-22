@@ -325,6 +325,16 @@
   .mbox h2{margin:0 0 6px;font-size:16px}
   .mbox p{margin:0 0 15px;color:#7d8590;font-size:12.5px;line-height:1.5}
   .mrow{display:flex;gap:8px;flex-wrap:wrap}
+  /* the pad's focus ring, while the pad was the last input */
+  body.padnav .padon{outline:2px solid #e6edf3;outline-offset:3px}
+  body.padnav #pick-cards .padon{outline-offset:-4px}
+  #padentry{z-index:32}
+  #pe-slots{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin:16px 0}
+  #pe-slots span{min-width:1.3em;padding:9px 5px;text-align:center;font-size:22px;border:1px solid #2d3441;border-radius:6px;
+    background:#0d1117;color:#c9d1d9}
+  #pe-slots span.on{border-color:#58a6ff;color:#58a6ff;box-shadow:0 0 0 2px #58a6ff}
+  body.hl #pe-slots span{background:var(--bg);border-color:var(--line);color:var(--ink)}
+  body.hl #pe-slots span.on{border-color:var(--yel);color:var(--yel);box-shadow:0 0 0 2px var(--org)}
   #codereveal{font-size:23px;letter-spacing:.24em;text-align:center;padding:13px;margin-bottom:14px;
     background:#0d1117;border:1px solid #2d3441;border-radius:6px;color:#58a6ff;user-select:all}
   #codereveal.masked{color:#3d4654;letter-spacing:.34em;user-select:none}
@@ -650,6 +660,11 @@
     <span class="setval" id="set-sens-v"></span>
   </div>
   <div class="setrow">
+    <label for="set-padsens">Pad look speed</label>
+    <input type="range" id="set-padsens" min="0.2" max="3" step="0.05">
+    <span class="setval" id="set-padsens-v"></span>
+  </div>
+  <div class="setrow">
     <label for="set-fov">Field of view</label>
     <input type="range" id="set-fov" min="60" max="110" step="1">
     <span class="setval" id="set-fov-v"></span>
@@ -670,6 +685,8 @@
     <button id="set-distance">View distance: normal</button>
     <button id="set-shadows">Shadows: on</button>
     <button id="set-shake">Camera shake: on</button>
+    <button id="set-padinvert">Pad invert Y: off</button>
+    <button id="set-padrumble">Pad vibration: on</button>
     <button id="set-sound">Sound: on</button>
     <button id="set-voices" title="Characters speak lines made on this machine: about 700 MB, fetched and run in the background. Needs WebGPU.">AI voices: off</button>
     <button id="set-radio">Car radio: on</button>
@@ -711,6 +728,12 @@
     <button id="code-close">Close</button>
   </div>
   <div id="codenote"></div>
+</div></div>
+
+<div id="padentry" class="ovl"><div class="mbox">
+  <h2 id="pe-title"></h2>
+  <div id="pe-slots"></div>
+  <div class="sub" id="pe-help"></div>
 </div></div>
 
 <div id="vhs"></div>
@@ -11408,12 +11431,12 @@ const INPUT_SCHEMA = {
     keys[e.code] = false
   },
   pointerDown(e) {
-    if (e.button === 0) input.fire = true
-    if (e.button === 2) input.alt = true
+    if (e.button === 0) input.fire = manual.fire = true
+    if (e.button === 2) input.alt = manual.alt = true
   },
   pointerUp(e) {
-    if (e.button === 0) input.fire = false
-    if (e.button === 2) input.alt = false
+    if (e.button === 0) input.fire = manual.fire = false
+    if (e.button === 2) input.alt = manual.alt = false
   },
   wheel() {
     wheelSwap = true
@@ -11426,20 +11449,20 @@ const INPUT_SCHEMA = {
                         -PITCH_MAX, PITCH_MAX)
   },
   stick(dx, dy, R) {
-    input.r = clamp(dx / R, -1, 1)
-    input.f = clamp(-dy / R, -1, 1)
+    input.r = manual.r = clamp(dx / R, -1, 1)
+    input.f = manual.f = clamp(-dy / R, -1, 1)
   },
   touchLook(dx, dy) {
     const k = 0.005 * settings.sens
     input.yaw -= dx * k
     input.pitch = clamp(input.pitch - dy * k, -PITCH_MAX, PITCH_MAX)
   },
-  stopStick() { input.f = 0; input.r = 0 },
+  stopStick() { input.f = input.r = manual.f = manual.r = 0 },
   touchHolds(hold) {
-    hold('btn-fire', () => { input.fire = true }, () => { input.fire = false }, true)
+    hold('btn-fire', () => { input.fire = manual.fire = true }, () => { input.fire = manual.fire = false }, true)
     hold('btn-jump', () => { keys[INPUT_SCHEMA.key.jump] = true }, () => { keys[INPUT_SCHEMA.key.jump] = false })
     hold('btn-descend', () => { descendHeld = true }, () => { descendHeld = false })
-    hold('btn-alt', () => { input.alt = true }, () => { input.alt = false })
+    hold('btn-alt', () => { input.alt = manual.alt = true }, () => { input.alt = manual.alt = false })
   },
   touchTaps(tap) {
     tap('btn-swap', () => { tapSwap = true })
@@ -11470,7 +11493,7 @@ const INPUT_SCHEMA = {
       input.sw ||= tapSwap; tapSwap = false
       input.sh ||= tapShift; tapShift = false
       input.use ||= tapUse; tapUse = false
-      return
+      return padMerge()
     }
     input.f = (keys[INPUT_SCHEMA.key.forward] ? 1 : 0) - (keys[INPUT_SCHEMA.key.back] ? 1 : 0)
     input.r = (keys[INPUT_SCHEMA.key.right] ? 1 : 0) - (keys[INPUT_SCHEMA.key.left] ? 1 : 0)
@@ -11484,9 +11507,12 @@ const INPUT_SCHEMA = {
     shiftHeld = !!keys[INPUT_SCHEMA.key.shift]
     input.use ||= !!keys[INPUT_SCHEMA.key.use] && !useHeld
     useHeld = !!keys[INPUT_SCHEMA.key.use]
+    padMerge()
   }
 }
 const input = INPUT_SCHEMA.empty()
+// what the mouse and touch hold, kept apart so that a pad letting go leaves them held
+const manual = { f: 0, r: 0, fire: false, alt: false }
 let locked = false, chatOpen = false, tabOpen = false, modalOpen = false
 let firstPerson = true
 let pauseOpen = false
@@ -11511,7 +11537,7 @@ function releasePointer() {
 }
 function letGo() {
   for (const k in keys) keys[k] = false
-  input.fire = false
+  input.fire = manual.fire = false
   releasePointer()
 }
 
@@ -11547,8 +11573,7 @@ function initInput() {
   document.addEventListener('pointerlockchange', () => {
     locked = document.pointerLockElement === renderer.domElement
     if (locked) { expectUnlock = false; return }
-    input.fire = false
-    input.alt = false
+    input.fire = input.alt = manual.fire = manual.alt = false
     if (expectUnlock) { expectUnlock = false; return }
     if (phase === 'playing' && !chatOpen && !menuUp()) openPause()
   })
@@ -11562,7 +11587,165 @@ function initInput() {
   })
 }
 
-function sampleInput() { INPUT_SCHEMA.sample() }
+function createGamepadInput(getPads = () => navigator.getGamepads?.() || []) {
+  const limit = (v, lo, hi) => Math.max(lo, Math.min(hi, Number.isFinite(+v) ? +v : 0))
+  const option = (o, k, fallback, lo, hi) => limit(o[k] === undefined ? fallback : o[k], lo, hi)
+  const radial = (x, y, deadzone, curve) => {
+    x = limit(x, -1, 1); y = limit(y, -1, 1)
+    const d = Math.hypot(x, y)
+    if (d <= deadzone) return { x: 0, y: 0 }
+    const k = Math.pow((Math.min(d, 1) - deadzone) / (1 - deadzone), curve) / d
+    return { x: x * k, y: y * k }
+  }
+  const value = b => limit(typeof b === 'number' ? b : b?.value ?? (b?.pressed ? 1 : 0), 0, 1)
+  let pad = null, id = '', index = -1, previous = [], muted = [], axesMuted = false
+  let last = null, lookTime = 0, lookX = 0, lookY = 0, repeatDir = '', repeatAt = 0, rumbleAt = -Infinity
+  let frame = null
+  function poll(t, options = {}, enabled = true) {
+    t = Number.isFinite(t) ? t : 0
+    const dt = last === null ? 0 : limit((t - last) / 1000, 0, 0.1)
+    last = t
+    const deadzone = option(options, 'deadzone', 0.18, 0, 0.5)
+    const curve = option(options, 'curve', 1.5, 0.5, 3)
+    const lookDeadzone = option(options, 'lookDeadzone', deadzone, 0, 0.5)
+    const lookCurve = option(options, 'lookCurve', curve, 0.5, 3)
+    const threshold = option(options, 'threshold', 0.25, 0.05, 0.95)
+    let pads = []
+    try { pads = Array.from(getPads() || []).filter(p => p && p.connected !== false && p.mapping === 'standard') } catch (e) {}
+    const moving = p => Math.hypot(p.axes?.[0] || 0, p.axes?.[1] || 0) > deadzone ||
+      Math.hypot(p.axes?.[2] || 0, p.axes?.[3] || 0) > lookDeadzone || Array.from(p.buttons || []).some(b => value(b) >= threshold)
+    const current = pads.find(p => p.index === index && p.id === id)
+    const next = current && moving(current) ? current : pads.find(moving) || current || pads[0] || null
+    const changed = (next?.index ?? -1) !== index || (next?.id || '') !== id
+    const old = previous
+    if (changed) { previous = []; muted = []; axesMuted = false; lookTime = 0; lookX = lookY = 0; repeatDir = ''; rumbleAt = -Infinity }
+    pad = next; id = pad?.id || ''; index = pad?.index ?? -1
+    const values = Array.from({ length: Math.max(17, pad?.buttons?.length || 0) }, (_, i) => value(pad?.buttons?.[i]))
+    const raw = values.map(v => v >= threshold)
+    const active = enabled && !!pad && (moving(pad) || raw.some((v, i) => v !== !!previous[i]))
+    if (!enabled) { muted = raw.slice(); axesMuted = true }
+    const held = raw.map((v, i) => { if (!v) muted[i] = false; return enabled && v && !muted[i] })
+    const pressed = held.map((v, i) => v && !previous[i])
+    const released = held.map((v, i) => !v && !!(changed ? old[i] : previous[i]))
+    previous = held.slice()
+    let move = radial(pad?.axes?.[0], pad?.axes?.[1], deadzone, curve)
+    let stick = radial(pad?.axes?.[2], pad?.axes?.[3], lookDeadzone, lookCurve)
+    if (!move.x && !move.y && !stick.x && !stick.y) axesMuted = false
+    if (!enabled || axesMuted) { move = { x: 0, y: 0 }; stick = { x: 0, y: 0 } }
+    const magnitude = Math.hypot(stick.x, stick.y)
+    if (magnitude < 0.85 || stick.x * lookX + stick.y * lookY <= 0) lookTime = 0
+    const rampStart = lookTime
+    if (magnitude >= 0.85) lookTime = Math.min(0.4, lookTime + dt)
+    lookX = stick.x; lookY = stick.y
+    const acceleration = option(options, 'acceleration', 0.5, 0, 2)
+    const rampArea = x => x < 0.4 ? x * x / 0.8 : x - 0.2
+    const elapsed = dt + acceleration * (magnitude >= 0.85 ? rampArea(rampStart + dt) - rampArea(rampStart) : 0)
+    const speed = option(options, 'sensitivity', 1, 0.2, 3) * 2.8
+    const look = { x: stick.x * speed * elapsed, y: stick.y * speed * elapsed * (options.invert ? -1 : 1) }
+    let nx = (held[15] ? 1 : 0) - (held[14] ? 1 : 0), ny = (held[13] ? 1 : 0) - (held[12] ? 1 : 0)
+    if (!nx && !ny) {
+      if (Math.max(Math.abs(move.x), Math.abs(move.y)) >= 0.45) {
+        if (Math.abs(move.x) > Math.abs(move.y)) nx = Math.sign(move.x)
+        else ny = Math.sign(move.y)
+      }
+    }
+    if (ny) nx = 0
+    const direction = nx + ',' + ny, nav = { x: 0, y: 0 }
+    if (!nx && !ny) repeatDir = ''
+    else if (direction !== repeatDir || t >= repeatAt) {
+      nav.x = nx; nav.y = ny
+      repeatAt = t + (direction !== repeatDir ? 360 : 120)
+      repeatDir = direction
+    }
+    frame = { connected: !!pad, index, id, changed, active, dt, move, stick, look, values, held, pressed, released, nav }
+    return frame
+  }
+  function stopRumble() {
+    try { const p = pad?.vibrationActuator?.reset?.(); p?.catch?.(() => {}) } catch (e) {}
+  }
+  function reset() {
+    muted = frame?.values.map(v => v >= 0.05) || []
+    previous = []; axesMuted = true; lookTime = 0; lookX = lookY = 0; repeatDir = ''; last = null
+    stopRumble()
+  }
+  function rumble(strength = 0.45, duration = 90, enabled = true) {
+    if (!enabled || !pad?.vibrationActuator?.playEffect || last === null || last - rumbleAt + 0.001 < 60) return false
+    try {
+      const p = pad.vibrationActuator.playEffect('dual-rumble', { startDelay: 0, duration: limit(duration, 0, 500),
+        strongMagnitude: limit(strength, 0, 1), weakMagnitude: limit(strength * 0.6, 0, 1) })
+      p?.catch?.(() => {})
+      rumbleAt = last
+      return true
+    } catch (e) { return false }
+  }
+  return { poll, reset, rumble, stopRumble }
+}
+// what each standard-mapping button does in play
+const PAD_MAP = Object.freeze({ jump: 0, descend: 1, use: 2, swap: 3, shift: 4, alt: 6, fire: 7, scores: 8, menu: 9, sprint: 10, view: 11,
+  sound: 13, radio: 14, chat: 15 })
+let padSeen = [], padNotice = false, padFocused = true, padContext = '', padLast = false, padFrame = null
+let padPlay = false, padDrove = false, padTab = false, padSprint = 0, padShot = null, padHp, padWho = null
+const pad = createGamepadInput(() => padSeen = Array.from(navigator.getGamepads?.() || []))
+// the menus' use of the pad, set by their code: true when it took this frame's
+let padMenu = () => false
+for (const k of ['keydown', 'pointerdown', 'pointermove', 'touchstart']) addEventListener(k, e => { if (e.isTrusted) padLast = false }, { capture: true, passive: true })
+addEventListener('blur', () => { padFocused = false; pad.reset() })
+addEventListener('focus', () => { padFocused = true; pad.reset() })
+const padRumble = (strength, ms) => settings.padRumble !== false && padLast && pad.rumble(strength, ms)
+function padPoll() {
+  const ctx = chatOpen ? 'chat' : menuUp() ? 'menu' : phase === 'playing' && !serving ? 'play' : phase
+  // every switch of what the pad drives starts it clean: nothing held carries across
+  if (ctx !== padContext) { padContext = ctx; pad.reset(); padShot = padWho = null; if (padTab) tabOpen = padTab = false }
+  const on = padFocused && !document.hidden && phase !== 'connecting'
+  const f = padFrame = pad.poll(now(), { sensitivity: settings.padSens ?? 1, invert: !!settings.padInvert }, on)
+  padPlay = false
+  if (on && !f.connected && !padNotice && padSeen.some(p => p && p.connected !== false && p.mapping !== 'standard')) {
+    padNotice = true
+    const m = "This controller isn't supported in this browser"
+    sysMsg(m); if (phase === 'menu') setStatus(m)
+  }
+  if (f.active) { padLast = true; inputAt = now(); if (idleDraw) { idleDraw = false; applyPixels() } }
+  // stronger when hurt than on our own shot
+  if (ctx === 'play') {
+    const me = isHost ? players.get(0) : predicted, shot = avatars.get(myId)?.shotAt
+    if (me && me.cid === padWho && me.hp < padHp - 0.5) padRumble(0.9, 180)
+    else if (padShot !== null && shot !== padShot) padRumble(0.35, 70)
+    padShot = shot; padHp = me?.hp; padWho = me?.cid
+  }
+  if (padMenu(f) || !on || !f.connected) return
+  const P = PAD_MAP, p = f.pressed
+  if (ctx === 'chat') { if (p[P.descend] || p[P.chat]) closeChat(); return }
+  if (ctx === 'menu') { if (pauseOpen && p[P.menu]) closePause(); return }
+  if (ctx !== 'play') return
+  if (p[P.menu]) return openPause()
+  if (p[P.chat]) return openChat('')
+  if (f.held[P.scores] !== padTab) tabOpen = padTab = f.held[P.scores]
+  if (p[P.view]) setView(!firstPerson)
+  if (p[P.sound]) GAME.audio.toggle()
+  if (p[P.radio]) GAME.audio.cycle()
+  // L3 sprints until the stick, once moved, comes back to rest
+  const moved = !!(f.move.x || f.move.y)
+  if (p[P.sprint]) { sprintToggle(); padSprint = sprintOn ? 1 : 0 }
+  else if (padSprint && moved) padSprint = 2
+  else if (padSprint === 2) { if (sprintOn) sprintToggle(); padSprint = 0 }
+  padPlay = true
+}
+// the pad over the keyboard, mouse and touch: either holds, a press is once, move and look add. Its holds go when it stops
+function padMerge() {
+  if (!padPlay) {
+    if (padDrove) { padDrove = false; input.fire = manual.fire; input.alt = manual.alt; if (IS_TOUCH) { input.f = manual.f; input.r = manual.r } }
+    return
+  }
+  padDrove = true
+  const P = PAD_MAP, f = padFrame, h = f.held, p = f.pressed
+  if (IS_TOUCH) { input.f = manual.f; input.r = manual.r }
+  input.f = clamp(input.f - f.move.y, -1, 1); input.r = clamp(input.r + f.move.x, -1, 1)
+  input.yaw -= f.look.x; input.pitch = clamp(input.pitch - f.look.y, -PITCH_MAX, PITCH_MAX)
+  input.fire = manual.fire || h[P.fire]; input.alt = manual.alt || h[P.alt]
+  input.j ||= h[P.jump]; input.descend ||= h[P.descend]
+  input.sw ||= p[P.swap]; input.sh ||= p[P.shift]; input.use ||= p[P.use]
+}
+function sampleInput() { padPoll(); INPUT_SCHEMA.sample() }
 
 let shiftHeld = false, swapHeld = false, wheelSwap = false
 let useHeld = false, tapUse = false
@@ -11878,6 +12061,9 @@ function loadSettings() {
   settings.fov = clamp(+settings.fov || 72, 60, FOV_MAX)
   settings.shadows = !!settings.shadows
   settings.shake = settings.shake !== false
+  settings.padSens = clamp(Number.isFinite(+settings.padSens) ? +settings.padSens : 1, 0.2, 3)
+  settings.padInvert = settings.padInvert === true
+  settings.padRumble = settings.padRumble !== false
   if (!QUALITY[settings.quality]) settings.quality = 'high'
   if (!Object.hasOwn(VIEW, settings.distance)) settings.distance = 'normal'
   settings.qualityChosen = !!settings.qualityChosen
@@ -11943,6 +12129,7 @@ function applySettings() {
   GAME.audio.apply()
 }
 const onOff = v => v ? 'on' : 'off', nextOf = (list, v) => list[(list.indexOf(v) + 1) % list.length]
+const padNoRumble = () => !!padFrame?.connected && !navigator.getGamepads?.()[padFrame.index]?.vibrationActuator?.playEffect
 const SET_BUTTONS = {
   'set-view': [() => 'View: ' + (firstPerson ? 'first' : 'third'), () => setView(!firstPerson)],
   'set-quality': [() => 'Quality: ' + settings.quality,
@@ -11950,6 +12137,9 @@ const SET_BUTTONS = {
   'set-distance': [() => 'View distance: ' + settings.distance, () => { settings.distance = nextOf(Object.keys(VIEW), settings.distance) }],
   'set-shadows': [Q => 'Shadows: ' + (Q.shadows ? onOff(settings.shadows) : 'off (quality)'), () => { settings.shadows = !settings.shadows }],
   'set-shake': [() => 'Camera shake: ' + onOff(settings.shake), () => { settings.shake = !settings.shake }],
+  'set-padinvert': [() => 'Pad invert Y: ' + onOff(settings.padInvert), () => { settings.padInvert = !settings.padInvert }],
+  'set-padrumble': [() => 'Pad vibration: ' + onOff(settings.padRumble) + (padNoRumble() ? ' (not in this browser)' : ''),
+    () => { settings.padRumble = !settings.padRumble }],
   'set-balance': [() => 'Balance teams: ' + onOff(settings.balance), () => { settings.balance = !settings.balance }],
   'set-radio': [() => 'Car radio: ' + onOff(settings.radio), () => { settings.radio = !settings.radio }, () => GAME.audio.radio()],
   'set-bcast': [() => 'Broadcasts: ' + onOff(settings.bcast), () => { settings.bcast = !settings.bcast }, () => bcastPlay()],
@@ -11971,6 +12161,7 @@ function openSettings() {
     }
   }
   bind('set-sens', 'sens', v => v.toFixed(2) + '×')
+  bind('set-padsens', 'padSens', v => v.toFixed(2) + '×')
   bind('set-fov', 'fov', v => v + '°')
   bind('set-vol', 'volume', v => Math.round(v * 100) + '%')
   bind('set-bvol', 'bvol', v => Math.round(v * 100) + '%')
@@ -12659,10 +12850,43 @@ function openPause() {
     ? 'The game keeps running for everyone else — you are standing still, not safe.'
     : 'The game keeps running on the host — you are standing still, not safe.'
   el('#pause-host').textContent = isHost ? 'Host' : 'Vote level'
-  el('#pause-hint').innerHTML = IS_TOUCH ? '' :
-    'WASD move · Shift sprint · Space jump/rise · Q descend (flier) · click fire · right-click your attack · E use or lift<br>' +
-    'R next weapon · F shift form · T chat · Tab scores · V view · M sound · F3 debug'
+  pauseHint()
   show('pause', 1)
+}
+// the controls by the last input: the pad's buttons while it was, else the keys
+let hintPad = false
+function pauseHint() {
+  hintPad = padLast && padHints()
+  el('#pause-hint').innerHTML = controlsHint()
+}
+function controlsHint() {
+  if (!padLast) return IS_TOUCH ? '' :
+    'WASD move · Shift sprint · Space jump/rise · Q descend (flier) · click fire · right-click your attack · E use or lift<br>' +
+    'R next weapon · F shift form · T chat · Tab scores · V view · M sound · F3 debug<br>' + PAD_NOTE
+  const F = padHints().F
+  return 'Left stick move · ' + F.L3 + ' sprint (toggle) · right stick look · ' + F.A + ' jump/rise · ' + F.B + ' descend (flier) · ' +
+    F.RT + ' fire · ' + F.LT + ' your attack · ' + F.X + ' use or lift<br>' + F.Y + ' next weapon · ' + F.LB + ' shift form · ' +
+    F.Back + ' scores · ' + F.R3 + ' view · ' + F.Start + ' menu · d-pad: ↓ sound, ← radio (in a vehicle), → chat<br>' + PAD_NOTE
+}
+const PAD_NOTE = 'Controllers: most Xbox, PlayStation and Switch Pro pads work in Chrome, Edge and Safari (Firefox on Linux misses some). ' +
+  'Vibration where the browser has it.'
+// the hint line's name for each control: a key, or the pad's button while the pad was the last input
+const HINT_KEYS = { move: 'WASD', sprint: 'Shift', jump: 'Space', down: 'Q', fire: 'click', next: 'R', alt: 'right-click', use: 'E', shift: 'F', chat: 'T', scores: 'Tab' }
+// the standard mapping's buttons by their Xbox names, as each family prints them: Nintendo's face letters sit swapped
+const PAD_FACES = {
+  xbox: { A: 'A', B: 'B', X: 'X', Y: 'Y', LB: 'LB', RB: 'RB', LT: 'LT', RT: 'RT', L3: 'L3', R3: 'R3', Start: 'Start', Back: 'Back' },
+  sony: { A: '✕', B: '○', X: '□', Y: '△', LB: 'L1', RB: 'R1', LT: 'L2', RT: 'R2', L3: 'L3', R3: 'R3', Start: 'Options', Back: 'Share' },
+  nintendo: { A: 'B', B: 'A', X: 'Y', Y: 'X', LB: 'L', RB: 'R', LT: 'ZL', RT: 'ZR', L3: 'L3', R3: 'R3', Start: '+', Back: '−' },
+}
+// the active pad's names, by the vendor in its id (Sony 054c, Nintendo 057e); a DualSense's Share is Create
+let padFaceId = null, padHint = null
+function padHints() {
+  const id = padFrame?.id || ''
+  if (id === padFaceId) return padHint
+  padFaceId = id
+  const F = /054c|dualsense|dualshock/i.test(id) ? { ...PAD_FACES.sony, Back: /dualsense|0ce6|0df2/i.test(id) ? 'Create' : 'Share' }
+    : /057e/i.test(id) ? PAD_FACES.nintendo : PAD_FACES.xbox
+  return padHint = { F, move: 'Left stick', sprint: F.L3, jump: F.A, down: F.B, fire: F.RT, next: F.Y, alt: F.LT, use: F.X, shift: F.LB, chat: 'd-pad →', scores: F.Back }
 }
 
 function closePause() {
@@ -12794,6 +13018,111 @@ function initPause() {
   el('#pause-leave').onclick = fromPause(leaveRoom)
   backdrop('pause', closePause)
 }
+
+// ---- the pad in the menus: a focus ring over the open screen; the d-pad or left stick moves it, A presses, B goes back.
+// The screens, topmost first, and what B does on each (the pick screen backs out only once its room is joined)
+const PAD_SCREENS = [['padentry', () => padEntryClose()], ['endmodal', () => el('#end-menu').click()], ['codemodal', () => closeCodeModal()],
+  ['scanmodal', () => closeScan()], ['settings', () => settingsBack()], ['hostset', () => settingsBack()],
+  ['charpick', () => joinPick() || pickBack()], ['pause', () => closePause()], ['ui', () => {}]]
+const padAt = new Map()
+let padOn = null, padShown = false
+const padShowing = e => !!e && !e.disabled && e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden'
+const padScreen = () => PAD_SCREENS.find(([id]) => { const s = el('#' + id); return s.id === 'ui' ? s.style.display !== 'none' : s.classList.contains('open') })
+const padTargets = s => [...el('#' + s).querySelectorAll('button, input, .card, #code')].filter(padShowing)
+function padRing(e) {
+  if (padOn && padOn !== e) padOn.classList.remove('padon')
+  padOn = e
+  if (e) e.classList.add('padon')
+}
+// the nearest target that way: the gap along it, then the gap across (none where the two overlap), then how far apart their
+// middles sit across
+function padStep(list, at, dx, dy) {
+  const r = at.getBoundingClientRect(), span = (q, a) => a ? [q.left, q.right] : [q.top, q.bottom], mid = ([a, b]) => (a + b) / 2
+  const [a0, a1] = span(r, dx), [c0, c1] = span(r, dy)
+  let best = null, cost = Infinity
+  for (const e of list) {
+    const q = e.getBoundingClientRect(), [b0, b1] = span(q, dx), [d0, d1] = span(q, dy), s = dx + dy
+    if (e === at || (mid([b0, b1]) - mid([a0, a1])) * s <= 1) continue
+    const along = Math.max(0, s > 0 ? b0 - a1 : a0 - b1), across = Math.max(0, d0 - c1, c0 - d1)
+    const c = along + 3 * across + 0.2 * Math.abs(mid([d0, d1]) - mid([c0, c1]))
+    if (c < cost) { cost = c; best = e }
+  }
+  return best
+}
+function padFocus(e) {
+  padRing(e)
+  e.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  if (pickOpen && e.dataset.i !== undefined) pickSel(+e.dataset.i)
+}
+padMenu = f => {
+  const s = f.connected && !chatOpen && padScreen()
+  if (!s) { padRing(null); padShown = false; document.body.classList.remove('padnav'); return false }
+  const [id, back] = s, p = f.pressed, been = padShown
+  if (id === 'padentry') { padShown = padLast; padEntryStep(f); return true }
+  const list = padTargets(id)
+  let at = padAt.get(id)
+  if (!list.includes(at)) at = list.find(e => e.matches('#pick-cards .sel, .go')) || list[0]
+  padShown = padLast && !!at
+  document.body.classList.toggle('padnav', padShown)
+  if (at) padAt.set(id, at)
+  padRing(at || null)
+  if (p[1]) { back(); return true }
+  if (p[9] && id === 'pause') { closePause(); return true }
+  // the first touch only shows where the ring is
+  if (!been || !at) return true
+  const range = at.type === 'range'
+  if (range && f.nav.x) {
+    at.value = +at.value + f.nav.x * (+at.step || 1)
+    at.oninput?.(); at.onchange?.()
+  } else if (f.nav.x || f.nav.y) {
+    // across the character grid, left and right run along it as the arrow keys do
+    const cards = pickCards(), k = id === 'charpick' && f.nav.x ? cards.indexOf(at) : -1
+    const to = k >= 0 ? cards[(k + f.nav.x + cards.length) % cards.length] : padStep(list, at, f.nav.y ? 0 : f.nav.x, f.nav.y)
+    if (to) { padAt.set(id, to); padFocus(to) }
+  }
+  if (p[0] && !range) at.matches('#join-code, #name-in') ? padEntryOpen(at) : at.click()
+  return true
+}
+
+// on-screen entry for the room code and the name: left and right pick the slot, up and down its character
+const PAD_NAME = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 -_'
+let padEntry = null
+function padEntryOpen(input) {
+  const code = input.id === 'join-code', chars = code ? CODE_ALPHABET : PAD_NAME
+  const now = [...(code ? input.value.toUpperCase() : input.value)].filter(ch => chars.includes(ch))
+  const text = code ? Array.from({ length: 6 }, (_, k) => now[k] || chars[0]) : now.length ? now.slice(0, 16) : [chars[0]]
+  padEntry = { input, chars, text, at: code ? Math.min(now.length, 5) : text.length - 1, fixed: code, max: code ? 6 : 16 }
+  el('#pe-title').textContent = code ? 'Room code' : 'Name'
+  el('#pe-help').textContent = '◀ ▶ slot · ▲ ▼ character · A done · B cancel' + (code ? '' : ' · X delete')
+  padEntryPaint()
+  show('padentry', 1)
+}
+function padEntryClose() { padEntry = null; show('padentry') }
+function padEntryPaint() {
+  const E = padEntry, box = el('#pe-slots')
+  box.replaceChildren()
+  E.text.forEach((ch, k) => { const d = box.appendChild(document.createElement('span')); d.textContent = ch === ' ' ? '·' : ch; d.classList.toggle('on', k === E.at) })
+}
+function padEntryStep(f) {
+  const E = padEntry, p = f.pressed
+  if (!E) return
+  if (f.nav.x) {
+    E.at += f.nav.x
+    if (E.at === E.text.length && !E.fixed && E.text.length < E.max) E.text.push(E.chars[0])
+    E.at = clamp(E.at, 0, E.text.length - 1)
+  }
+  if (f.nav.y) { const n = E.chars.length; E.text[E.at] = E.chars[(E.chars.indexOf(E.text[E.at]) - f.nav.y + n) % n] }
+  if (p[2] && !E.fixed && E.text.length > 1) { E.text.splice(E.at, 1); E.at = Math.min(E.at, E.text.length - 1) }
+  if (p[0]) {
+    E.input.value = E.text.join('').trim()
+    if (E.input.id === 'join-code') padAt.set('ui', el('#join-btn'))
+    return padEntryClose()
+  }
+  if (p[1]) return padEntryClose()
+  padEntryPaint()
+}
+backdrop('padentry', padEntryClose)
+addEventListener('keydown', e => { if (padEntry && e.isTrusted) padEntryClose() })
 
 // ---------------------------------------------------------------- code modal
 const MASK = '••••••••'
@@ -16675,17 +17004,20 @@ function drawHud(me, others, t) {
     ? '  ·  ' + mmss(matchLeft)
     : ''
   const use = liftOf(me) > 0 ? 'lift' : objs.some(p => takeable(me, p)) ? 'use' : ''
-  hud('hud', el('#hud'), 'textContent', IS_TOUCH
+  const K = padLast ? padHints() : HINT_KEYS
+  hud('hud', el('#hud'), 'textContent', IS_TOUCH && !padLast
     ? nm + '  ·  FIRE ' + G.name + dives(G) + (cycles ? '  ·  WPN next' : '') + (P ? '  ·  ATK ' + P.name + dives(P) : '') + (use ? '  ·  USE ' + use : '') + clock
-    : nm + '  ·  WASD move  ·  Shift sprint  ·  Space ' + (FC.jet?.flier ? 'fly/rise  ·  Q down' : 'jump' + (FC.swing ? '  ·  Q zip' : '')) + '  ·  click ' + G.name +
+    : nm + '  ·  ' + K.move + ' move  ·  ' + K.sprint + ' sprint  ·  ' + K.jump + ' ' + (FC.jet?.flier ? 'fly/rise  ·  ' + K.down + ' down' : 'jump' + (FC.swing ? '  ·  ' + K.down + ' zip' : '')) +
+      '  ·  ' + K.fire + ' ' + G.name +
       dives(G) +
-      (cycles ? '  ·  R next' : '') +
-      (P ? '  ·  right-click ' + P.name : '') +
+      (cycles ? '  ·  ' + K.next + ' next' : '') +
+      (P ? '  ·  ' + K.alt + ' ' + P.name : '') +
       dives(P) +
-      (use ? '  ·  E ' + use : '') +
-      (FC.shift !== undefined ? '  ·  F shift form' : '') +
-      '  ·  T chat  ·  Tab scores' +
-      (locked || chatOpen ? '' : '  ·  click to capture mouse') + clock)
+      (use ? '  ·  ' + K.use + ' ' + use : '') +
+      (FC.shift !== undefined ? '  ·  ' + K.shift + ' shift form' : '') +
+      '  ·  ' + K.chat + ' chat  ·  ' + K.scores + ' scores' +
+      (locked || chatOpen || padLast ? '' : '  ·  click to capture mouse') + clock)
+  if (pauseOpen && hintPad !== (padLast && padHints())) pauseHint()
 }
 
 const mmss = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0')
