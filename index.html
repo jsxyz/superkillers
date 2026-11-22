@@ -14302,6 +14302,8 @@ function hostIn() {
   pushRoster()
   if (poll) countVote()
 }
+// the room's id on the signaling server every PeerJS app shares: the code players type, under this game's own prefix
+const ROOM_NS = 'superkillers-'
 let roomCodeStr = '', roomOpen = false             // a host's code, claimed on the signaling server once open
 const OPENING = 'opening…', codeText = () => isHost && !roomOpen ? OPENING : roomCodeStr
 let outSeq = 0, lastChatSeq = new Map()
@@ -14614,7 +14616,7 @@ function linkStats(J, pc, then) {
 function joinVerdict(J, trying) {
   const has = (o, re) => Object.keys(o).some(k => re.test(k))
   if (J.err === 'peer-unavailable') return trying ? ['room', "The room isn't open yet.", 'This page keeps asking for it.']
-    : ['room', 'No room has that code.', 'Check the code with the host, or ask whether the room is still open.']
+    : ['room', 'No room has that code.', 'Check the code with the host, or ask whether the room is still open. A host or a guest on an older copy of the page cannot find the other: both reload the page.']
   if (J.err === 'browser-incompatible') return ['browser', "This browser can't make direct links: WebRTC is missing or turned off.",
     'Allow WebRTC in its settings or extensions, or use another browser.']
   if (J.err === 'unavailable-id') return ['room code', 'The room code is taken.', 'Try again in a minute.']
@@ -14834,7 +14836,7 @@ function startHost() {
 
 function openHostPeer(attempt) {
   clearTimeout(relinkTimer); relinkTimer = 0; relinkTries = 0
-  peer = new Peer(roomCodeStr)
+  peer = new Peer(ROOM_NS + roomCodeStr)
   const F = linkFacts(true)
   if (!attempt) sigSaid = null
   peer.on('error', e => {
@@ -15249,7 +15251,7 @@ function startJoin(code, again) {
     relinkTries = 0
     if (J.sig < 0) J.sig = sinceLink(J)
     if (conns.has(0) || J.end) return            // signaling back after a drop: the link to the host is the one it had
-    const c = peer.connect(roomCodeStr, { reliable: false, serialization: 'json', metadata: nonce ? { n: nonce } : undefined })
+    const c = peer.connect(ROOM_NS + roomCodeStr, { reliable: false, serialization: 'json', metadata: nonce ? { n: nonce } : undefined })
     guardLink(c, FROM_HOST)
     conns.set(0, c)
     watchFacts(J, c.peerConnection)
@@ -17200,7 +17202,7 @@ function draw(dt, t) {
     if (fxWait.length) {
       let n = 0
       while (n < fxWait.length && fxWait[n].t <= renderT) n++
-      if (n) { for (let i = 0; i < n; i++) { addTracers(fxWait[i].fx, now()); GAME.audio.fx(fxWait[i].fx, 2) }
+      if (n) { for (let i = 0; i < n; i++) { addTracers(fxWait[i].fx, t); GAME.audio.fx(fxWait[i].fx, 2) }
                fxWait.splice(0, n) }
     }
     others = remoteAt(renderT).filter(p => p.id !== myId)

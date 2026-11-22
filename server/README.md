@@ -42,6 +42,11 @@ three times over about a minute, so a server that restarts or updates in that ti
 
 ## A room's key
 
+On the signaling server the room is registered as the code under the prefix `superkillers-`, so another app's peer
+ids cannot collide with it; the code players type and share is still the 6 characters. The prefix is in the page, so a
+server and the page its players join from must be of one release: a player on an older page, or a server on an older
+image, finds no room under the code, and is told so, with the advice to reload.
+
 A room code belongs to whoever registers it first with the signaling server. When this server stops or crashes, its code
 is free within a second, while its players go on asking for the room by themselves for up to half an hour: whoever holds
 the code then gets them. With `HOST_KEY_FILE` the server signs its welcome to each player, and a player's page remembers
