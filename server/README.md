@@ -97,10 +97,10 @@ Everything is an environment variable (`-e NAME=value`).
 | Variable | Default | |
 |---|---|---|
 | `LEVEL` | `Yard` | a level by name or number: Yard, Foundry, Sprawl, City |
-| `MODE` | `waves` | `ffa` (free-for-all, 32 players) or `waves` (4 players) |
-| `FRAGS` | `25` | kills to win, 0–200; 0 is no limit |
-| `MINUTES` | `0` | length of a match, 0–60; 0 is untimed |
-| `ENEMIES` | `3` | computer-run enemies |
+| `MODE` | `waves` | `ffa` (free-for-all, 32 players), `waves` (4 players) or `tdm` (team deathmatch, 32 players: one hero against the superkillers, a life each a round) |
+| `FRAGS` | `25` | kills to win, 0–200; 0 is no limit. Not in `tdm`, whose round ends when a side is down |
+| `MINUTES` | `0` | length of a match, 0–60; 0 is untimed. In `tdm`, a round's length, 5 when 0; when it runs out the hero wins |
+| `ENEMIES` | `3` | computer-run enemies. In `tdm`, bots fill the superkillers to this, and one bot plays the hero when no player does |
 | `ROOM_CODE` | random | a fixed room code, 6 characters of `ABCDEFGHJKMNPQRSTUVWXYZ23456789`, so the join link stays the same and players come back by themselves after a restart |
 | `SERVER_NAME` | `The server` | the name players see when it kicks them |
 | `JOIN_URL` | the public game page | printed with `#` and the room code as the join link |
@@ -123,20 +123,21 @@ Each event is one JSON object, the same on stdout and to a webhook:
 
 ```json
 {"id":"6f1c…","type":"kill","ts":1795030120.52,"seq":41,"game":"superkillers","match":"90aa2b7d…",
- "data":{"killer":{"id":1,"name":"Ann","kind":"player","character":"Sam"},
-         "victim":{"id":101,"name":"Blue","kind":"enemy","character":"Blue"},"weapon":"Pistol"}}
+ "data":{"killer":{"id":1,"name":"Ann","kind":"player","character":"Sam","side":"killers"},
+         "victim":{"id":101,"name":"Blue","kind":"enemy","character":"Blue","side":"heroes"},"weapon":"Pistol"}}
 ```
 
 `id` is unique to the event. `ts` is when it happened, in unix seconds. `seq` rises with every event of a server run.
-`match` is a random id for the match it happened in. Wherever a person appears it is `{id, name, kind, character}`:
+`match` is a random id for the match it happened in. Wherever a person appears it is `{id, name, kind, character, side}`:
 - `kind` is `player`, `enemy`, or `ally` (a computer-run team-mate a player fields, with `owner`, that player's id).
 - `id` belongs to whoever has it now and is given to someone else after they leave.
+- `side` is the character's: `killers` or `heroes`.
 
 | Type | Data |
 |---|---|
 | `ping` | `reason` (`start`, or `request` from the action API), `players`, `enemies`, `level`, `uptime` |
-| `match.start` | `level`, `mode`, `fragLimit`, `minutes` |
-| `match.end` | `reason` (`frags`, `time`, `restart`, `stop`), `winner` (or null), `standings` with `kills` each |
+| `match.start` | `level`, `mode` (`ffa`, `waves` or `tdm`), `fragLimit` (applied in `ffa` only), `minutes` |
+| `match.end` | `reason` (`frags`, `time`, `elimination`, `restart`, `stop`), `winner` (or null), `standings` with `kills` each; in `tdm`, `winnerSide` (`heroes` or `killers`) |
 | `player.join` | `player` |
 | `player.leave` | `player`, `reason` (`left`, `kicked`, `timeout`, `dropped`) |
 | `player.rename` | `player`, `was` |
