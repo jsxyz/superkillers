@@ -3299,7 +3299,7 @@ function rescue(c) {
 
 function leaveRare(c) {
   players.delete(c.id); inputs.delete(c.id); roster.delete(c.id)
-  detachBody(c)
+  removeChar(c)
   if (conns.size) pushRoster()
   announce('§f' + (c.bot ? c.bot.name : '?') + ' §7is gone.')
 }
@@ -8102,6 +8102,43 @@ function fitCeiling(a, t) {
 THREE.ShaderChunk.fog_pars_vertex = THREE.ShaderChunk.fog_pars_vertex.replace('varying float vFogDepth;', 'varying float vFogDepth;\n\tuniform vec2 fogGrown;')
 THREE.ShaderChunk.fog_vertex = THREE.ShaderChunk.fog_vertex.replace('- mvPosition.z', 'max( - mvPosition.z, length( mvPosition.xyz ) - fogGrown.x )')
 for (const U of [THREE.UniformsLib.fog, ...Object.values(THREE.ShaderLib).map(s => s.uniforms)]) if (U.fogNear) U.fogGrown = { value: GAME.fogGrown ||= { x: 1e9, y: 0 } }
+// The sun's shadow over the City is two maps: sunLight's, tight, round the player, and a second light's (sunLight.userData.far), wide, past it. That light gives
+// no light, only its map. The shader reads the tight map where it reaches and fades into the wide one at its edge. If three's
+// chunks aren't as expected, the sun keeps its one map.
+const SUN_HALF = { near: 24, far: 112 }          // half-widths of the two maps, m
+const SUN_FAR_EVERY = 3                          // the wide map is drawn every this many frames: what it holds moves slowly
+let sunTick = 0
+let sunTier = { shadows: true, shadowMap: 1024, farMap: 2048 }   // the QUALITY row applySettings last took
+const SUN_FADE = 0.1                             // the tight map's outer share that fades into the wide one
+const SUN_SPLIT = (() => {
+  const C = THREE.ShaderChunk, call = 'getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowIntensity, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] )'
+  const begin = C.lights_fragment_begin, pars = C.shadowmap_pars_fragment
+  if (typeof begin !== 'string' || typeof pars !== 'string') return false
+  const from = begin.indexOf('directionalLight = directionalLights[ i ];'), end = begin.indexOf('#pragma unroll_loop_end', from)
+  const body = begin.slice(from, begin.lastIndexOf('}', end))
+  if (from < 0 || end < 0 || body.split(call).length !== 2 || !pars.includes('float getShadow(')) return false
+  C.lights_fragment_begin = begin.slice(0, from) + '#if NUM_DIR_LIGHT_SHADOWS > 1 && UNROLLED_LOOP_INDEX == 1\n#else\n' +
+    body.replace(call, '( NUM_DIR_LIGHT_SHADOWS > 1 && UNROLLED_LOOP_INDEX == 0 ? getSunShadow() : ' + call + ' )') + '#endif\n' + begin.slice(begin.lastIndexOf('}', end))
+  C.shadowmap_pars_fragment = pars + `
+#if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 1
+float getSunShadowOf( int i, vec4 coord ) {
+	DirectionalLightShadow s = directionalLightShadows[ i ];
+	return i == 0 ? getShadow( directionalShadowMap[ 0 ], s.shadowMapSize, s.shadowIntensity, s.shadowBias, s.shadowRadius, coord )
+		: getShadow( directionalShadowMap[ 1 ], s.shadowMapSize, s.shadowIntensity, s.shadowBias, s.shadowRadius, coord );
+}
+float getSunShadow() {
+	vec2 e = min( vDirectionalShadowCoord[ 0 ].xy, 1.0 - vDirectionalShadowCoord[ 0 ].xy );
+	float w = clamp( min( e.x, e.y ) / ${SUN_FADE.toFixed(2)}, 0.0, 1.0 );
+	if ( w >= 1.0 ) return getSunShadowOf( 0, vDirectionalShadowCoord[ 0 ] );
+	float wide = getSunShadowOf( 1, vDirectionalShadowCoord[ 1 ] );
+	return w <= 0.0 ? wide : mix( wide, getSunShadowOf( 0, vDirectionalShadowCoord[ 0 ] ), w );
+}
+#else
+#define getSunShadow() 1.0
+#endif
+`
+  return true
+})()
 let renderer, scene, camera, scene3d, sunLight, avatarGroup, pickGroup, tracerGroup, worldGroup
 const avatars = new Map()
 const pickPool = [], tracerPool = [], boxPool = [], orbPool = [], slashPool = [], whipPool = [], ringPool = [], flashPool = [], effectPool = [], glowPool = []
@@ -8586,8 +8623,12 @@ function buildWorld() {
   scene3d.lights.hemisphereLight({ skyColor: 0x8fa6c4, groundColor: 0x141820, intensity: 1.1 })
   const sun = sunLight = scene3d.lights.directionalLight({ color: 0xffffff, intensity: 1.5 })
   sun.position.set(12, 22, 8)
-  sun.castShadow = !IS_TOUCH && settings.shadows
+  sun.castShadow = shadowsWanted(sunTier)
   sun.shadow.mapSize.set(1024, 1024)
+  const far = sun.userData.far = new THREE.DirectionalLight(0xffffff, 0)
+  far.shadow.autoUpdate = false
+  scene.add(far, far.target)
+  sunShadows()
 
   worldGroup = new THREE.Group(); scene.add(worldGroup)
   rebuildWorld()
@@ -8613,7 +8654,7 @@ function buildWorld() {
 
 // Dispose only level-owned buffers; kit geometry and surface maps survive world rebuilds.
 // sun distance: the tallest building stays behind the shadow camera's near plane
-const sunHome = new THREE.Vector3(12, 22, 8).multiplyScalar(4), sunFocus = new THREE.Vector3()
+const sunHome = new THREE.Vector3(12, 22, 8).multiplyScalar(4), sunFocus = new THREE.Vector3(), sunAhead = new THREE.Vector3()
 const sunX = new THREE.Vector3(0, 1, 0).cross(sunHome).normalize(), sunY = sunHome.clone().cross(sunX).normalize()
 // hidden for one render: a chunk, or a pooled vehicle by its look's reach, that the camera and the casting sun both miss
 const culled = [], reaches = new Map()
@@ -8633,18 +8674,40 @@ function cullView(cam) {
 function followSun() {
   if (!sunLight || !camera || ARENA <= 96 || !LV.scenery?.length) return
   const k = Math.max(4, (LV.theme.ramp[1] + 30) / 22); if (sunHome.y !== 22 * k) sunHome.set(12, 22, 8).multiplyScalar(k)
-  const c = sunLight.shadow.camera, map = sunLight.shadow.mapSize
-  sunFocus.copy(camera.position)
-  for (const [axis, step] of [[sunX, (c.right - c.left) / map.x], [sunY, (c.top - c.bottom) / map.y]]) {
-    const d = sunFocus.dot(axis)
-    sunFocus.addScaledVector(axis, Math.round(d / step) * step - d)
+  const far = sunLight.userData.far
+  for (const light of far?.visible ? [sunLight, far] : [sunLight]) {
+    if (light === far && far.shadow.map && ++sunTick % SUN_FAR_EVERY) continue
+    const c = light.shadow.camera, map = light.shadow.mapSize
+    sunFocus.copy(camera.position)
+    if (light === far) sunFocus.addScaledVector(camera.getWorldDirection(sunAhead).setY(0).normalize(), SUN_HALF.far / 3)
+    for (const [axis, step] of [[sunX, (c.right - c.left) / map.x], [sunY, (c.top - c.bottom) / map.y]]) {
+      const d = sunFocus.dot(axis)
+      sunFocus.addScaledVector(axis, Math.round(d / step) * step - d)
+    }
+    light.position.copy(sunFocus).add(sunHome)
+    light.target.position.copy(sunFocus)
+    light.target.updateMatrixWorld()
+    if (light === far) far.shadow.needsUpdate = true
   }
-  sunLight.position.copy(sunFocus).add(sunHome)
-  sunLight.target.position.copy(sunFocus)
-  sunLight.target.updateMatrixWorld()
   const p = camera.position, R = camera.far * Math.hypot(1, Math.tan(camera.fov * Math.PI / 360) * Math.hypot(1, camera.aspect)) + 68
   for (const g of worldGroup.children) if (g.userData.cell)
     g.visible = Math.hypot(g.userData.cell[0] * 96 - ARENA + 48 - p.x, g.userData.cell[1] * 96 - ARENA + 48 - p.z) < (g.visible ? R + 96 : R)
+}
+
+// the sun's maps for the settings and the level: one over a small arena, two over the City when the shader reads them
+const shadowsWanted = Q => settings.shadows && Q.shadows && (!IS_TOUCH || !!Q.touch)
+function sunShadows() {
+  const far = sunLight?.userData.far
+  if (!far) return
+  const Q = sunTier, T = IS_TOUCH && Q.touch, city = ARENA > 96 && !!LV.scenery?.length
+  const wide = SUN_SPLIT && !T && city && renderer?.shadowMap?.enabled && sunLight.castShadow
+  far.visible = far.castShadow = wide
+  for (const [light, size, half, bias, normal] of [[sunLight, T ? T.shadowMap : Q.shadowMap, wide ? SUN_HALF.near : T && city ? T.half : Math.min(46, ARENA * 0.85), -0.0002, 0.05], [far, Q.farMap, SUN_HALF.far, -0.0004, 0.2]]) {
+    const s = light.shadow, c = s.camera
+    Object.assign(s, { bias, normalBias: normal })
+    if (s.mapSize.width !== size) { s.mapSize.set(size, size); s.map?.dispose(); s.map = null }
+    if (c.right !== half) { c.left = c.bottom = -half; c.right = c.top = half; c.updateProjectionMatrix() }
+  }
 }
 
 // three's per-frame walk, into the children that compose themselves or were marked
@@ -8731,16 +8794,14 @@ function rebuildWorld() {
   screenMat = screenRim = null                     // the level's own: disposed with it, made again for the next
   worldGroup.clear()
   for (const g of geometries) g.dispose()
-  const [sky] = LV.theme.fog, s = Math.min(46, ARENA * 0.85)
+  const [sky] = LV.theme.fog
   scene.background = new THREE.Color(sky)
   scene.fog = new THREE.Fog(sky); applyView()
   if (sunLight) {
     sunHome.set(12, 22, 8).multiplyScalar(ARENA > 96 && LV.scenery?.length ? Math.max(4, (LV.theme.ramp[1] + 30) / 22) : 4)
     sunLight.position.copy(sunHome); sunLight.target.position.set(0, 0, 0)
     sunLight.target.updateMatrixWorld()
-    const c = sunLight.shadow.camera
-    c.left = -s; c.right = s; c.top = s; c.bottom = -s
-    c.updateProjectionMatrix()
+    sunShadows()
   }
   const aniso = texAniso()
   for (const kind of ['floor', 'wall']) {
@@ -9156,8 +9217,8 @@ const floors = { boxes: null, n: 0, lo: Infinity, stamp: 0, cells: new Map() }  
 let cullT = null, culling = false
 function cullFrom(cam) {
   if (!(culling = !!(cam.isCamera && sunLight))) return
-  const C = cullT ||= { v: new THREE.Frustum(), s: new THREE.Frustum(), m: new THREE.Matrix4(), b: new THREE.Sphere() }, sc = sunLight.shadow.camera
-  sunLight.updateMatrixWorld(); sunLight.target.updateMatrixWorld(); sunLight.shadow.updateMatrices(sunLight)
+  const C = cullT ||= { v: new THREE.Frustum(), s: new THREE.Frustum(), m: new THREE.Matrix4(), b: new THREE.Sphere() }, L = sunLight.userData.far?.visible ? sunLight.userData.far : sunLight, sc = L.shadow.camera
+  L.updateMatrixWorld(); L.target.updateMatrixWorld(); L.shadow.updateMatrices(L)
   C.v.setFromProjectionMatrix(C.m.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse))
   C.s.setFromProjectionMatrix(C.m.multiplyMatrices(sc.projectionMatrix, sc.matrixWorldInverse))
 }
@@ -9167,7 +9228,7 @@ function drawAvatarShadow(a) {
   const F = floors, many = BOXES.length > 128
   if (F.boxes !== BOXES) Object.assign(F, { boxes: BOXES, n: 0, lo: Infinity }).cells.clear()
   for (; many && F.n < BOXES.length; F.n++) { const b = BOXES[F.n]; b.fo = F.n; padsAdd([b], F.cells); F.lo = Math.min(F.lo, b.cy + b.ey) }
-  if (!a.far || !a.mesh.visible || !sunLight || IS_TOUCH || !settings.shadows ||
+  if (!a.far || !a.mesh.visible || !sunLight || !settings.shadows ||
     renderer && renderer.shadowMap && !renderer.shadowMap.enabled) return
   const C = a.spec, p = a.mesh.position, H = 2 * (C.h + C.r), foot = p.y - H / 2
   const light = sunLight.position, target = sunLight.target.position, ly = light.y - target.y
@@ -12315,9 +12376,9 @@ function drawDebug(me, fps) {
 // localStorage throws on opaque origins (file://): every access guarded. Renaming the 'arena.' key drops saved settings
 const SET_KEY = 'arena.settings.v1'
 const QUALITY = {
-  high:   { ratio: 2,    shadowMap: 1024, shadows: true,  fx: 1 },
-  medium: { ratio: 1.25, shadowMap: 512,  shadows: true,  fx: 0.5 },
-  low:    { ratio: 1,    shadowMap: 512,  shadows: false, fx: 0.25 },
+  high:   { ratio: 2,    shadowMap: 1024, farMap: 2048, shadows: true,  fx: 1, touch: { shadowMap: 512, half: 40 } },
+  medium: { ratio: 1.25, shadowMap: 512,  farMap: 1024, shadows: true,  fx: 0.5 },
+  low:    { ratio: 1,    shadowMap: 512,  farMap: 512,  shadows: false, fx: 0.25 },
 }
 const QNAMES = Object.keys(QUALITY)
 const GPU_SOFTWARE = /swiftshader|llvmpipe|softwarerasterizer|basic render|mesa offscreen/i
@@ -12421,7 +12482,8 @@ function applySettings() {
   const Q = QUALITY[settings.quality] || QUALITY.high
   fxStride = Q.fx >= 1 ? 1 : Math.max(2, Math.round(1 / Q.fx))
   applyPixels()
-  const want = settings.shadows && Q.shadows && !IS_TOUCH
+  sunTier = Q
+  const want = shadowsWanted(Q)
   document.body?.classList.toggle('novhs', settings.vhs === false)
   if (renderer && renderer.shadowMap.enabled !== want) {
     renderer.shadowMap.enabled = want
@@ -12429,10 +12491,7 @@ function applySettings() {
     scene.traverse(o => { if (o.material) o.material.needsUpdate = true })
     warmEffects()
   }
-  if (sunLight && sunLight.shadow.mapSize.width !== Q.shadowMap) {
-    sunLight.shadow.mapSize.set(Q.shadowMap, Q.shadowMap)
-    if (sunLight.shadow.map) { sunLight.shadow.map.dispose(); sunLight.shadow.map = null }
-  }
+  sunShadows()
   viewScale = VIEW[settings.distance]; applyView()
   for (const id in SET_BUTTONS) { const b = el('#' + id); if (b) b.textContent = SET_BUTTONS[id][0](Q) }
   GAME.audio.apply()
@@ -15079,7 +15138,7 @@ function openHostPeer(attempt) {
       const had = conns.delete(id), p = roster.get(id)
       const gone = p && hooked['player.leave'] && players.has(id) && { player: hookWho(players.get(id)), reason: hookGone.get(id) || 'left' }
       hookGone.delete(id)
-      if (players.has(id)) detachBody(players.get(id))
+      if (players.has(id)) removeChar(players.get(id))
       players.delete(id); roster.delete(id); GAME.lifecycle.left(id); inputs.delete(id); pkSent.delete(id); tierSent.delete(id); objSent.delete(id)
       inputSeq.delete(id); lastChatSeq.delete(id); lastChatAt.delete(id); lastSeen.delete(id); nickAt.delete(id); nickWait.delete(id)
       inQ.delete(id); inAck.delete(id); voteCalled.delete(id); voteRefused.delete(id)
@@ -15225,7 +15284,9 @@ function stopServing() {
 }
 
 
-function dropBot(c) { detachBody(c); players.delete(c.id); inputs.delete(c.id); roster.delete(c.id) }
+// out of the room: out of any seat first, so no vehicle keeps an id that a later character may be given
+function removeChar(c) { const s = seatOf(c); if (s) leave(c, ...s); detachBody(c) }
+function dropBot(c) { removeChar(c); players.delete(c.id); inputs.delete(c.id); roster.delete(c.id) }
 
 
 
@@ -17469,12 +17530,32 @@ let lastTabSig = null, lastProfSig = null
 // the free-for-all's leader, with LEAD_MIN kills and more than anyone: a crown over their head (leadId is the radar's to mark)
 let leaderCrown = null, leadId = -1
 function makeCrown() {
-  const g = new THREE.Group(), gold = new THREE.MeshBasicMaterial({ color: 0xffd23f, side: THREE.DoubleSide })
-  g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.42, 0.22, 12, 1, true), gold))
-  for (let i = 0; i < 5; i++) {
-    const a = i / 5 * Math.PI * 2, spike = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.34, 6), gold)
-    spike.position.set(Math.cos(a) * 0.46, 0.27, Math.sin(a) * 0.46)
-    g.add(spike)
+  // a gold band whose top rises into five points, flaring out as it rises; a pearl on each point, a ruby under it, a rolled rim
+  const g = new THREE.Group(), N = 5, R = 0.42, H = 0.16, P = 0.26, SEG = 80, flare = y => 1 + 0.35 * y
+  const gold = new THREE.MeshStandardMaterial({ color: 0xf6bd35, metalness: 0.35, roughness: 0.3, emissive: 0x6b4a00, side: THREE.DoubleSide })
+  const pearl = new THREE.MeshStandardMaterial({ color: 0xfff4dc, roughness: 0.25, emissive: 0x2e271a })
+  const ruby = new THREE.MeshStandardMaterial({ color: 0xd0123c, roughness: 0.18, metalness: 0.2, emissive: 0x38000e })
+  const pos = [], idx = []
+  for (let i = 0; i <= SEG; i++) {
+    const a = i / SEG * Math.PI * 2, f = i / SEG * N % 1, y = H + P * Math.pow(1 - Math.abs(2 * f - 1), 1.6)
+    pos.push(Math.cos(a) * R, 0, Math.sin(a) * R, Math.cos(a) * R * flare(y), y, Math.sin(a) * R * flare(y))
+    if (i < SEG) idx.push(2 * i, 2 * i + 2, 2 * i + 1, 2 * i + 1, 2 * i + 2, 2 * i + 3)
+  }
+  const band = new THREE.BufferGeometry()
+  band.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  band.setIndex(idx)
+  band.computeVertexNormals()
+  g.add(new THREE.Mesh(band, gold))
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(R, 0.035, 8, 48), gold)
+  rim.rotation.x = Math.PI / 2
+  g.add(rim)
+  const bead = new THREE.SphereGeometry(1, 12, 8)
+  for (let k = 0; k < N; k++) {
+    const a = (k + 0.5) / N * Math.PI * 2, top = R * flare(H + P), mid = R * flare(H * 0.55) * 1.02
+    const pl = new THREE.Mesh(bead, pearl), gem = new THREE.Mesh(bead, ruby)
+    pl.scale.setScalar(0.05); pl.position.set(Math.cos(a) * top, H + P + 0.035, Math.sin(a) * top)
+    gem.scale.set(0.045, 0.045, 0.03); gem.position.set(Math.cos(a) * mid, H * 0.55, Math.sin(a) * mid); gem.lookAt(0, H * 0.55, 0)
+    g.add(pl, gem)
   }
   scene.add(g)
   return g
@@ -17488,8 +17569,8 @@ function drawCrown(me, others, t) {
   const C = GAME.participant(leadId, lead.cid), s = Math.max(0.2, C.r * 1.2)
   leaderCrown.visible = true
   leaderCrown.scale.setScalar(s)
-  leaderCrown.position.set(lead.x, lead.y + C.h + C.r + 0.3 * s, lead.z)
-  leaderCrown.rotation.y = t / 600
+  leaderCrown.position.set(lead.x, lead.y + C.h + C.r + (0.3 + 0.06 * Math.sin(t / 320)) * s, lead.z)
+  leaderCrown.rotation.y = t / 1100
 }
 
 function standings(others) {
@@ -17859,21 +17940,28 @@ function hurtFrom(list) {
     if (hurts.length > 4) hurts.shift()
   }
 }
-// a red arc on the ellipse inside the screen's edge toward each shooter, bearing as the radar's
+// a red crescent on a ring round the crosshair toward each shooter, bearing as the radar's: thickest at its middle and
+// tapering to points, with a soft red glow; it holds for the first 30% of HURT_MS, then fades
 function drawHurt(me, t) {
   for (let i = hurts.length; i--;) if (t - hurts[i].t >= HURT_MS || me.dead > 0) hurts.splice(i, 1)
   if (!hurts.length && !hurtDrawn) return
-  const cv = el('#hurt'), w = innerWidth, h = innerHeight, g = cv.getContext('2d')
-  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h }
+  const cv = el('#hurt'), w = innerWidth, h = innerHeight, g = cv.getContext('2d'), dpr = Math.min(2, devicePixelRatio || 1)
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr) }
+  g.setTransform(dpr, 0, 0, dpr, 0, 0)
   g.clearRect(0, 0, w, h)
   hurtDrawn = hurts.length > 0
-  const yaw = viewYaw(me), cs = Math.cos(yaw), sn = Math.sin(yaw), rx = 0.44 * w, ry = 0.44 * h
-  g.lineCap = 'round'; g.lineWidth = Math.max(8, 0.02 * Math.min(w, h)); g.shadowBlur = 14; g.shadowColor = '#f85149'
+  const yaw = viewYaw(me), cs = Math.cos(yaw), sn = Math.sin(yaw), m = Math.min(w, h)
+  const R = 0.17 * m, T = Math.max(7, 0.02 * m), span = 0.55, N = 20
+  g.shadowColor = 'rgba(255,40,30,0.7)'; g.shadowBlur = 10
   for (const o of hurts) {
-    const dx = o.x - me.x, dz = o.z - me.z, a = Math.atan2(dx * sn + dz * cs, dx * cs - dz * sn)
-    g.strokeStyle = 'rgba(248,81,73,' + (1 - (t - o.t) / HURT_MS).toFixed(2) + ')'
-    const e = Math.atan2(Math.sin(a) / ry, Math.cos(a) / rx)
-    g.beginPath(); g.ellipse(w / 2, h / 2, rx, ry, 0, e - 0.35, e + 0.35); g.stroke()
+    const dx = o.x - me.x, dz = o.z - me.z, a = Math.atan2(dx * sn + dz * cs, dx * cs - dz * sn), age = t - o.t, k = age / HURT_MS
+    g.fillStyle = 'rgba(255,70,55,' + (Math.min(1, age / 60) * (k < 0.3 ? 1 : ((1 - k) / 0.7) ** 1.5)).toFixed(3) + ')'
+    g.beginPath()
+    for (let i = 0; i <= 2 * N; i++) {
+      const u = (i <= N ? i : 2 * N - i) / N * 2 - 1, d = (i <= N ? 0.5 : -0.5) * T * Math.cos(u * Math.PI / 2) ** 1.2
+      g.lineTo(w / 2 + (R + d) * Math.cos(a + u * span), h / 2 + (R + d) * Math.sin(a + u * span))
+    }
+    g.fill()
   }
 }
 // what the host draws of the pickups: the ones standing, as their snapshot rows
@@ -17898,7 +17986,7 @@ class Arena extends ENABLE3D.Scene3D {
     scene = this.scene
     camera = this.camera
     applySettings()
-    renderer.shadowMap.enabled = !IS_TOUCH && settings.shadows
+    renderer.shadowMap.enabled = shadowsWanted(sunTier)
     this.setSize(innerWidth, innerHeight)
   }
 
