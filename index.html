@@ -11265,7 +11265,7 @@ function pickSoon() {
   pickIdle = true
   // a callback works on one kind of row: the free rows, or the rest on their pace
   const go = () => { pickIdle = false; const t0 = now(), lazy = pickLazy(); try {
-    if (!lazy || now() - pickLazyT >= PICK_LAZY) while (pickOpen && pickDue.length && pickReady(pickDue[0][1]) && now() - t0 < PREP_MS && pickLazy() === lazy) pickSlice()
+    if (!lazy || now() - pickLazyT >= PICK_LAZY) while (pickOpen && pickDue.length && pickReady(pickDue[0][1]) && now() - t0 < PREP_MS && pickLazy() === lazy && pickSlice() !== false);
   } finally { if (lazy) pickLazyT = now(); pickSoon() } }
   const rest = Math.max(PICK_REST - (now() - pickAtT), pickLazy() ? PICK_LAZY - (now() - pickLazyT) : 0)
   // never while the selection moves
@@ -11285,19 +11285,35 @@ function pickSlice() {
   try {
     if (!pickReady(m) || !pickStep(PICK_SHOT, m)) return
   } finally { pickSpent += now() - t0 }
+  if (!pickWarm(m)) return false
   pickDue.shift()
   pickShoot(PICK_SHOT, m, P.c, x0, x1, true, 0.35, 0)
   if (!--P.left) pickCvs.get(i)?.getContext('2d').drawImage(P.c, 0, 0)
   if (pickSpent > PICK_SLOW) pickSlow = true
   pickSpent = 0
 }
-function pickShoot(id, cid, cv, x0, x1, head, yaw, t) {
-  const S = pickStage ||= { scene: new THREE.Scene(), cam: new THREE.PerspectiveCamera(26, 1, 0.05, 60), vp: new THREE.Vector4(), sc: new THREE.Vector4() }
-  if (!S.scene.children.length) {
+function pickStageOf() {
+  if (!pickStage) {
+    pickStage = { scene: new THREE.Scene(), cam: new THREE.PerspectiveCamera(26, 1, 0.05, 60), vp: new THREE.Vector4(), sc: new THREE.Vector4() }
     const sun = new THREE.DirectionalLight(0xffffff, 2.2)
     sun.position.set(2, 4, 5)
-    S.scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x30343c, 1.6), sun)
+    pickStage.scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x30343c, 1.6), sun)
   }
+  return pickStage
+}
+// a portrait is shot once its avatar's programs for the stage are compiled and linked: compiled at once, linked off the frame
+// where the driver can (KHR_parallel_shader_compile), else at once too
+const pickWarmed = new WeakMap()
+function pickWarm(cid) {
+  const mesh = avatarFor(PICK_SHOT, cid)
+  if (!renderer.compile) return true
+  let mats = pickWarmed.get(mesh)
+  if (!mats) { const S = pickStageOf(); pickWarmed.set(mesh, mats = renderer.compile(mesh, S.cam, S.scene)) }
+  for (const m of mats) if (renderer.properties.get(m).currentProgram?.isReady() === false) return false
+  return true
+}
+function pickShoot(id, cid, cv, x0, x1, head, yaw, t) {
+  const S = pickStageOf()
   const mesh = avatarFor(id, cid), C = CHARS[cid], H = 2 * (C.h + C.r), w = x1 - x0, h = cv.height
   const R = renderer, pr = R.getPixelRatio(), rt = R.getRenderTarget(), auto = R.autoClear, test = R.getScissorTest()
   R.getViewport(S.vp); R.getScissor(S.sc)
