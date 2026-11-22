@@ -9925,11 +9925,14 @@ function objLook(K) {
   depthFor(m)
   return m
 }
+// the pooled hull views shown last frame: those not listed again are hidden; objStamp, the frame's objects drawn
+let objShown = new Set(), objStamp = 0
 function drawObjects(list, wheelsAt = () => null) {
   if (!objGroup) return
   const T = objTmp || (objTmp = [new THREE.Matrix4(), new THREE.Vector3(), new THREE.Quaternion(), new THREE.Vector3(1, 1, 1), new THREE.Vector3()])
   const n = OBJECTS.map(() => 0)
-  for (const m of objPool) m.visible = false
+  const shownWas = objShown
+  objShown = new Set()
   wheelN = 0
   const listed = new Set(list.map(o => o.id ?? o))          // an entry without an id is its own key
   for (const key of objOf.keys()) if (!listed.has(key)) objOf.delete(key)
@@ -9939,6 +9942,7 @@ function drawObjects(list, wheelsAt = () => null) {
     if (K && K.shape === 'hull') {
       const H = hullOf(K), m = H && hullView(o.id ?? o, held, () => Object.assign(new THREE.Group(), { matrixAutoUpdate: false }))
       if (!m) continue
+      objShown.add(m)
       if (m.parent !== objGroup) objGroup.add(m)
       const paint = K.drive ? variantColor(K, o.seed, o.id) : undefined
       if (m.userData.k !== o.k || m.userData.paint !== paint) {
@@ -9968,11 +9972,20 @@ function drawObjects(list, wheelsAt = () => null) {
     }
     if (!(n[o.k] < OBJ_MAX)) continue
     if (!objMesh[o.k]) objGroup.add(objMesh[o.k] = objLook(OBJECTS[o.k]))
-    objMesh[o.k].setMatrixAt(n[o.k]++, T[0].compose(T[1].set(o.x, o.y, o.z), T[2].set(...o.q), T[3]))
+    // a slot rewritten only when its object or pose changed
+    const B = objMesh[o.k], i = n[o.k]++, S = B.userData.slots ||= { keys: [], pose: new Float64Array(OBJ_MAX * 7), moved: false }, p = S.pose, b = i * 7, key = o.id ?? o
+    if (S.keys[i] !== key || p[b] !== o.x || p[b + 1] !== o.y || p[b + 2] !== o.z || p[b + 3] !== o.q[0] || p[b + 4] !== o.q[1] || p[b + 5] !== o.q[2] || p[b + 6] !== o.q[3]) {
+      S.keys[i] = key; p[b] = o.x; p[b + 1] = o.y; p[b + 2] = o.z; p[b + 3] = o.q[0]; p[b + 4] = o.q[1]; p[b + 5] = o.q[2]; p[b + 6] = o.q[3]; S.moved = true
+      B.setMatrixAt(i, T[0].compose(T[1].set(o.x, o.y, o.z), T[2].set(...o.q), T[3]))
+    }
   }
-  objMesh.forEach((m, k) => {         // new bounds, or it is culled where it was
-    if (m && (m.count = n[k])) { m.instanceMatrix.needsUpdate = true; m.computeBoundingSphere() }
+  objMesh.forEach((m, k) => {         // new bounds, or it is culled where it was; a bucket nothing in changed stays as it is
+    const S = m?.userData.slots
+    if (m && m.count !== n[k]) { m.count = n[k]; if (S) S.moved = true }
+    if (m && m.count && S?.moved) { m.instanceMatrix.needsUpdate = true; m.computeBoundingSphere(); S.moved = false }
   })
+  for (const m of shownWas) if (!objShown.has(m)) m.visible = false
+  objStamp++
   if (wheelBucket) {
     for (const m of wheelBucket) m.count = wheelN
     if (wheelN) { wheelBucket[0].instanceMatrix.needsUpdate = true; wheelBucket[0].computeBoundingSphere(); wheelBucket[1].boundingSphere = wheelBucket[0].boundingSphere }
@@ -14192,6 +14205,7 @@ function track(into, id, cap, t, p) {
 // `o`: rows of [kind id x y z qx qy qz qw]
 function takeObjects(o, t) {
   if (!Number.isFinite(t) || !flatList(o, 9, OBJ_MAX * 9)) return
+  objRows++
   for (let i = 0; i < o.length; i += 9) {
     const [k, id, x, y, z, ...q] = o.slice(i, i + 9), n = Math.hypot(...q)
     if (!OBJECTS[k] || !Number.isInteger(id) || id < 0 || id >= OBJ_MAX) continue
@@ -14253,7 +14267,12 @@ function seatFrom(o) {
 
 // a track not sent lately: settled at its last row, the same record each call while that row, held and seed stand
 const settledAt = new Map()
+// one answer a frame: its later calls take the first while its inputs stand (objStamp moves on once the frame's objects
+// are drawn; a row taken, a hold or prediction changed, or the settled records emptied asks afresh)
+let objRows = 0, objAtLast = null
 function objectsAt(t) {
+  const L = objAtLast
+  if (L && L.t === t && L.stamp === objStamp && L.rows === objRows && L.held === objHeld.size && L.preds === objs.length && settledAt.size >= L.settled) return L.out
   const out = []
   for (const [id, tr] of objTracks) {
     if (objs.some(o => o.id === id)) continue          // predicted
@@ -14269,6 +14288,7 @@ function objectsAt(t) {
     if (last.t < t) settledAt.set(id, { at: last, r })
     out.push(r)
   }
+  objAtLast = { t, stamp: objStamp, rows: objRows, held: objHeld.size, preds: objs.length, settled: settledAt.size, out }
   return out
 }
 
