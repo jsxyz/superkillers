@@ -242,7 +242,11 @@
 
   /* the HUD shows while playing, by a rule that out-specifies #id{display:none} */
   body.playing #hud, body.playing #gun, body.playing #hp,
-  body.playing #reticle, body.playing #chat{display:block}
+  body.playing #reticle, body.playing #chat, body.playing.tdm #round{display:block}
+  #round{position:fixed;top:34px;left:50%;transform:translateX(-50%);z-index:5;display:none;pointer-events:none;color:#e6edf3;
+    font-weight:700;text-shadow:0 1px 3px #000;white-space:nowrap}
+  #round .bar{display:inline-block;vertical-align:middle;width:120px;height:8px;margin-left:6px;background:#0d1117c0;border:1px solid #e6edf38c}
+  #round .bar span{display:block;height:100%;background:#2d6fd4}
 
   #dbg{position:fixed;top:0;left:0;z-index:12;display:none;padding:6px 9px;
     background:rgba(6,8,12,.72);color:#dfe6ee;font-size:11.5px;line-height:1.5;
@@ -490,7 +494,7 @@
       <label>LEVEL</label>
       <div id="levels" class="cards"></div>
       <label>MODE</label>
-      <div class="sides"><button id="mode-waves">Waves</button><button id="mode-ffa">Free-for-all</button></div>
+      <div class="sides"><button id="mode-waves">Waves</button><button id="mode-ffa">Free-for-all</button><button id="mode-tdm">Team deathmatch</button></div>
       <label>EVENT</label>
       <div class="sides" id="events"></div>
       <button id="host-btn" class="go">Host game</button>
@@ -543,6 +547,7 @@
 </div></div>
 
 <div id="hud"></div>
+<div id="round"></div>
 <div id="vote"><div id="vote-text"></div><div class="help">Y/N to vote · no vote = no objection</div>
   <button id="vote-yes" class="b">Yes</button><button id="vote-no" class="b">No</button><button id="vote-cancel">Cancel</button></div>
 <div id="reticle"></div>
@@ -2427,7 +2432,11 @@ for (const [i, B] of BOTS.entries()) {
 }
 for (const C of CHARS) C.shift &&= ref(C.shift)
 const START = ref('Sam')
-const MODES = ['ffa', 'waves']
+const MODES = ['ffa', 'waves', 'tdm']
+const MODE_NAMES = { ffa: 'Free-for-all', waves: 'Waves', tdm: 'Team deathmatch' }
+// team deathmatch: one hero against the squad, a life each a round. hpPer: the hero's hp is its row's times this times
+// the squad's size at the round's start; minutes: the round's length when the host sets none
+const TDM = { hero: 'heroes', squad: 'killers', hpPer: 1, minutes: 5 }
 let gameMode = 'waves'
 // the dated event the room plays, null if none; its rows play only while it is on
 let eventOn = null
@@ -3152,7 +3161,7 @@ function pickSpawn(c) {
   for (const s of SPAWNS) {
     let near = 1e6
     for (const o of spawnAvoid) {
-      if (o === c || o.dead > 0) continue
+      if (o === c || o.dead > 0 || gameMode === 'tdm' && GAME.participantOf(o).side === GAME.participantOf(c).side) continue
       near = Math.min(near, Math.hypot(s[0] - o.x, s[2] - o.z))
     }
     const score = Math.min(near, 60) + Math.random() * 5
@@ -3207,6 +3216,14 @@ const botOf = id => (id >= BOT_ID0 ? BOTS[id - BOT_ID0] : null) || null
 // bot row, else CHARS row, else START's; every ability is read from it
 const rowFor = (id, cid, B = botOf(id)) => (B && B.altRow?.cid === cid ? B.altRow : B) || CHARS[cid] || CHARS[START]
 const rowOf = c => c.bot || rowFor(-1, c.cid), sideOf = c => rowOf(c).side
+// team deathmatch: two bodies of one side, neither's attacks harm the other
+const friendly = (a, b) => gameMode === 'tdm' && !!a && !!b && a !== b && sideOf(a) === sideOf(b)
+// the hero's most hp this round, the host's (a guest's from the snapshot); 0 outside team deathmatch
+let heroMax = 0
+const isHero = (id, cid) => gameMode === 'tdm' && rowFor(id, cid).side === TDM.hero
+const fullHp = (id, cid) => isHero(id, cid) && heroMax || rowFor(id, cid).hp
+// a human holds the hero slot
+const heroTaken = id => gameMode === 'tdm' && [...roster].some(([i, p]) => i < BOT_ID0 && i !== id && CHARS[p.cid]?.side === TDM.hero)
 const sideOffered = k => gameMode !== 'waves' || !SIDES[k] || !!SIDES[k].waves
 let balanceOn = true
 const humansOn = (k, skip) => [...roster].filter(([id, p]) => id < BOT_ID0 && id !== skip && CHARS[p.cid]?.side === k).length
@@ -3216,7 +3233,7 @@ function sideLocked(k, id) {
   const [mine, theirs] = tally(k, id)
   return { locked: balanced() && CHARS[roster.get(id)?.cid]?.side !== k && mine > theirs, mine, theirs }
 }
-const fallbackRow = id => { const k = Object.keys(SIDES).filter(sideOffered).sort((a, b) => humansOn(a, id) - humansOn(b, id))[0]
+const fallbackRow = id => { const k = gameMode === 'tdm' ? TDM.squad : Object.keys(SIDES).filter(sideOffered).sort((a, b) => humansOn(a, id) - humansOn(b, id))[0]
   return PICKABLE.find(i => CHARS[i].side === k && !taken(CHARS[i].team, id)) ?? START }
 const colorOf = (id, cid) => rowFor(id, cid).color
 function skinOf(id, cid) {
@@ -3890,6 +3907,7 @@ function stepTornado(dt, all, onKill) {
       if (d > r || c.y - c.h - c.r > TOR_TOP) continue
       const s = seatOf(c)
       if (s) { if (!rode.has(s[0])) { rode.add(s[0]); s[0].hp -= dmg; s[0].by = T.by } continue }
+      if (friendly(players.get(T.by), c)) continue      // but not a team deathmatch side's own
       const was = hookHitOn && [c.hp, c.mark, c.markT]
       c.hp -= dmg
       if (was && !hookHit(players.get(T.by), c, 'Tornado', was)) continue
@@ -4144,7 +4162,21 @@ function camEase(o, t, v, p, u) {
   return t - d
 }
 let heldF = 1
+// team deathmatch: the dead watch a living body, humans first; FIRE the next, ALT the one before
+let watchId = null, watchName = '', watchBody = null, watchFire = false, watchAlt = false
+function watching(me, others, fire, alt) {
+  const live = gameMode === 'tdm' && me.dead > 0 ? others.filter(o => !(o.dead > 0)).sort((a, b) => (a.id >= BOT_ID0) - (b.id >= BOT_ID0) || a.id - b.id) : []
+  if (!live.length) { watchId = null; watchName = ''; watchBody = null; return }
+  let i = Math.max(0, live.findIndex(o => o.id === watchId))
+  if (watchId !== null && fire && !watchFire) i = (i + 1) % live.length
+  if (watchId !== null && alt && !watchAlt) i = (i + live.length - 1) % live.length
+  watchFire = fire; watchAlt = alt
+  const o = live[i], b = o.sim || { ...o }
+  if (!o.sim) takeBody(b, GAME.participant(o.id, o.cid))
+  watchId = o.id; watchName = roster.get(o.id)?.name || GAME.participant(o.id, o.cid).name; watchBody = b
+}
 function updateCamera(me, inp, cam, firstPerson) {
+  if (watchBody) { me = watchBody; inp = { yaw: watchBody.yaw, pitch: watchBody.pitch || 0 }; firstPerson = false }
   const seat = !(me.dead > 0) && seatOf(me)
   if (seat) return vehicleCamera(seat[0], me, inp, cam, firstPerson)
   const rd = !(me.dead > 0) && rideOf(me)
@@ -5095,6 +5127,7 @@ function launchObject(o, L, ux, uz) {
 function strike(c, h, G, ux, uy, uz, rode) {
   const s = seatOf(h)
   if (s) { if (!rode?.has(s[0])) { rode?.add(s[0]); strikeObject(c, s[0], G, ux, uy, uz) } return }
+  if (friendly(c, h)) return
   const was = hookHitOn && [h.hp, h.mark, h.markT]
   if (G.apply) { h.mark = powerNamed(G.apply); h.markT = POWERS[h.mark - 1]?.dur ?? 0 }
   // Amp is read off the shooter, Shield off the shot: they compose
@@ -5281,6 +5314,12 @@ function endMatch(why) {
   resultsLeft = RESULTS_S
   const best = [...players.values()].sort((a, b) => b.kills - a.kills)[0]
   const who = best ? (roster.get(best.id) || {}).name || '?' : '?'
+  if (gameMode === 'tdm') {
+    const hero = heroBody(), won = hero && !(hero.dead > 0)
+    roundOn = false
+    announce('§e' + why + ' §f' + (won ? nameOf(hero) : 'The squad') + ' §7wins')
+    return hookMatchEnd(why === 'Time.' ? 'time' : 'elimination', best, won ? TDM.hero : TDM.squad)
+  }
   announce('§e' + why + ' §f' + who + ' §7wins with §f' + (best ? best.kills : 0))
   hookMatchEnd(why === 'Time.' ? 'time' : 'frags', best)
 }
@@ -5289,8 +5328,10 @@ function resetMatch() {
   hookMatchStart(matchInfo)
   resultsLeft = 0
   matchLeft = timeLimit
+  if (gameMode === 'tdm') roundBots()
   spawnObjects()
   for (const c of players.values()) { c.kills = 0; respawn(c) }
+  if (gameMode === 'tdm') roundHero()
   for (const p of pickups) p.respawn = 0
   clearTornado()
   announce('§7New round.')
@@ -5392,7 +5433,7 @@ function stepPickups(dt, list) {
         let got
         const H = healOf(pk)
         if (H) {
-          const max = CHARS[c.cid].hp
+          const max = isHero(c.id, c.cid) && heroMax || CHARS[c.cid].hp
           if (c.hp >= max) continue
           c.hp = Math.min(max, c.hp + H.amount)
           got = H.name
@@ -12200,9 +12241,8 @@ function openHost() {
   markLevel(cs, Object.keys(CITY_SIZES).indexOf(settings.city))
   const ek = settings.event || 'auto'
   el('#set-event').textContent = 'Event: ' + eventLabel(ek) + (ek === 'auto' ? ' (' + (eventOn ? eventOn.name : 'none') + ')' : '')
-  el('#set-mode').textContent =
-    'Enemies: ' + (gameMode === 'waves' ? 'waves' : 'free-for-all')
-  for (const id of ['bots', 'balance', 'frags', 'time']) el('#set-' + id + '-row').style.display = gameMode === 'ffa' ? '' : 'none'
+  el('#set-mode').textContent = 'Enemies: ' + MODE_NAMES[gameMode].toLowerCase()
+  for (const id of ['bots', 'balance', 'frags', 'time']) el('#set-' + id + '-row').style.display = gameMode === 'ffa' || gameMode === 'tdm' && (id === 'bots' || id === 'time') ? '' : 'none'
   const bots = el('#set-bots'), out = el('#set-bots-v')
   bots.max = regulars()
   bots.value = BOT_COUNT
@@ -12247,7 +12287,7 @@ function initSettings() {
   }
   el('#set-mode').onclick = () => {
     GAME.match.mode(nextOf(MODES, gameMode))
-    announce('§7Mode: §f' + gameMode)
+    announce('§7Mode: §f' + MODE_NAMES[gameMode])
     openHost()
   }
   el('#host-back').onclick = settingsBack
@@ -12928,7 +12968,7 @@ function closeCharPick() {
 // join mode: a guest connected and not yet in; its hello waits for this pick
 const joinPick = () => picking
 const pickSelf = () => joinPick() ? -1 : myId
-const roomName = () => (eventOn ? eventOn.name + ' · ' : '') + (gameMode === 'waves' ? 'Waves' : 'Free-for-all')
+const roomName = () => (eventOn ? eventOn.name + ' · ' : '') + MODE_NAMES[gameMode]
 // the room's sides in one grid: a card selects, Play (or Enter, or a second click) confirms
 const pickSides = () => [...Object.keys(SIDES), ''], sideColor = C => (SIDES[C.side] || C).color
 // a hidden form (a shift) stands for the row it shifts from
@@ -13861,10 +13901,10 @@ function hookFilter(kind, data, take) {
 }
 // a body as the events tell it: its in-room id (reused once it leaves) and its name as the host took it, not an identity
 function hookWho(c) {
-  const R = GAME.participantOf(c), p = roster.get(c.id)
-  return !c.bot ? { id: c.id, name: p ? p.name : '?', kind: 'player', character: R.name }
-    : c.owner !== undefined ? { id: c.id, name: R.name, kind: 'ally', character: R.name, owner: c.owner }
-    : { id: c.id, name: p ? p.name : R.name, kind: 'enemy', character: R.name }
+  const R = GAME.participantOf(c), p = roster.get(c.id), side = R.side
+  return !c.bot ? { id: c.id, name: p ? p.name : '?', kind: 'player', character: R.name, side }
+    : c.owner !== undefined ? { id: c.id, name: R.name, kind: 'ally', character: R.name, owner: c.owner, side }
+    : { id: c.id, name: p ? p.name : R.name, kind: 'enemy', character: R.name, side }
 }
 const hookPlayer = id => players.has(id) ? hookWho(players.get(id)) : { id, name: roster.get(id)?.name ?? '?', kind: 'player', character: '?' }
 const hookStandings = () => [...players.values()].filter(c => roster.has(c.id)).sort((a, b) => b.kills - a.kills).map(c => ({ ...hookWho(c), kills: c.kills | 0 }))
@@ -13895,10 +13935,10 @@ function hookMatchStart(info) {
   hookMatchId = null; hookMatchOpen = true
   if (hooked['match.start']) hookEmit('match.start', info())
 }
-function hookMatchEnd(reason, best) {
+function hookMatchEnd(reason, best, winnerSide) {
   if (!hookMatchOpen) return
   hookMatchOpen = false
-  if (hooked['match.end']) hookEmit('match.end', { reason, winner: best ? { ...hookWho(best), kills: best.kills | 0 } : null, standings: hookStandings() })
+  if (hooked['match.end']) hookEmit('match.end', { reason, winner: best ? { ...hookWho(best), kills: best.kills | 0 } : null, standings: hookStandings(), ...winnerSide && { winnerSide } })
 }
 // a hit as the game dealt it (was: the victim's [hp, mark, markT] before): a filter may refuse it, undone whole and its
 // knock not given, or set its damage; then it is told. false: refused
@@ -14033,6 +14073,8 @@ function hostIn() {
   players.set(0, Object.assign(newChar(myCid, -6, 0), { id: 0 }))
   roster.set(0, { cid: myCid, name: myName })
   GAME.rows.joined(players.get(0), myCid)
+  // team deathmatch: the round begins with the host in it
+  if (gameMode === 'tdm') GAME.match.restart()
   pushRoster()
   if (poll) countVote()
 }
@@ -14806,6 +14848,7 @@ const HOST_MSGS = {
     const name = cleanName(d.name) || 'player'
     players.set(id, Object.assign(newChar(cid, 0, 0), { id }))
     respawn(players.get(id))
+    if (gameMode === 'tdm') { if ([...players.values()].some(c => !c.bot && c.id !== id)) players.get(id).dead = RESPAWN_S; else setTimeout(GAME.match.restart, 0) }
     roster.set(id, { cid, name })
     GAME.rows.joined(players.get(id), cid)
     inputs.set(id, { f: 0, r: 0, j: false, fire: false, yaw: 0, pitch: 0 })
@@ -15704,7 +15747,7 @@ const SQUAD = (r => [...r.filter(i => BOTS[i].always).sort((a, b) => BOTS[a].alw
 const squadWant = () => gameMode === 'ffa' && BOT_COUNT ? [...fieldedTeams()].reduce((n, t) => n + (TEAMS[t].foes | 0), BOT_COUNT) : 0
 
 function stepSquad() {
-  let want = Math.min(SQUAD.length, squadWant()), moved = false
+  let want = Math.min(SQUAD.length, gameMode === 'tdm' ? roundSquad : squadWant()), moved = false
   for (const i of SQUAD.filter(i => !offEvent(BOTS[i]))) {
     const c = players.get(BOT_ID0 + i)
     if (want-- > 0) moved = !c && addBot(i) || moved
@@ -15726,12 +15769,44 @@ function addBot(i) {
 
 function spawnBots(n) {
   BOT_COUNT = clamp(n | 0, 0, regulars())
-  spawnList(heroWant())
+  // team deathmatch takes the count at its next round
+  if (gameMode !== 'tdm') spawnList(heroWant())
 }
 
-function heroWant() {
+function heroWant(n = BOT_COUNT) {
   const on = fieldedTeams()
-  return BOTS.flatMap((B, i) => !B.squad && !on.has(B.team) && !offEvent(B) ? [i] : []).sort((a, b) => !!BOTS[a].rare - !!BOTS[b].rare || !BOTS[a].event - !BOTS[b].event).slice(0, BOT_COUNT)
+  return BOTS.flatMap((B, i) => !B.squad && !on.has(B.team) && !offEvent(B) ? [i] : []).sort((a, b) => !!BOTS[a].rare - !!BOTS[b].rare || !BOTS[a].event - !BOTS[b].event).slice(0, n)
+}
+
+// team deathmatch's round: the human on the hero's side is the hero, else one bot; bots fill the squad to Bots per side
+let roundSquad = 0, roundSize = 0, roundOn = false
+// the hero: the one up, where a joiner on its side waits down for the next round
+const heroBody = () => (h => h.find(c => !(c.dead > 0)) || h[0])([...players.values()].filter(c => sideOf(c) === TDM.hero))
+const nameOf = c => roster.get(c.id)?.name || rowOf(c).name
+function roundBots() {
+  const humans = [...players.values()].filter(c => !c.bot)
+  // a pick made in the last round: the row this one plays; a team fielded in free-for-all plays no part
+  for (const c of humans) { const p = roster.get(c.id); if (p && p.cid !== c.cid) moveTo(c, p.cid); dropMates(c.id) }
+  spawnList(humans.some(c => sideOf(c) === TDM.hero) ? [] : heroWant(1))
+  roundSquad = Math.max(0, BOT_COUNT - humans.filter(c => sideOf(c) === TDM.squad).length)
+  stepSquad()
+}
+// after the round's respawn: the hero's hp for the squad it faces
+function roundHero() {
+  roundSize = [...players.values()].filter(c => sideOf(c) === TDM.squad).length
+  const hero = heroBody()
+  heroMax = hero ? Math.round(rowOf(hero).hp * Math.max(1, roundSize * TDM.hpPer)) : 0
+  if (hero) hero.hp = heroMax
+  roundOn = true
+}
+// the hero down: the squad wins; the squad down (if it had any): the hero does
+function roundCheck() {
+  // a room with no player plays no round: its clock waits for the first
+  if (![...players.values()].some(c => !c.bot)) { matchLeft = timeLimit; return }
+  if (!roundOn) return
+  const hero = heroBody()
+  if (!hero || hero.dead > 0) return endMatch('The hero is down.')
+  if (roundSize && ![...players.values()].some(c => sideOf(c) === TDM.squad && !(c.dead > 0))) endMatch('The squad is down.')
 }
 
 function teamsChanged() {
@@ -15748,9 +15823,13 @@ function setMode(m) {
   if (m === 'waves' && humans > WAVES_PLAYERS) { sysMsg('§cWaves takes ' + WAVES_PLAYERS + ' players; ' + humans + ' are here.'); return false }
   gameMode = m
   for (const c of players.values()) if (!c.bot && !sideOffered(sideOf(c))) moveTo(c, START)
+  // team deathmatch: the first human on the hero's side keeps the slot
+  if (m === 'tdm') [...players.values()].filter(c => !c.bot && sideOf(c) === TDM.hero).slice(1).forEach(c => moveTo(c, fallbackRow(c.id)))
   pushRoster()
   waveAt = -1; waveGap = 0
+  timeLimit = minutesOf() * 60; matchLeft = timeLimit; heroMax = 0
   if (m === 'ffa') spawnBots(BOT_COUNT)
+  else if (m === 'tdm') resetMatch()
   else spawnList([]), stepSquad()
   return true
 }
@@ -15811,9 +15890,10 @@ function vehicleTick(list, credit, touch, dt) {
     if (!(J > 0) || !list.includes(c) || c.dead > 0) continue
     const dx = c.x - o.x, dz = c.z - o.z, d = Math.hypot(dx, dz) || 1, v = o.body.getLinearVelocity(), into = (v.x() * dx + v.z() * dz) / d
     if (into < 2 || o.thrownBy !== undefined) continue
+    const L = o.launchBy !== undefined, by = L ? o.launchBy !== c.id && players.get(o.launchBy) : players.get(o.riders[0])
+    if (friendly(by, c)) continue
     const was = hookHitOn && [c.hp, c.mark, c.markT]
     c.hp -= stat(c, 'take', o.V.ram * into)
-    const L = o.launchBy !== undefined, by = L ? o.launchBy !== c.id && players.get(o.launchBy) : players.get(o.riders[0])
     if (was && !hookHit(by, c, L ? GUNS[o.launchG].name : o.K.name, was)) continue
     knockChar(c, dx / d, 0.3, dz / d, into * 0.5)
     if (downed(c)) by ? credit(by.id, by)(c, L ? GUNS[o.launchG] : { name: o.K.name }) : fell(c, 'was run over by a ' + o.K.name, o.K.name)
@@ -15843,6 +15923,7 @@ function boom(o, list, credit) {
   o.riders.forEach((id, i) => { const c = id !== undefined && players.get(id); if (c) leave(c, o, i) })
   for (const c of list) {
     const dx = c.x - at[0], dz = c.z - at[2], d = Math.hypot(dx, c.y - at[1], dz), k = 1 - d / B.radius
+    if (friendly(by, c)) continue
     const was = hookHitOn && [c.hp, c.mark, c.markT]
     if (c.dead > 0 || k <= 0 || seatOf(c)) continue      // riders: their vehicle takes it
     c.hp -= stat(c, 'take', B.dmg * k)
@@ -15901,9 +15982,11 @@ function dashStrikes(list, credit) {
 
 // effect held for `struck` s
 function objectStrikes(o, c, credit) {
+  const by = players.get(o.thrownBy)
+  if (friendly(by, c)) return
   const W = o.K.weakens, e = W && weakFx(c, o.K)
   if (e) { c.mark = e; c.markT = Math.max(c.markT, W.struck) }
-  const by = players.get(o.thrownBy), D = by && hurlOf(by)?.dmg
+  const D = by && hurlOf(by)?.dmg
   if (!D || c.prot > 0) return
   const was = hookHitOn && [c.hp, c.mark, c.markT]
   c.hp -= stat(c, 'take', stat(by, 'give', D))
@@ -15924,7 +16007,7 @@ const HOST_PHASES = {
   } else if (timeLimit && matchLeft > 0 && (matchLeft -= dt) <= 0) {
     matchLeft = 0
     endMatch('Time.')
-  }
+  } else if (gameMode === 'tdm') roundCheck()
   },
   beforeIntent: t => { const { dt, cur } = t
   for (const [id, c] of players) {
@@ -16075,10 +16158,13 @@ GAME.lifecycle = {
     hostEvent()
     resultsLeft = 0
     fragLimit = settings.frags; timeLimit = settings.mins * 60
+    if (gameMode === 'tdm') timeLimit = minutesOf() * 60
     matchLeft = timeLimit
     hookMatchStart(matchInfo)
   },
   populate() {
+    // team deathmatch: its bots on stage; its round begins with the first player in
+    if (gameMode === 'tdm') { roundBots(); roundHero(); return }
     if (gameMode === 'waves') startWave(0)
     else spawnBots(BOT_COUNT)
   },
@@ -16090,7 +16176,7 @@ GAME.lifecycle = {
     pk: pickups.filter(p => p.respawn <= 0).map(p => [p.x, p.y, p.z, p.gun, p.pow, p.heal]),
     mo: resultsLeft > 0 ? r2(resultsLeft) : 0,
     ml: timeLimit ? r2(matchLeft) : 0,
-    fl: gameMode === 'waves' ? 0 : fragLimit, md: gameMode, bl: settings.balance !== false ? 1 : 0,
+    fl: gameMode === 'ffa' ? fragLimit : 0, md: gameMode, bl: settings.balance !== false ? 1 : 0, ...gameMode === 'tdm' && { hm: heroMax },
     tw: tornadoNow()?.map(r2), ...eventOn && { ev: eventOn.name },
   }),
   takeItems(d) {
@@ -16109,6 +16195,8 @@ GAME.lifecycle = {
     matchLeft = d.ml || 0
     fragLimit = d.fl | 0
     if (MODES.includes(d.md)) gameMode = d.md
+    // the host's: a whole count of hp, at most HERO_MAX
+    heroMax = gameMode === 'tdm' ? clamp(Math.floor(+d.hm) || 0, 0, HERO_MAX) : 0
     if (d.bl !== undefined) balanceOn = !!d.bl
     setEvent(typeof d.ev === 'string' && EVENTS.find(E => E.name === d.ev) || null)
     if (joinPick() && !pickOpen && phase === 'playing') { openCharPick(); prepareRows(gameMode === 'waves' ? botPairs(waveOrder()) : GAME.rows.visitors()) }
@@ -16129,7 +16217,7 @@ function rollRare(c) {
 function becomeChar(c, cid) {
   const frac = c.hp / CHARS[c.cid].hp, guns = gunsOf(c), team = CHARS[c.cid].team
   applyChar(c, cid)
-  if (isHost && !c.bot && team !== CHARS[cid].team) { const p = roster.get(c.id); if (p) p.cid = cid; dropMates(c.id); if (CHARS[cid].team) fieldTeam(c); teamsChanged() }
+  if (isHost && !c.bot && team !== CHARS[cid].team) { const p = roster.get(c.id); if (p) p.cid = cid; dropMates(c.id); if (CHARS[cid].team && gameMode !== 'tdm') fieldTeam(c); teamsChanged() }
   if (!guns || !gunsOf(c)) armRow(c)
   if (!CHARS[cid].manyGuns) c.bag = 0
   c.hp = Math.max(1, Math.round(CHARS[cid].hp * frac))
@@ -16156,6 +16244,12 @@ const moveTo = (c, cid) => { becomeChar(c, cid); const p = roster.get(c.id); if 
 
 function switchChar(c, cid) {
   const C = CHARS[cid]
+  // team deathmatch: one hero; a pick is the row the next round plays
+  if (gameMode === 'tdm' && !c.bot && C && !C.hidden && !offEvent(C)) {
+    if (C.side === TDM.hero && heroTaken(c.id)) return false
+    if (cid !== (roster.get(c.id)?.cid ?? c.cid)) tell(c.id, '§7You play §f' + C.name + '§7 from the next round.')
+    return true
+  }
   if (!C || C.hidden || offEvent(C) || cid === c.cid || c.dead > 0 || c.shiftCool > 0) return false
   if (!sideOffered(C.side) || !c.bot && sideLocked(C.side, c.id).locked) return false
   if (!c.bot && C.team && C.team === CHARS[c.cid].team) {
@@ -16168,6 +16262,7 @@ function switchChar(c, cid) {
 
 // a downed player's team: those still up hold its respawn, and after TEAM_BEAT it swaps into the nearest free one
 function teamDown(c, dt) {
+  if (gameMode === 'tdm') c.dead = RESPAWN_S      // team deathmatch: down until the round ends
   const team = isHost ? onTeam(c) : [], up = team.filter(m => m.dead <= 0)
   if (up.length) {
     c.dead = RESPAWN_S
@@ -16193,8 +16288,9 @@ function noSwap(c, cid) {
   p.no = why; p.noAt = t
 }
 function setFragLimit(n) { fragLimit = settings.frags = n; saveSettings() }
+const minutesOf = () => gameMode === 'tdm' && !settings.mins ? TDM.minutes : settings.mins
 function setMatchMinutes(n) {
-  timeLimit = n * 60
+  timeLimit = (gameMode === 'tdm' && !n ? TDM.minutes : n) * 60
   matchLeft = timeLimit              // a new length is a new clock
   settings.mins = n; saveSettings()
 }
@@ -16260,11 +16356,13 @@ GAME.commands = {
 // why the room refuses character i to this player now, '' if it doesn't
 function refusal(i) {
   const C = CHARS[i], L = sideLocked(C.side, pickSelf())
+  if (C.side === TDM.hero && !offEvent(C) && heroTaken(pickSelf())) return 'Taken: one hero a round'
   return offEvent(C) ? C.event + ' only' : !sideOffered(C.side) ? roomName() + ': ' + Object.keys(SIDES).filter(sideOffered).map(k => SIDES[k].name).join(', ') + ' only'
     : L.locked ? 'Balanced: ' + L.mine + ' v ' + L.theirs : taken(C.team, pickSelf()) ? 'Taken' : ''
 }
 // a joining player's row: the one it asked for, unless this room cannot take it (told why), and its team fielded once it stands
 const visitors = () => gameMode === 'ffa' ? picked({ visits: true }) : []
+const HERO_MAX = 1e6
 GAME.rows = {
   visitors: () => botPairs(visitors()),
   admit(id, asked) {
@@ -16278,14 +16376,18 @@ GAME.rows = {
       cid = fallbackRow(id)
       tell(id, '§eThe room changed while you picked: you play §f' + CHARS[cid].name + '§e. Pause → Character to change.')
     }
+    if (CHARS[cid].side === TDM.hero && heroTaken(id)) {
+      cid = fallbackRow(id)
+      tell(id, '§eOne hero a round, and it is taken: you play §f' + CHARS[cid].name + '§e.')
+    }
     return cid
   },
-  joined(c, cid) { if (CHARS[cid].team) fieldTeam(c), teamsChanged() },
+  joined(c, cid) { if (CHARS[cid].team && gameMode !== 'tdm') fieldTeam(c), teamsChanged() },
   switch: switchChar,
   refuse: noSwap,
   refusal,
   // what the pick screen's room note adds
-  pickNote: () => balanced() ? ' · sides balanced' : '',
+  pickNote: () => gameMode === 'tdm' ? ' · one hero; a pick plays from the next round' : balanced() ? ' · sides balanced' : '',
   // the bots whose looks the menu prepares for a player on this row
   menuBots: cid => gameMode === 'ffa' || !sideOffered(CHARS[cid].side) ? [...heroWant(), ...SQUAD, ...visitors()] : waveOrder(),
   cid: v => clamp(v | 0, 0, CHARS.length - 1),
@@ -16912,8 +17014,9 @@ function draw(dt, t) {
   GAME.audio.frame(me, others, t, obl)
   GAME.audio.radio()
 
+  watching(me, others, input.fire, input.alt)
   const cam = updateCamera(meD, input, camera, firstPerson)
-  GAME.view.radar(meD, others, t)
+  GAME.view.radar(watchBody || meD, others, t)
   const held = cam.ray && obl.find(o => !o.K.carry && (o.heldBy ?? objHeld.get(o.id)) === myId)
   heldF += ((held ? heldFade(cam.ray, me, held) : 1) - heldF) * timeShare(dt, TICK / 0.15)
   for (const m of objPool) if (m.visible) ghost(m, 0, (held && m.userData.oid === held.id ? heldF : 1) * (OBJECTS[m.userData.k].glow === undefined ? 1 : GLOW_OP))
@@ -16957,7 +17060,7 @@ let lastTabSig = null, lastProfSig = null
 function standings(others) {
   const me = selfChar()
   return (me ? [{ id: myId, kills: me.kills }] : [])
-    .concat(others.filter(o => roster.has(o.id) || !CHARS[o.cid]?.team).map(o => ({ id: o.id, kills: o.kills || 0 })))
+    .concat(others.filter(o => roster.has(o.id) || !CHARS[o.cid]?.team).map(o => ({ id: o.id, cid: o.cid, kills: o.kills || 0 })))
     .sort((a, b) => b.kills - a.kills)
 }
 function scoreRows(rows) {
@@ -16965,9 +17068,10 @@ function scoreRows(rows) {
     const p = roster.get(r.id) || { cid: START, name: r.id === myId ? myName : '?' }
     const col = css(colorOf(r.id, p.cid))
     const bot = r.id >= BOT_ID0
+    const side = gameMode === 'tdm' && GAME.participant(r.id, r.cid ?? (r.id === myId ? selfChar()?.cid : null) ?? p.cid).side
     return '<tr><td style="color:' + col + '">' + esc(p.name) +
            (r.id === myId ? ' <span style="color:#555">(you)</span>' : '') +
-           '</td><td style="color:#7d8590">' + (bot ? 'enemy' : CHARS[p.cid].name) +
+           '</td><td style="color:#7d8590">' + (side ? (side === TDM.hero ? 'hero' : 'squad') : bot ? 'enemy' : CHARS[p.cid].name) +
            '</td><td class="k">' + (r.kills | 0) + '</td></tr>'
   }).join('')
 }
@@ -17000,8 +17104,10 @@ function drawResults(others) {
   lastResSig = sig
   const top = rows[0] || { id: myId, kills: 0 }
   const who = (roster.get(top.id) || {}).name || (top.id === myId ? myName : '?')
-  el('#restitle').textContent =
-    top.id === myId ? 'YOU WIN' : who + ' WINS'
+  const me = selfChar(), heroes = gameMode === 'tdm' ? [me && { id: myId, cid: me.cid, dead: me.dead }, ...others].filter(o => o && GAME.participant(o.id, o.cid).side === TDM.hero) : []
+  const hero = heroes.find(o => !(o.dead > 0)), won = hero && (roster.get(hero.id)?.name || GAME.participant(hero.id, hero.cid).name)
+  el('#restitle').textContent = gameMode === 'tdm' ? (won ? won.toUpperCase() + ' WINS' : 'THE SQUAD WINS')
+    : top.id === myId ? 'YOU WIN' : who + ' WINS'
   el('#resrows').innerHTML = scoreRows(rows)
   el('#resnext').textContent = 'Next round in ' + left + (isHost ? ' on ' + LEVELS[nextLevel >= 0 ? nextLevel : levelId].name +
     (IS_TOUCH ? ' (tap a level to change it)' : ' (press 1-' + Math.min(9, LEVELS.length) + ' to change it)') : '')
@@ -17088,7 +17194,7 @@ function initServerPanel() {
 function drawHud(me, others, t) {
   const G = GUNS[me.gun]
   const FC = CHARS[me.cid]
-  const frac = clamp(me.hp / CHARS[me.cid].hp, 0, 1)
+  const frac = clamp(me.hp / fullHp(myId, me.cid), 0, 1)
   const hage = t - hitFlash
   const ff = FC.jet ? clamp((me.fuel || 0) / FC.jet.fuel, 0, 1) : 0
   const nm = (roster.get(myId) || {}).name || myName
@@ -17181,9 +17287,20 @@ function drawHud(me, others, t) {
   const clock = matchLeft > 0
     ? '  ·  ' + mmss(matchLeft)
     : ''
+  // team deathmatch: the squad still up of its size, and the hero's health
+  hud('tdm', document.body, '.tdm', gameMode === 'tdm')
+  if (gameMode === 'tdm') {
+    const all = [{ id: myId, cid: me.cid, dead: me.dead, hp: me.hp }, ...others], squad = all.filter(o => rowFor(o.id, o.cid).side === TDM.squad)
+    const heroes = all.filter(o => isHero(o.id, o.cid)), hero = heroes.find(o => !(o.dead > 0)) || heroes[0]
+    hud('round', el('#round'), 'innerHTML', 'SQUAD ' + squad.filter(o => !(o.dead > 0)).length + '/' + squad.length +
+      (hero ? '  ·  ' + esc(roster.get(hero.id)?.name || rowFor(hero.id, hero.cid).name) + ' <span class="bar"><span style="width:' +
+        (hero.dead > 0 ? 0 : clamp(hero.hp / fullHp(hero.id, hero.cid), 0, 1) * 100).toFixed(1) + '%"></span></span>' : ''))
+  }
   const use = liftOf(me) > 0 ? 'lift' : objs.some(p => takeable(me, p)) ? 'use' : ''
   const K = padLast ? padHints() : HINT_KEYS
-  hud('hud', el('#hud'), 'textContent', IS_TOUCH && !padLast
+  if (watchName) hud('hud', el('#hud'), 'textContent', 'SPECTATING ' + watchName + '  ·  ' + (IS_TOUCH && !padLast ? 'FIRE' : K.fire) + ' next  ·  ' +
+    (IS_TOUCH && !padLast ? 'ATK' : K.alt) + ' previous' + clock)
+  else hud('hud', el('#hud'), 'textContent', IS_TOUCH && !padLast
     ? nm + '  ·  FIRE ' + G.name + dives(G) + (cycles ? '  ·  WPN next' : '') + (P ? '  ·  ATK ' + P.name + dives(P) : '') + (use ? '  ·  USE ' + use : '') + clock
     : nm + '  ·  ' + K.move + ' move  ·  ' + K.sprint + ' sprint  ·  ' + K.jump + ' ' + (FC.jet?.flier ? 'fly/rise  ·  ' + K.down + ' down' : 'jump' + (FC.swing ? '  ·  ' + K.down + ' zip' : '')) +
       '  ·  ' + K.fire + ' ' + G.name +
