@@ -14059,6 +14059,8 @@ const GUEST_LOAD_MS = 180000     // host: a joiner's silence before its first in
 const JOIN_OPEN_MS = 20000       // host: a joiner's link that has not opened by then is closed
 const JOIN_WAIT_MS = 15000       // guest: a join whose signaling or room has not come by then has failed
 const JOIN_TELL_MS = 10000       // host: a link that never opened is told in the chat at most this often
+const SIG_TELL_MS = 60000        // host playing: a new cause of its signaling failure is told in the chat at most this often
+let sigSaid = null               // what the chat was last told of it: { say, at }, say 'back' once it came back
 let joinToldAt = -Infinity
 let lastRecvAt = 0
 const lastSeen = new Map()
@@ -14605,6 +14607,7 @@ function openHostPeer(attempt) {
   clearTimeout(relinkTimer); relinkTimer = 0; relinkTries = 0
   peer = new Peer(roomCodeStr)
   const F = linkFacts(true)
+  if (!attempt) sigSaid = null
   peer.on('error', e => {
     // open room: its code IS the room; re-rolling on 'unavailable-id' kills every guest's peer
     if (phase === 'playing' && roomOpen) {
@@ -14626,14 +14629,20 @@ function openHostPeer(attempt) {
       openHostPeer(attempt + 1)
       return
     }
-    // the room's own failure, its report under the status, or for a host already playing in the pause menu
+    // the room's own failure, its report under the status; for a host already playing, the latest in the pause menu, and in
+    // the chat once a cause, a new one no sooner than SIG_TELL_MS after the last
     Object.assign(F, { end: now(), err: e.type === 'unavailable-id' ? e.type : failType(e), said: e?.message || '' })
-    note(joinSay(F) + (phase === 'playing' ? ' Details are in the pause menu.' : ''), 'err')
+    const told = joinSay(F)
     linkInfo(joinReport(F), el(phase === 'playing' ? '#pause-note' : '#status'))
+    if (phase !== 'playing') return setStatus(told, 'err')
+    if (sigSaid && (sigSaid.say === told || now() - sigSaid.at < SIG_TELL_MS)) return
+    sigSaid = { say: told, at: now() }
+    sysMsg('§c' + told + ' Details are in the pause menu.')
   })
   peer.on('open', () => {
     relinkTries = 0
     if (F.sig < 0) F.sig = sinceLink(F)
+    if (sigSaid && sigSaid.say !== 'back' && phase === 'playing') { sigSaid = { say: 'back', at: sigSaid.at }; sysMsg('§7Signaling is back.') }
     if (!roomOpen) { roomOpen = true; setRoomTag(roomTagOn)
       if (el('#codereveal')?.textContent === OPENING) revealCode()
       if (el('#codeqr')?.textContent === OPENING) drawCodeQR() }
