@@ -8570,7 +8570,8 @@ function initGraphicsLifecycle() {
   if (!renderHeadless && renderer.compileAsync) renderer.compileAsync = compileForContext
   canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); graphicsLost() })
   canvas.addEventListener('webglcontextrestored', graphicsRestored)
-  el('#graphics-reload').onclick = () => location.reload()
+  const reload = typeof el === 'function' && el('#graphics-reload')
+  if (reload) reload.onclick = () => location.reload()
 }
 
 function buildWorld() {
@@ -8594,7 +8595,7 @@ function buildWorld() {
     if (glLost()) { graphicsLost(); return }
     if (graphics.state === 'lost') return
     if (s === scene) { if (drawSkip || worldHidden()) return; if (underCover) worldAt = now() }
-    renderer.debug.checkShaderErrors = phase !== 'playing'      // a draw that links on the spot defeats parallel compiling; shaderCheck reads the results
+    if (renderer.debug) renderer.debug.checkShaderErrors = typeof phase === 'undefined' || phase !== 'playing'      // a draw that links on the spot defeats parallel compiling; shaderCheck reads the results
     try { render(s, cam); if (graphics.state === 'restoring' && s === scene) graphicsReady() } finally { for (const o of culled.splice(0)) o.visible = true }
   }
   avatarGroup = new THREE.Group(); scene.add(avatarGroup)
@@ -16404,9 +16405,6 @@ const HOST_PHASES = {
     k.kills++
     if (hooked.kill) hookEmit('kill', { killer: hookWho(k), victim: hookWho(victim), weapon: G.name, ...c !== k && { via: hookWho(c) } })
     if (fragLimit && gameMode === 'ffa' && k.kills >= fragLimit) endMatch('Frag limit.')
-    const vn = (roster.get(victim.id) || {}).name || rowOf(victim).name
-    const own = (roster.get(k.id) || {}).name || '?', kn = c === k ? own : rowOf(c).name + ' (' + own + ')'
-    announce('§f' + kn + ' §7dropped §f' + vn + ' §8(' + G.name + ')')
     killTell(k, victim, G)
     const who = c.bot ? c.bot.name : CHARS[c.cid].name, lines = SPEECH[who]
     if (lines) GAME.audio.speak(who, Math.random() * (lines.length - 1) | 0)
