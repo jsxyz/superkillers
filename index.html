@@ -220,6 +220,25 @@
   #hitmark:before,#hitmark:after{content:'';position:absolute;left:7px;top:0;width:2px;height:16px;
     background:#f85149}
   #hitmark:before{transform:rotate(45deg)}#hitmark:after{transform:rotate(-45deg)}
+  #killmark{position:fixed;left:50%;top:50%;width:34px;height:34px;margin:-17px 0 0 -17px;z-index:4;
+    display:none;pointer-events:none;opacity:0;filter:drop-shadow(0 0 4px #ff2d2d)}
+  #killmark:before,#killmark:after{content:'';position:absolute;left:15px;top:0;width:4px;height:34px;
+    background:#ff2d2d}
+  #killmark:before{transform:rotate(45deg)}#killmark:after{transform:rotate(-45deg)}
+  #feed{position:fixed;top:56px;right:12px;z-index:5;display:none;width:min(320px,46vw);pointer-events:none;
+    text-align:right;font-size:13px;text-shadow:0 1px 3px #000}
+  body.playing #feed{display:block}
+  body.touch #feed{top:calc(150px + env(safe-area-inset-top));right:calc(12px + env(safe-area-inset-right));width:min(190px,46vw);font-size:10px}
+  @media (orientation:landscape) and (max-height:500px){ body.touch #feed{top:calc(8px + env(safe-area-inset-top));left:335px;right:auto;width:min(400px,calc(100vw - 520px))} }
+  #feed div{margin-top:2px;padding:2px 8px;background:rgba(6,8,12,.55);border-radius:4px;white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis;animation:feedout 5s linear forwards}
+  #feed div.me{border:1px solid #f85149}
+  #feed .w{color:#8b949e}
+  @keyframes feedout{0%,80%{opacity:1}100%{opacity:0}}
+  #callout{position:fixed;left:50%;top:24%;z-index:6;display:none;pointer-events:none;transform:translateX(-50%);
+    white-space:nowrap;font-weight:800;font-size:clamp(26px,6vmin,64px);letter-spacing:.06em;text-transform:uppercase;
+    color:#ffd23f;text-shadow:0 2px 0 #7a4b00,0 0 18px #ff9d00,0 2px 8px #000}
+  body.touch #callout{top:40%}
   #tab{position:fixed;inset:0;display:none;place-items:center;z-index:9;pointer-events:none}
   #results{position:fixed;inset:0;display:none;place-items:center;z-index:10;pointer-events:none}
   #vote{position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:9;display:none;padding:6px 12px;border:1px solid #30363d;border-radius:8px;
@@ -559,6 +578,9 @@
   <button id="vote-yes" class="b">Yes</button><button id="vote-no" class="b">No</button><button id="vote-cancel">Cancel</button></div>
 <div id="reticle"></div>
 <div id="hitmark"></div>
+<div id="killmark"></div>
+<div id="feed"></div>
+<div id="callout"></div>
 <div id="hp"><canvas id="radar" width="150" height="150"></canvas><div id="teamstrip"></div><div id="hpbar"><div id="hpfill" style="width:100%"></div></div><div id="fuelbar"><div id="fuelfill"></div></div><div id="sprinting">SPRINT</div></div>
 <div id="veh"><span id="vspd">0</span> <span class="u"></span><div id="vname"></div>
   <div id="vhpbar"><div id="vhpfill"></div></div><div id="radio"></div></div>
@@ -1964,6 +1986,17 @@ const SPEECH = {
   Kaiji:        ['gruff 666',   '[angry] RRRAAAWRGH!', 'Extinction is forever.'],
   Xenotype:     ['gruff 731',   'Sweet dreams.', 'Caught in the dreamcatcher.'],
 }
+// what the announcer calls and the centre of the screen shows: kills within MULTI_MS of each other (2, 3, 4 or more), then
+// SPREE_AT and RAMPAGE_AT kills without a death. `say` is read in the announcer's voice after the waves' lines
+const CALLOUTS = [
+  { text: 'Double kill',   say: 'Double kill!' },
+  { text: 'Triple kill',   say: 'Triple kill!' },
+  { text: 'Multi kill',    say: 'Multi kill!' },
+  { text: 'Killing spree', say: 'Killing spree!' },
+  { text: 'Rampage',       say: 'Rampage!' },
+]
+const MULTI_MS = 4000, SPREE_AT = 5, RAMPAGE_AT = 10
+const FEED_MAX = 5, FEED_MS = 5000, KILL_MS = 520, CALL_MS = 1800, LEAD_MIN = 3
 
 const TICK = 1 / 60
 // the share a smoother moves in dt s that moves k in a 60 Hz frame
@@ -3224,6 +3257,7 @@ function respawn(c) {
   c.hp = (c.bot && c.bot.hp) || CHARS[c.cid].hp
   c.fuel = tankOf(c)
   c.jLock = false
+  c.run = c.multi = 0
   if (c.bot) c.gun = gunNamed([c.bot.atk].flat()[0]); else armRow(c)
   c.ammo = Infinity; c.cool = 0; c.dead = 0
   c.charge = 0; c.burstLeft = 0
@@ -5202,7 +5236,7 @@ function castPellet(shooter, targets, yaw, pitch, G, fx) {
 const reachOf = (c, G) => G.range * profRange(c, G.name) * (G.melee ? 1 : eff(c, 'reach'))
 
 // true only on the killing hit
-const downed = c => c.hp <= 0 && c.dead <= 0 && (c.dead = RESPAWN_S, true)
+const downed = c => c.hp <= 0 && c.dead <= 0 && (c.dead = RESPAWN_S, c.ended = c.run | 0, c.run = c.multi = 0, true)
 
 function blast(c, aimed, P, r, gunId, onKill) {
   const fx = [], rode = new Set()
@@ -12913,6 +12947,7 @@ async function startVoices() {
   actStage = 'is looking for lines kept from an earlier visit'
   const lines = WAVES.map((w, i) => ['announcer:' + i, SPEECH.announcer[0],
                                      w.name.charAt(0) + w.name.slice(1).toLowerCase() + '!'])
+  CALLOUTS.forEach((c, j) => lines.push(['announcer:' + (WAVES.length + j), SPEECH.announcer[0], c.say]))
   for (const who in SPEECH) for (let i = 1; i < SPEECH[who].length; i++)
     lines.push([who + ':' + (i - 1), SPEECH[who][0], SPEECH[who][i]])
   voiceLines = lines.length
@@ -13626,6 +13661,51 @@ function nameTag(id) {
   if (!p) return '<span style="color:#aaa">?</span>'
   const col = css(GAME.participant(id, p.cid).color)
   return '<span style="color:' + col + '">' + esc(p.name) + '</span>'
+}
+
+// kills: the host counts each killer's run since its last death and its kills within MULTI_MS of each other, and tells every
+// player (`kf`: killer, victim, weapon, multi m, run s, the victim's ended run x); each page draws the feed, marker and callout
+// from it. The callout a kill earns: an index into CALLOUTS, or -1
+const calloutOf = (m, s) => s === RAMPAGE_AT ? 4 : s === SPREE_AT ? 3 : m >= 4 ? 2 : m === 3 ? 1 : m === 2 ? 0 : -1
+function killTally(k, victim) {
+  const t = now()
+  k.run = (k.run | 0) + 1
+  k.multi = t - (k.killAt ?? -Infinity) < MULTI_MS ? (k.multi | 0) + 1 : 1
+  k.killAt = t
+  return { m: k.multi, s: k.run, x: victim.ended | 0 }
+}
+function killTell(k, victim, G) {
+  const e = killTally(k, victim), ev = { k: 'kf', a: k.id, v: victim.id, w: String(G.name).slice(0, 24), ...e }
+  killShow(ev)
+  broadcast(ev)
+  const j = calloutOf(e.m, e.s)
+  if (j >= 0) GAME.audio.speak('announcer', WAVES.length + j)
+}
+let killFlash = -Infinity, calloutAt = -Infinity, calloutText = ''
+// a name's colour on the feed's dark ground: its hue and saturation kept, its lightness at least 60%
+function feedColor(c) {
+  const r = (c >> 16 & 255) / 255, g = (c >> 8 & 255) / 255, b = (c & 255) / 255, hi = Math.max(r, g, b), lo = Math.min(r, g, b), d = hi - lo, l = (hi + lo) / 2
+  const h = !d ? 0 : hi === r ? (g - b) / d + (g < b ? 6 : 0) : hi === g ? (b - r) / d + 2 : (r - g) / d + 4
+  return 'hsl(' + Math.round(h * 60) + ' ' + Math.round((d ? d / (1 - Math.abs(2 * l - 1)) : 0) * 100) + '% ' + Math.round(Math.max(l, 0.6) * 100) + '%)'
+}
+const feedRows = []
+function killShow(d) {
+  const t = now(), row = document.createElement('div')
+  for (const [id, text] of [[d.a, ''], [-1, ' › ' + d.w + ' › '], [d.v, '']]) {
+    const s = document.createElement('span'), p = roster.get(id)
+    s.textContent = id < 0 ? text : p ? p.name : '?'
+    if (id < 0) s.className = 'w'; else if (p) s.style.color = feedColor(GAME.participant(id, p.cid).color)
+    row.appendChild(s)
+  }
+  if (d.a === myId || d.v === myId) row.className = 'me'
+  el('#feed').appendChild(row)
+  feedRows.push({ row, t })
+  while (feedRows.length > FEED_MAX) feedRows.shift().row.remove()
+  if (d.a === myId && d.v !== myId) {
+    killFlash = t
+    const j = calloutOf(d.m, d.s)
+    if (j >= 0) { calloutText = CALLOUTS[j].text; calloutAt = t }
+  } else if (d.v === myId && d.x >= SPREE_AT) { calloutText = 'Spree ended by ' + (roster.get(d.a)?.name ?? '?'); calloutAt = t }
 }
 
 function showChat(id, text, action) {
@@ -15256,6 +15336,10 @@ const GUEST_MSGS = {
   lag: { apply: d => { onLag(d.n) } },
   say: { apply: d => { GAME.audio.say(String(d.w), d.i | 0) } },
   sys: { apply: d => { sysMsg(String(d.m || '').slice(0, 200)) }, validate: d => hostLine() ? d : null },
+  kf: { validate: d => {
+    const id = n => Number.isInteger(n) && n >= 0 && n < 1e6, num = n => Number.isInteger(n) && n >= 0 && n <= 999 ? n : 0
+    return hostLine() && id(d.a) && id(d.v) ? { a: d.a, v: d.v, w: String(d.w ?? '').slice(0, 24), m: num(d.m), s: num(d.s), x: num(d.x) } : null
+  }, apply: d => { killShow(d) } },
   poll: { apply: d => {
     takePoll(d); return
   } },
@@ -16154,6 +16238,7 @@ const HOST_PHASES = {
     const vn = (roster.get(victim.id) || {}).name || rowOf(victim).name
     const own = (roster.get(k.id) || {}).name || '?', kn = c === k ? own : rowOf(c).name + ' (' + own + ')'
     announce('§f' + kn + ' §7dropped §f' + vn + ' §8(' + G.name + ')')
+    killTell(k, victim, G)
     const who = c.bot ? c.bot.name : CHARS[c.cid].name, lines = SPEECH[who]
     if (lines) GAME.audio.speak(who, Math.random() * (lines.length - 1) | 0)
   }
@@ -17165,6 +17250,32 @@ function draw(dt, t) {
 // this game's panels: the tab, the results and the serving host's panel; the engine calls them through GAME.view
 const dives = G => G?.dive ? ' (dives in the air)' : ''
 let lastTabSig = null, lastProfSig = null
+// the free-for-all's leader, with LEAD_MIN kills and more than anyone: a crown over their head (leadId is the radar's to mark)
+let leaderCrown = null, leadId = -1
+function makeCrown() {
+  const g = new THREE.Group(), gold = new THREE.MeshBasicMaterial({ color: 0xffd23f, side: THREE.DoubleSide })
+  g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.42, 0.22, 12, 1, true), gold))
+  for (let i = 0; i < 5; i++) {
+    const a = i / 5 * Math.PI * 2, spike = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.34, 6), gold)
+    spike.position.set(Math.cos(a) * 0.46, 0.27, Math.sin(a) * 0.46)
+    g.add(spike)
+  }
+  scene.add(g)
+  return g
+}
+function drawCrown(me, others, t) {
+  const rows = gameMode === 'ffa' ? standings(others) : []
+  leadId = rows[0] && rows[0].kills >= LEAD_MIN && rows[0].kills > (rows[1] ? rows[1].kills : -1) ? rows[0].id : -1
+  const lead = leadId === myId ? me : others.find(o => o.id === leadId)
+  if (!lead || lead.dead > 0 || leadId === myId && firstPerson) { if (leaderCrown) leaderCrown.visible = false; return }
+  leaderCrown ||= makeCrown()
+  const C = GAME.participant(leadId, lead.cid), s = Math.max(0.2, C.r * 1.2)
+  leaderCrown.visible = true
+  leaderCrown.scale.setScalar(s)
+  leaderCrown.position.set(lead.x, lead.y + C.h + C.r + 0.3 * s, lead.z)
+  leaderCrown.rotation.y = t / 600
+}
+
 function standings(others) {
   const me = selfChar()
   return (me ? [{ id: myId, kills: me.kills }] : [])
@@ -17392,6 +17503,14 @@ function drawHud(me, others, t) {
   hud('retic', el('#reticle'), 'display', me.dead > 0 ? 'none' : 'block')
   hud('hitD', el('#hitmark'), 'display', hage < 260 ? 'block' : 'none')
   if (hage < 260) el('#hitmark').style.opacity = String(1 - hage / 260)
+  const kage = t - killFlash, cage = t - calloutAt
+  hud('killD', el('#killmark'), 'display', kage < KILL_MS ? 'block' : 'none')
+  if (kage < KILL_MS) { const s = el('#killmark').style; s.opacity = String(1 - kage / KILL_MS); s.transform = 'scale(' + (1 + 0.6 * (1 - kage / KILL_MS)) + ')' }
+  hud('callT', el('#callout'), 'textContent', calloutText)
+  hud('callD', el('#callout'), 'display', cage < CALL_MS ? 'block' : 'none')
+  if (cage < CALL_MS) { const s = el('#callout').style; s.opacity = String(Math.min(1, 2.5 * (1 - cage / CALL_MS))); s.transform = 'translateX(-50%) scale(' + (1 + 0.25 * (1 - Math.min(1, cage / 250))) + ')' }
+  while (feedRows.length && t - feedRows[0].t > FEED_MS) feedRows.shift().row.remove()
+  drawCrown(me, others, t)
   const clock = matchLeft > 0
     ? '  ·  ' + mmss(matchLeft)
     : ''
