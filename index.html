@@ -874,7 +874,7 @@ const THREE = ENABLE3D.THREE
 
 // ---------------------------------------------------------------- tuning
 // ---- CONTENT, what a reskin edits: CHARS (bots: BOTS; teams: TEAMS + `team`), SIDES, WAVES, GUNS + SOUNDS,
-//   POWERS, HEALS, OBJECTS, LEVELS, VEHICLES, MODELS (COSTUMES), READINGS + SPEECH, RADIO
+//   POWERS, HEALS, OBJECTS, LEVELS, VEHICLES, MODELS (COSTUMES), BODIES, READINGS + SPEECH, RADIO
 // CHARS: roster first, then the rows BOTS play. r, h: capsule = hitbox = drawn size (m). card: name if not `name`
 // skin: colour per body part (partOf). atk: a bot's spawn weapon; atk/far may list several, one per engagement
 // weak: OBJECTS or CHARS that weaken it; weakness: the POWERS effect they apply (else theirs). weakens: as OBJECTS'
@@ -886,6 +886,7 @@ const THREE = ENABLE3D.THREE
 // shove: { mass: its capsule's, so Bullet's contacts knock vehicles; sprint: only sprinting; cap: m/s faster than a vehicle moves away that it closes on it }
 // sprintSpd: on-foot sprint m/s (default speed); jet.sprint: flight sprint m/s
 // swing: { range m, pace: m/s it travels }. bones: { box_man bone: [x, y, z] } (y: length). sparks: running-spark colour
+// mesh: a BODIES row, the served body it wears over its costume
 const VITOSCREEN_SKIN = { shell: 0xe1dec7, rim: 0x536651, screen: 0x78d72b,
   phosphor: 0x94dd43, ink: 0x254e24, gold: 0xe8c24a }
 // SIDES (CHARS `side`): color: picker; guns: false = players carry none (clicks fire atk/far); waves: the waves' side;
@@ -911,7 +912,7 @@ const CHARS = [
     role:'ARTEMIS unit · hovers', model:'artie',
     skin:{ shell:0xf2f0f7, trim:0xb9a7d8, face:0x14161f, eye:0x8fd6ff } },
   { name:'Sam',    side:'killers', atk:'Pistol', r:0.38, h:0.51, speed:7.2, jump:8.28, hp: 95, color:0xe8a33d,
-    role:'Agency assassin · 100 heroes from home', primary:'Raygun', costume:'agent',
+    role:'Agency assassin · 100 heroes from home', primary:'Raygun', costume:'agent', mesh:'sam',
     skin:{ head:0x3b2a55, torso:0xe8a33d, arm:0xe8a33d, hand:0xbbd3e8, leg:0xe8a33d, boot:0xbbd3e8 },
     gait: 2.85, sprintGait: 4.75, bones: { leg_upper: [1, 1.85, 1], leg_lower: [1, 2.12, 1.25], arm_upper: [1, 1.46, 1], arm_lower: [1, 1.46, 1], head: [0.69, 0.69, 0.69], body_upper: [0.8, 1.09, 1.2], body_lower: [1, 1.15, 1] },
     shape:{ torso:[1.02, 1, 0.94], arm:[1, 1, 1], hand:[0.97, 1, 0.97], leg:[1.1, 1, 1.25], boot:[1.08, 1, 1.02] } },
@@ -1404,6 +1405,22 @@ const MODELS = {
     slots: ['shell', 'rim', 'screen', 'phosphor', 'ink', 'gold'],
   },
 }
+// BODIES (CHARS `mesh`): a body served from ASSET_DIR beside the page, on the shared 65-joint skeleton; the row's box_man rig
+//   still runs every clip and pose and drives it. The row's costume draws until it loads, if it fails, or with the page
+//   opened on its own. far: its distant mesh's node. The file's extras: box_man's bind joints (rig) and, per driven joint,
+//   its box_man bones, their blend and its world matrix while box_man stands in its bind (drive)
+const BODIES = {
+  sam: { file: 'sam.0422f9cf.glb', far: 'sam_lod' },
+}
+const ASSET_SITE = 'https://jsxyz.github.io/superkillers/assets/'
+const BODY_LIBS = [
+  { name: 'bgu', url: 'https://cdn.jsdelivr.net/npm/three@0.171.0/examples/jsm/utils/BufferGeometryUtils.js',
+    sri: 'sha384-wOjwauvHlJO7K6APr7FmMGH2nupQa3Ndzas9bJZhsAMOK055efJud8ns4aYmASKv' },
+  { name: 'gltf', url: 'https://cdn.jsdelivr.net/npm/three@0.171.0/examples/jsm/loaders/GLTFLoader.js',
+    sri: 'sha384-Lq1Wl94so5JCKGDvezrdVMJhdeKQkwb8iwRo59QrPPd61CnrCJZLxYmFlQ8ZuOKR', swaps: [["from '../utils/BufferGeometryUtils.js'", 'bgu']], expose: 'GLTF' },
+  { name: 'meshopt', url: 'https://cdn.jsdelivr.net/npm/three@0.171.0/examples/jsm/libs/meshopt_decoder.module.js',
+    sri: 'sha384-zhZjnxc+3j2IeX2itXt+5CnnC0YleVRvu5EOaj733tRp38E9hBPnZjweEWX2kN7y', expose: 'Meshopt' },
+]
 const TORSO_PROFILE = [[0, -0.54], [0.46, -0.54], [0.49, -0.38], [0.44, -0.20],
   [0.455, -0.10], [0.485, 0], [0.50, 0.06], [0.58, 0.28], [0.51, 0.39], [0.29, 0.49], [0.20, 0.52], [0, 0.52]]
 // COSTUMES body: sleeves' torso tag; blend: colours cuffs; bare/band: dress bare joints; plain: no trim
@@ -7956,6 +7973,106 @@ function onModelLoaded(M, gltf) {
   rebuildAvatars()
 }
 
+// a served body rides its avatar's box_man rig: placed by the affine map that takes four of box_man's bind joints, as the
+// file records them, onto the rig's; each frame its driven joints take box_man's world turns (two bones blended where it
+// has more joints than box_man), the rest keep their own pose. Its node updates drive it, so every measure sees it posed.
+const FIT_JOINTS = ['head', 'leg_lowerL', 'leg_lowerR', 'knee_IKL']
+const DRIVES = new Map(), driven = new WeakMap()
+let ServedBody, dv, dq, dq2, dm
+// made on first use: a realm without three never meets it
+const servedBody = () => ServedBody ||= ((dv = new THREE.Vector3(), dq = new THREE.Quaternion(), dq2 = new THREE.Quaternion(), dm = new THREE.Matrix4()), class ServedBody extends THREE.Group {
+  updateMatrixWorld(force) { driveBody(this); super.updateMatrixWorld(force) }
+  updateWorldMatrix(parents, children) { super.updateWorldMatrix(parents, false); if (children) { driveBody(this); for (const c of this.children) c.updateWorldMatrix(false, true) } }
+})
+// world turns as quaternion chains: box_man's from its Armature down, the body's from its own top down
+function driveBody(g) {
+  const D = DRIVES.get(g.userData.drive), rig = g.parent?.children.find(n => n.isSkinnedMesh)
+  if (!D || !rig) return
+  let R = driven.get(g)
+  if (!R) {
+    const box = [], seen = new Set(rig.skeleton.bones)
+    rig.parent.traverse(n => { if (seen.has(n)) box.push(n) })
+    const mine = new Map(), E = D.map(e => ({ ...e, bone: g.getObjectByName(e.name), a: box.findIndex(b => b.name === e.a), b: box.findIndex(b => b.name === e.b), q: new THREE.Quaternion() }))
+    for (const e of E) { mine.set(e.bone, e); e.via = []
+      let o = e.bone.parent; for (; o !== g && !mine.has(o); o = o.parent) e.via.unshift(o)
+      e.up = mine.get(o) || null }
+    driven.set(g, R = { box, up: box.map(b => box.indexOf(b.parent)), wq: box.map(() => new THREE.Quaternion()), E, qa: new THREE.Quaternion(), qg: new THREE.Quaternion() })
+  }
+  g.parent.matrixWorld.decompose(dv, R.qa, dv)
+  for (let i = 0; i < R.box.length; i++) R.wq[i].multiplyQuaternions(R.up[i] < 0 ? R.qa : R.wq[R.up[i]], R.box[i].quaternion)
+  R.qg.multiplyQuaternions(R.qa, g.quaternion)
+  for (const e of R.E) {
+    dq.multiplyQuaternions(R.wq[e.a], e.qa)
+    if (e.f) dq.slerp(dq2.multiplyQuaternions(R.wq[e.b], e.qb), e.f)
+    dq2.copy(e.up ? e.up.q : R.qg)
+    for (const o of e.via) dq2.multiply(o.quaternion)
+    e.q.copy(dq)
+    dq2.invert().multiply(dq)
+    if (e.at) {         // its place: box_man's bone's world, through the body's top, into its parent
+      if (g.matrixAutoUpdate) g.updateMatrix()
+      dm.multiplyMatrices(g.parent.matrixWorld, g.matrix)
+      for (const o of e.via) dm.multiply(o.matrix)
+      e.bone.position.copy(dv.copy(e.ta).applyMatrix4(R.box[e.a].matrixWorld).applyMatrix4(dm.invert()))
+    }
+    e.bone.matrix.compose(e.bone.position, dq2, e.bone.scale)
+    e.bone.matrixWorldNeedsUpdate = true
+  }
+}
+const bindAt = (mesh, i, m = new THREE.Matrix4()) => m.copy(mesh.bindMatrix).invert().multiply(mesh.skeleton.boneInverses[i].clone().invert())
+// a served body on the rig of `root` (a fresh clone of a rigged proto, so at its bind): the rig keeps its bones and draws nothing
+function wearServed(root, B, key) {
+  let rig
+  root.traverse(n => { if (n.isSkinnedMesh && !rig) rig = n })
+  rig.geometry = builtGeo.get(key + ':rig') || shareGeo(key + ':rig', rig.geometry.clone().setIndex([]))
+  rig.material = rig.material.clone()
+  const at = n => bindAt(rig, rig.skeleton.bones.findIndex(b => b.name === n))
+  const X = B.rig.userData, cols = ps => new THREE.Matrix4().set(...[0, 1, 2].flatMap(k => ps.map(p => p[k])), 1, 1, 1, 1)
+  const T = cols(FIT_JOINTS.map(n => new THREE.Vector3().setFromMatrixPosition(at(n)).toArray())).multiply(cols(FIT_JOINTS.map(n => X.rig[n])).invert())
+  if (!DRIVES.has(key)) DRIVES.set(key, X.drive.map(([name, a, b, f, W]) => { const Wt = T.clone().multiply(new THREE.Matrix4().fromArray(W))
+    const Ca = at(a).invert().multiply(Wt), Cb = at(b).invert().multiply(Wt)
+    return { name, a, b, f, at: name === 'pelvis', qa: new THREE.Quaternion().setFromRotationMatrix(dm.extractRotation(Ca)), qb: new THREE.Quaternion().setFromRotationMatrix(dm.extractRotation(Cb)),
+      ta: new THREE.Vector3().setFromMatrixPosition(Ca) } }))
+  const body = cloneSkinned(meshDetail ? B.farTemplate : B.template)
+  body.traverse(n => { if (n.isMesh) n.material = n.material.clone() })
+  body.userData.drive = key
+  root.updateMatrixWorld(true)        // at its bind: bone · inverse maps the rig's bind space to the world
+  rig.parent.matrixWorld.clone().invert().multiply(rig.skeleton.bones[0].matrixWorld).multiply(rig.skeleton.boneInverses[0]).multiply(T)
+    .decompose(body.position, body.quaternion, body.scale)
+  rig.parent.add(body)
+}
+// every cache a row's costume body filled is stale once its served body arrives
+function onBodyLoaded(B, gltf) {
+  const meshes = gltf.scene.getObjectsByProperty('isSkinnedMesh', true), isFar = m => m.name === B.far || m.parent?.name === B.far
+  for (const m of meshes) {
+    const g = m.geometry
+    g.userData.parts = (g.userData.parts || []).map(([tags, start, count]) => ({ tags, start, count }))
+    g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(1), 3))
+    m.material.vertexColors = true
+    m.userData.part = 'body'
+    m.castShadow = true
+  }
+  B.rig = gltf.scene.getObjectByName('body65')
+  gltf.scene.traverse(n => { if (n !== gltf.scene) { n.updateMatrix(); n.matrixAutoUpdate = false } })        // the drive sets its joints' matrices
+  const template = far => { const g = new (servedBody())(), s = cloneSkinned(gltf.scene)
+    s.traverse(n => { if (n.isSkinnedMesh && isFar(n) !== far) n.visible = false })
+    for (const n of s.getObjectsByProperty('visible', false)) n.removeFromParent()
+    g.add(...s.children); return g }
+  B.template = template(false); B.farTemplate = meshes.some(isFar) ? template(true) : B.template
+  builtBounds.clear(); walkLows.clear(); detailCache.clear(); prepKept.clear(); DRIVES.clear(); prepAt = null
+  if (MODELS.man.proto) rebuildAvatars()
+}
+// the bodies the roster wears, from ASSET_DIR beside the page, else from the published site; none opened from a file
+async function loadBodies() {
+  const want = Object.values(BODIES).filter(B => CHARS.some(C => BODIES[C.mesh] === B))
+  if (!want.length || location.protocol === 'file:') return
+  const env = await (self.THREE = THREE, geoLoad(BODY_LIBS)), D = env.Meshopt.MeshoptDecoder
+  try { D.useWorkers(2) } catch (e) {}
+  const loader = new env.GLTF.GLTFLoader().setMeshoptDecoder(D)
+  for (const B of want) for (const url of [ASSET_DIR + B.file, ASSET_SITE + B.file]) {
+    try { onBodyLoaded(B, await loader.loadAsync(url)); break } catch (e) { console.warn('body ' + url + ' failed:', e && e.message) }
+  }
+}
+
 // gltf() may throw or reject; either keeps the capsule fallback
 function loadModels() {
   for (const name of Object.keys(MODELS)) {
@@ -7968,6 +8085,7 @@ function loadModels() {
       console.warn('model ' + name + ' unavailable, using capsules:', e && e.message)
     }
   }
+  loadBodies().catch(e => console.warn('bodies unavailable:', e && e.message))
 }
 
 // seeded and pure: draws alike on every screen and realm
@@ -8140,6 +8258,22 @@ float getSunShadow() {
 `
   return true
 })()
+// What the sun does not light, the sky fills: a surface in the sun's shadow, or turned from it, takes SUN_FILL of the
+// hemisphere light's sky colour as well, and a sunlit surface takes none. If three's lights chunk is not the shape this
+// expects, nothing is patched (SUN_FILLED is false).
+const SUN_FILL = 2.0
+const SUN_FILLED = (() => {
+  const C = THREE.ShaderChunk, begin = C.lights_fragment_begin
+  if (typeof begin !== 'string') return false
+  const from = begin.indexOf('directionalLight = directionalLights[ i ];'), at = from < 0 ? -1 : begin.indexOf('RE_Direct(', from), end = at < 0 ? -1 : begin.indexOf(';', at) + 1
+  if (end <= 0 || begin.indexOf('#pragma unroll_loop_end', from) < end) return false
+  C.lights_fragment_begin = begin.slice(0, end) + `
+#if UNROLLED_LOOP_INDEX == 0 && defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0 && NUM_HEMI_LIGHTS > 0
+	reflectedLight.indirectDiffuse += ${SUN_FILL.toFixed(2)} * hemisphereLights[ 0 ].skyColor * BRDF_Lambert( material.diffuseColor )
+		* ( 1.0 - clamp( directLight.color.g / max( directionalLights[ 0 ].color.g, 0.0001 ), 0.0, 1.0 ) * smoothstep( 0.0, 0.3, dot( geometryNormal, directLight.direction ) ) );
+#endif` + begin.slice(end)
+  return true
+})()
 let renderer, scene, camera, scene3d, sunLight, avatarGroup, pickGroup, tracerGroup, worldGroup
 const avatars = new Map()
 const pickPool = [], tracerPool = [], boxPool = [], orbPool = [], slashPool = [], whipPool = [], ringPool = [], flashPool = [], effectPool = [], glowPool = []
@@ -8305,6 +8439,27 @@ function cityFacadeMap() {
   return cityMap
 }
 
+// a facade's foot: the triangles that touch its base are cut CONTACT.h up, and each corner there takes its colour toward CONTACT.dark
+// of itself at the base, so the wall shades into the ground it stands on
+const CONTACT = { h: 1.2, dark: 0.55 }
+function footShade(g, base) {
+  const keys = ['position', 'normal', 'uv', 'color'], A = keys.map(k => g.attributes[k]), top = base + CONTACT.h, out = A.map(() => [])
+  const corner = i => A.map(a => Array.from({ length: a.itemSize }, (_, c) => a.array[i * a.itemSize + c]))
+  const cut = (poly, lower) => poly.flatMap((a, i) => {
+    const b = poly[(i + 1) % poly.length], ina = lower ? a[0][1] <= top : a[0][1] >= top, inb = lower ? b[0][1] <= top : b[0][1] >= top, t = (top - a[0][1]) / (b[0][1] - a[0][1])
+    const hit = A.map((_, k) => a[k].map((v, c) => v + (b[k][c] - v) * t))
+    return ina === inb ? (ina ? [a] : []) : ina ? [a, hit] : [hit]
+  })
+  const emit = v => v.forEach((x, k) => out[k].push(...(k === 3 ? x.map(c => c * Math.max(CONTACT.dark, Math.min(1, CONTACT.dark + (1 - CONTACT.dark) * (v[0][1] - base) / CONTACT.h))) : x)))
+  for (let i = 0; i < A[0].count; i += 3) {
+    const tri = [corner(i), corner(i + 1), corner(i + 2)]
+    if (Math.min(...tri.map(v => v[0][1])) > base + 0.05) { tri.forEach(v => emit(v)); continue }
+    for (const poly of [cut(tri, true), cut(tri, false)]) for (let j = 1; j < poly.length - 1; j++) { emit(poly[0]); emit(poly[j]); emit(poly[j + 1]) }
+  }
+  const o = new THREE.BufferGeometry()
+  keys.forEach((k, i) => o.setAttribute(k, new THREE.BufferAttribute(new Float32Array(out[i]), A[i].itemSize)))
+  return o
+}
 function cityBuildingMesh(rows, faces) {
   const owners = new Map()
   for (const row of rows) for (const b of row.boxes) owners.set(b, row)
@@ -8324,7 +8479,7 @@ function cityBuildingMesh(rows, faces) {
       }
     })
     g.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-    root.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: cityFacadeMap(), vertexColors: true, roughness: 0.9 })))
+    root.add(new THREE.Mesh(footShade(g, Math.min(...boxes.map(b => b.cy - b.ey))), new THREE.MeshStandardMaterial({ map: cityFacadeMap(), vertexColors: true, roughness: 0.9 })))
   }
   if (roof.length) root.add(new THREE.Mesh(mergeBoxes(boxes, 'floor', roof), new THREE.MeshStandardMaterial({ color: 0x535962, roughness: 0.95 })))
   root.traverse(n => { if (n.isMesh) n.castShadow = n.receiveShadow = true })
@@ -9065,6 +9220,7 @@ function* bodySteps(M, id, cid, key, C) {
     return root
   }
   root = cloneSkinned(M.proto)
+  if (BODIES[C.mesh]?.template) { wearServed(root, BODIES[C.mesh], key); return root }
   // Measure after dressing: bind-pose rotations can turn added girth into height.
   yield* dressSteps(root, GAME.looks.skin(id, cid), GAME.looks.shape(id, cid), key)
   root.traverse(n => { if (n.isSkinnedMesh && !rig) rig = n })
