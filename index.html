@@ -11832,7 +11832,7 @@ function initTouch() {
 
   // every overlay must be listed, or a tap on it is a look-drag
   const isUI = t => !!(t && t.closest && t.closest(
-    '#trow, .tbtn, #chat, #ui, .ovl, #vote'))
+    '#trow, .tbtn, #chat, #ui, .ovl, #vote, #results'))
   // fire sits in the look area; other buttons stay out (dragging off JUMP never turns)
   const isFire = INPUT_SCHEMA.lookTouch
 
