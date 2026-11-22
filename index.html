@@ -3331,12 +3331,26 @@ const rowFor = (id, cid, B = botOf(id)) => (B && B.altRow?.cid === cid ? B.altRo
 const rowOf = c => c.bot || rowFor(-1, c.cid), sideOf = c => rowOf(c).side
 // team deathmatch: two bodies of one side, neither's attacks harm the other
 const friendly = (a, b) => gameMode === 'tdm' && !!a && !!b && a !== b && sideOf(a) === sideOf(b)
-// the hero's most hp this round, the host's (a guest's from the snapshot); 0 outside team deathmatch
+// the first hero's most hp this round, the host's (a guest's from the snapshot); 0 outside team deathmatch
 let heroMax = 0
+// each hero's most hp is its row's times this, the host's (a guest's from the snapshot; 0 from a host that sends only heroMax)
+let heroScale = 0
+const HERO_MAX = 1e6
 const isHero = (id, cid) => gameMode === 'tdm' && rowFor(id, cid).side === TDM.hero
-const fullHp = (id, cid) => isHero(id, cid) && heroMax || rowFor(id, cid).hp
-// a human holds the hero slot
-const heroTaken = id => gameMode === 'tdm' && [...roster].some(([i, p]) => i < BOT_ID0 && i !== id && CHARS[p.cid]?.side === TDM.hero)
+const fullHp = (id, cid) => isHero(id, cid) && (heroScale ? Math.min(HERO_MAX, Math.round(rowFor(id, cid).hp * heroScale)) : heroMax) || rowFor(id, cid).hp
+// team deathmatch: the rows the humans but `skip` play (a pick made mid-round counts), the Superkiller rows a human can
+// pick, and the heroes a round for n humans: one for every four, and enough that no two humans share a Superkiller
+const humanRows = skip => [...roster].flatMap(([i, p]) => i < BOT_ID0 && i !== skip && CHARS[p.cid] ? [p.cid] : [])
+const squadRows = () => PICKABLE.filter(i => CHARS[i].side === TDM.squad && !offEvent(CHARS[i]))
+const heroesFor = n => Math.max(1, Math.ceil(n / 4), n - squadRows().length)
+const heroWord = n => n === 1 ? 'one hero' : n + ' heroes'
+// why team deathmatch refuses row cid to human id, counted in the room whether it is in yet or not; '' if it doesn't
+function tdmRefusal(id, cid) {
+  const C = CHARS[cid], rows = humanRows(id), n = heroesFor(rows.length + 1)
+  if (gameMode !== 'tdm' || !C) return ''
+  if (C.side === TDM.squad) return rows.includes(cid) ? 'Taken' : ''
+  return C.side === TDM.hero && rows.filter(k => CHARS[k].side === TDM.hero).length >= n ? 'Taken: ' + heroWord(n) + ' a round' : ''
+}
 const sideOffered = k => gameMode !== 'waves' || !SIDES[k] || !!SIDES[k].waves
 let balanceOn = true
 const humansOn = (k, skip) => [...roster].filter(([id, p]) => id < BOT_ID0 && id !== skip && CHARS[p.cid]?.side === k).length
@@ -3347,7 +3361,8 @@ function sideLocked(k, id) {
   return { locked: balanced() && CHARS[roster.get(id)?.cid]?.side !== k && mine > theirs, mine, theirs }
 }
 const fallbackRow = id => { const k = gameMode === 'tdm' ? TDM.squad : Object.keys(SIDES).filter(sideOffered).sort((a, b) => humansOn(a, id) - humansOn(b, id))[0]
-  return PICKABLE.find(i => CHARS[i].side === k && !taken(CHARS[i].team, id)) ?? START }
+  return PICKABLE.find(i => CHARS[i].side === k && !taken(CHARS[i].team, id) && !tdmRefusal(id, i)) ??
+    PICKABLE.find(i => gameMode === 'tdm' && !offEvent(CHARS[i]) && !taken(CHARS[i].team, id) && !tdmRefusal(id, i) && !humanRows(id).includes(i)) ?? START }
 const colorOf = (id, cid) => rowFor(id, cid).color
 function skinOf(id, cid) {
   const src = rowFor(id, cid)
@@ -5431,9 +5446,9 @@ function endMatch(why) {
   const best = [...players.values()].sort((a, b) => b.kills - a.kills)[0]
   const who = best ? (roster.get(best.id) || {}).name || '?' : '?'
   if (gameMode === 'tdm') {
-    const hero = heroBody(), won = hero && !(hero.dead > 0)
+    const hero = heroBody(), won = hero && !(hero.dead > 0), many = [...players.values()].filter(c => sideOf(c) === TDM.hero).length > 1
     roundOn = false
-    announce('§e' + why + ' §f' + (won ? nameOf(hero) : 'The squad') + ' §7wins')
+    announce('§e' + why + ' §f' + (!won ? 'The squad §7wins' : many ? 'The heroes §7win' : nameOf(hero) + ' §7wins'))
     return hookMatchEnd(why === 'Time.' ? 'time' : 'elimination', best, won ? TDM.hero : TDM.squad)
   }
   announce('§e' + why + ' §f' + who + ' §7wins with §f' + (best ? best.kills : 0))
@@ -5549,7 +5564,7 @@ function stepPickups(dt, list) {
         let got
         const H = healOf(pk)
         if (H) {
-          const max = isHero(c.id, c.cid) && heroMax || CHARS[c.cid].hp
+          const max = fullHp(c.id, c.cid)
           if (c.hp >= max) continue
           c.hp = Math.min(max, c.hp + H.amount)
           got = H.name
@@ -16086,10 +16101,10 @@ const SQUAD = (r => [...r.filter(i => BOTS[i].always).sort((a, b) => BOTS[a].alw
 const squadWant = () => gameMode === 'ffa' && BOT_COUNT ? [...fieldedTeams()].reduce((n, t) => n + (TEAMS[t].foes | 0), BOT_COUNT) : 0
 
 function stepSquad() {
-  let want = Math.min(SQUAD.length, gameMode === 'tdm' ? roundSquad : squadWant()), moved = false
+  let want = Math.min(SQUAD.length, squadWant()), moved = false
   for (const i of SQUAD.filter(i => !offEvent(BOTS[i]))) {
     const c = players.get(BOT_ID0 + i)
-    if (want-- > 0) moved = !c && addBot(i) || moved
+    if (gameMode === 'tdm' ? roundMates.includes(i) : want-- > 0) moved = !c && addBot(i) || moved
     else if (c) dropBot(c), moved = true
   }
   if (moved && conns.size) pushRoster()
@@ -16117,8 +16132,9 @@ function heroWant(n = BOT_COUNT) {
   return BOTS.flatMap((B, i) => !B.squad && !on.has(B.team) && !offEvent(B) ? [i] : []).sort((a, b) => !!BOTS[a].rare - !!BOTS[b].rare || !BOTS[a].event - !BOTS[b].event).slice(0, n)
 }
 
-// team deathmatch's round: the human on the hero's side is the hero, else one bot; bots fill the squad to Bots per side
-let roundSquad = 0, roundSize = 0, roundOn = false
+// team deathmatch's round: heroesFor(the humans) heroes, the humans on the hero's side and bots for the rest; bots fill the
+// squad to Bots per side, one of each Superkiller no human plays
+let roundMates = [], roundSize = 0, roundOn = false
 // the hero: the one up, where a joiner on its side waits down for the next round
 const heroBody = () => (h => h.find(c => !(c.dead > 0)) || h[0])([...players.values()].filter(c => sideOf(c) === TDM.hero))
 const nameOf = c => roster.get(c.id)?.name || rowOf(c).name
@@ -16126,16 +16142,24 @@ function roundBots() {
   const humans = [...players.values()].filter(c => !c.bot)
   // a pick made in the last round: the row this one plays; a team fielded in free-for-all plays no part
   for (const c of humans) { const p = roster.get(c.id); if (p && p.cid !== c.cid) moveTo(c, p.cid); dropMates(c.id) }
-  spawnList(humans.some(c => sideOf(c) === TDM.hero) ? [] : heroWant(1))
-  roundSquad = Math.max(0, BOT_COUNT - humans.filter(c => sideOf(c) === TDM.squad).length)
+  // a row the room has no place for now (a Superkiller doubled, a hero past this round's count): the latest in gives way
+  for (const c of [...humans].reverse()) {
+    const why = tdmRefusal(c.id, c.cid)
+    if (why) { moveTo(c, fallbackRow(c.id)); tell(c.id, '§e' + why + '. You play §f' + rowOf(c).name + '§e.') }
+  }
+  const played = new Set(humans.map(c => rowOf(c).name)), heroes = humans.filter(c => sideOf(c) === TDM.hero).length
+  spawnList(heroWant(BOTS.length).filter(i => !played.has(BOTS[i].name)).slice(0, Math.max(0, heroesFor(humans.length) - heroes)))
+  roundMates = SQUAD.filter(i => !played.has(BOTS[i].name) && !!played.add(BOTS[i].name))
+    .slice(0, Math.max(0, BOT_COUNT - humans.filter(c => sideOf(c) === TDM.squad).length))
   stepSquad()
 }
-// after the round's respawn: the hero's hp for the squad it faces
+// after the round's respawn: each hero's hp for the squad they face, shared out among them
 function roundHero() {
   roundSize = [...players.values()].filter(c => sideOf(c) === TDM.squad).length
-  const hero = heroBody()
-  heroMax = hero ? Math.round(rowOf(hero).hp * Math.max(1, roundSize * TDM.hpPer)) : 0
-  if (hero) hero.hp = heroMax
+  const heroes = [...players.values()].filter(c => sideOf(c) === TDM.hero)
+  heroScale = heroes.length ? Math.max(1, roundSize * TDM.hpPer / heroes.length) : 0
+  for (const c of heroes) c.hp = fullHp(c.id, c.cid)
+  heroMax = heroes.length ? fullHp(heroes[0].id, heroes[0].cid) : 0
   roundOn = true
 }
 // the hero down: the squad wins; the squad down (if it had any): the hero does
@@ -16162,11 +16186,9 @@ function setMode(m) {
   if (m === 'waves' && humans > WAVES_PLAYERS) { sysMsg('§cWaves takes ' + WAVES_PLAYERS + ' players; ' + humans + ' are here.'); return false }
   gameMode = m
   for (const c of players.values()) if (!c.bot && !sideOffered(sideOf(c))) moveTo(c, START)
-  // team deathmatch: the first human on the hero's side keeps the slot
-  if (m === 'tdm') [...players.values()].filter(c => !c.bot && sideOf(c) === TDM.hero).slice(1).forEach(c => moveTo(c, fallbackRow(c.id)))
   pushRoster()
   waveAt = -1; waveGap = 0
-  timeLimit = minutesOf() * 60; matchLeft = timeLimit; heroMax = 0
+  timeLimit = minutesOf() * 60; matchLeft = timeLimit; heroMax = heroScale = 0
   if (m === 'ffa') spawnBots(BOT_COUNT)
   else if (m === 'tdm') resetMatch()
   else spawnList([]), stepSquad()
@@ -16517,7 +16539,7 @@ GAME.lifecycle = {
     pk: pickups.filter(p => p.respawn <= 0).map(p => [p.x, p.y, p.z, p.gun, p.pow, p.heal]),
     mo: resultsLeft > 0 ? r2(resultsLeft) : 0,
     ml: timeLimit ? r2(matchLeft) : 0,
-    fl: gameMode === 'ffa' ? fragLimit : 0, md: gameMode, bl: settings.balance !== false ? 1 : 0, ...gameMode === 'tdm' && { hm: heroMax },
+    fl: gameMode === 'ffa' ? fragLimit : 0, md: gameMode, bl: settings.balance !== false ? 1 : 0, ...gameMode === 'tdm' && { hm: heroMax, hf: heroScale },
     tw: tornadoNow()?.map(r2), ...eventOn && { ev: eventOn.name },
   }),
   takeItems(d) {
@@ -16538,6 +16560,7 @@ GAME.lifecycle = {
     if (MODES.includes(d.md)) gameMode = d.md
     // the host's: a whole count of hp, at most HERO_MAX
     heroMax = gameMode === 'tdm' ? clamp(Math.floor(+d.hm) || 0, 0, HERO_MAX) : 0
+    heroScale = gameMode === 'tdm' ? clamp(+d.hf || 0, 0, HERO_MAX) : 0
     if (d.bl !== undefined) balanceOn = !!d.bl
     setEvent(typeof d.ev === 'string' && EVENTS.find(E => E.name === d.ev) || null)
     if (joinPick() && !pickOpen && phase === 'playing') { openCharPick(); prepareRows(gameMode === 'waves' ? botPairs(waveOrder()) : GAME.rows.visitors()) }
@@ -16585,9 +16608,10 @@ const moveTo = (c, cid) => { becomeChar(c, cid); const p = roster.get(c.id); if 
 
 function switchChar(c, cid) {
   const C = CHARS[cid]
-  // team deathmatch: one hero; a pick is the row the next round plays
+  // team deathmatch: a pick is the row the next round plays, if the room has a place for it there
   if (gameMode === 'tdm' && !c.bot && C && !C.hidden && !offEvent(C)) {
-    if (C.side === TDM.hero && heroTaken(c.id)) return false
+    const why = tdmRefusal(c.id, cid)
+    if (why) return tell(c.id, '§7' + why), false
     if (cid !== (roster.get(c.id)?.cid ?? c.cid)) tell(c.id, '§7You play §f' + C.name + '§7 from the next round.')
     return true
   }
@@ -16697,13 +16721,13 @@ GAME.commands = {
 // why the room refuses character i to this player now, '' if it doesn't
 function refusal(i) {
   const C = CHARS[i], L = sideLocked(C.side, pickSelf())
-  if (C.side === TDM.hero && !offEvent(C) && heroTaken(pickSelf())) return 'Taken: one hero a round'
+  const why = offEvent(C) ? '' : tdmRefusal(pickSelf(), i)
+  if (why) return why
   return offEvent(C) ? C.event + ' only' : !sideOffered(C.side) ? roomName() + ': ' + Object.keys(SIDES).filter(sideOffered).map(k => SIDES[k].name).join(', ') + ' only'
     : L.locked ? 'Balanced: ' + L.mine + ' v ' + L.theirs : taken(C.team, pickSelf()) ? 'Taken' : ''
 }
 // a joining player's row: the one it asked for, unless this room cannot take it (told why), and its team fielded once it stands
 const visitors = () => gameMode === 'ffa' ? picked({ visits: true }) : []
-const HERO_MAX = 1e6
 GAME.rows = {
   visitors: () => botPairs(visitors()),
   admit(id, asked) {
@@ -16717,9 +16741,10 @@ GAME.rows = {
       cid = fallbackRow(id)
       tell(id, '§eThe room changed while you picked: you play §f' + CHARS[cid].name + '§e. Pause → Character to change.')
     }
-    if (CHARS[cid].side === TDM.hero && heroTaken(id)) {
+    const why = tdmRefusal(id, cid)
+    if (why) {
       cid = fallbackRow(id)
-      tell(id, '§eOne hero a round, and it is taken: you play §f' + CHARS[cid].name + '§e.')
+      tell(id, '§e' + why + '. You play §f' + CHARS[cid].name + '§e.')
     }
     return cid
   },
@@ -16728,7 +16753,7 @@ GAME.rows = {
   refuse: noSwap,
   refusal,
   // what the pick screen's room note adds
-  pickNote: () => gameMode === 'tdm' ? ' · one hero; a pick plays from the next round' : balanced() ? ' · sides balanced' : '',
+  pickNote: () => gameMode === 'tdm' ? ' · ' + heroWord(heroesFor(humanRows(pickSelf()).length + 1)) + ', one of each Superkiller; a pick plays from the next round' : balanced() ? ' · sides balanced' : '',
   // the bots whose looks the menu prepares for a player on this row
   menuBots: cid => gameMode === 'ffa' || !sideOffered(CHARS[cid].side) ? [...heroWant(), ...SQUAD, ...visitors()] : waveOrder(),
   cid: v => clamp(v | 0, 0, CHARS.length - 1),
