@@ -47,6 +47,10 @@
     background:#0d1117;border:1px solid #2d3441;border-radius:6px;color:#58a6ff;user-select:none}
   #status{margin-top:14px;color:#7d8590;min-height:1.5em}
   #status:empty{display:none}
+  #graphics-notice{position:fixed;z-index:2000;left:50%;top:12px;transform:translateX(-50%);max-width:90vw;padding:10px 16px;
+    border:1px solid #d29922;border-radius:6px;background:#161b22;color:#e6edf3;text-align:center}
+  #graphics-notice[hidden],#graphics-reload[hidden]{display:none}
+  #graphics-reload{display:block;margin:10px auto 0}
   #linkinfo{margin:6px 0 10px}
   #linkinfo button{padding:3px 9px;font-size:12px}
   #linkinfo-text{margin:6px 0 0;padding:8px;max-height:40vh;overflow:auto;white-space:pre-wrap;word-break:break-word;text-align:left;
@@ -571,6 +575,7 @@
     </div>
   </div>
   <div id="status">Loading physics…</div>
+  <div id="graphics-notice" role="status" aria-live="polite" hidden><span id="graphics-message"></span><button id="graphics-reload" hidden>Reload game</button></div>
   <div id="linkinfo" hidden><button id="linkinfo-show" aria-expanded="false" aria-controls="linkinfo-text">Details</button> <button id="linkinfo-copy">Copy</button><pre id="linkinfo-text" hidden></pre></div>
   <div id="jittip" style="display:none"><span id="jittip-t">Edge's 'Enhance your security' is slowing this game down. To fix it: Settings → Privacy, search, and services → Enhance your security on the web → Exceptions → Add a site → paste this page's address.</span><button id="jittip-copy" title="Copy this page's address">copy</button><button id="jittip-x" aria-label="Dismiss">×</button></div>
 </div></div>
@@ -8499,6 +8504,60 @@ function buildScenery(boxes, unit = ARENA / 72) {
   return K.root
 }
 
+// A lost WebGL context is restored by three: its programs, buffers and textures upload again on the next draw. Meanwhile the
+// page keeps playing and skips its draws; the first draw after the restore clears the notice, and a context that does not
+// come back in GRAPHICS_WAIT_MS offers a reload.
+const graphics = { state: 'ready', lost: 0, timer: 0 }
+const GRAPHICS_WAIT_MS = 8000, COMPILE_WAIT_MS = 2000, compileSignal = { epoch: -1, seen: false, broken: false }
+const glLost = () => !!renderer?.getContext?.()?.isContextLost?.()
+function graphicsNotice(failed = false) {
+  el('#graphics-notice').hidden = false
+  el('#graphics-message').textContent = failed ? 'Graphics did not recover. Reload to keep playing.' : 'Graphics interrupted. Restoring…'
+  el('#graphics-reload').hidden = !failed
+}
+function graphicsLost() {
+  if (graphics.state === 'lost') return
+  graphics.state = 'lost'; graphics.lost++
+  graphicsNotice()
+  clearTimeout(graphics.timer)
+  graphics.timer = setTimeout(() => { if (graphics.state !== 'ready') graphicsNotice(true) }, GRAPHICS_WAIT_MS)
+}
+function graphicsRestored() { graphics.state = 'restoring' }
+function graphicsReady() { graphics.state = 'ready'; clearTimeout(graphics.timer); el('#graphics-notice').hidden = true }
+// compileAsync, bounded: three's own poll throws for a material with no program (a lost context) and never settles. This
+// one settles when the context is lost, or after COMPILE_WAIT_MS (a first wait that sees no program finish gets 6 s more,
+// and a context where none ever does stops waiting at once), and the draw then links what is left
+function compileForContext(root, cam, target) {
+  const epoch = graphics.lost, gl = renderer.getContext()
+  if (compileSignal.epoch !== epoch) Object.assign(compileSignal, { epoch, seen: false, broken: false })
+  if (gl.isContextLost()) return Promise.resolve(root)
+  return new Promise((resolve, reject) => {
+    let pending
+    try { pending = [...renderer.compile(root, cam, target)] }
+    catch (e) { if (gl.isContextLost()) resolve(root); else reject(e); return }
+    const until = performance.now() + COMPILE_WAIT_MS, count = pending.length
+    const poll = () => {
+      if (epoch !== graphics.lost || gl.isContextLost()) { resolve(root); return }
+      pending = pending.filter(m => renderer.properties.get(m).currentProgram?.isReady() === false)
+      if (pending.length < count) compileSignal.seen = true
+      if (!pending.length) resolve(root)
+      else if (compileSignal.broken || performance.now() > until + (compileSignal.seen ? 0 : 6000)) {
+        if (!compileSignal.seen) compileSignal.broken = true
+        resolve(root)
+      } else setTimeout(poll, 10)
+    }
+    setTimeout(poll, 10)
+  })
+}
+function initGraphicsLifecycle() {
+  const canvas = renderer.domElement
+  if (!canvas?.addEventListener) return
+  if (!renderHeadless && renderer.compileAsync) renderer.compileAsync = compileForContext
+  canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); graphicsLost() })
+  canvas.addEventListener('webglcontextrestored', graphicsRestored)
+  el('#graphics-reload').onclick = () => location.reload()
+}
+
 function buildWorld() {
   setHeadless(renderHeadless)
 
@@ -8515,7 +8574,14 @@ function buildWorld() {
   skipStill(worldGroup); skipStill(objGroup)
   scene.onBeforeRender = (r, s, cam) => cullView(cam)
   const render = renderer.render.bind(renderer)
-  renderer.render = (s, cam) => { if (s === scene) { if (drawSkip || worldHidden()) return; if (underCover) worldAt = now() } try { render(s, cam) } finally { for (const o of culled.splice(0)) o.visible = true } }
+  initGraphicsLifecycle()
+  renderer.render = (s, cam) => {
+    if (glLost()) { graphicsLost(); return }
+    if (graphics.state === 'lost') return
+    if (s === scene) { if (drawSkip || worldHidden()) return; if (underCover) worldAt = now() }
+    renderer.debug.checkShaderErrors = phase !== 'playing'      // a draw that links on the spot defeats parallel compiling; shaderCheck reads the results
+    try { render(s, cam); if (graphics.state === 'restoring' && s === scene) graphicsReady() } finally { for (const o of culled.splice(0)) o.visible = true }
+  }
   avatarGroup = new THREE.Group(); scene.add(avatarGroup)
   pickGroup = new THREE.Group(); scene.add(pickGroup)
   tracerGroup = new THREE.Group(); scene.add(tracerGroup)
@@ -8680,7 +8746,7 @@ function rebuildWorld() {
   prepareScars()
   screensDraw()                      // after the scars' surfaces: the panels are remade as chunks grow
   // the new level takes over the old one's programs before they go
-  if (!renderHeadless && camera && renderer.compile) renderer.compile(worldGroup, camera, scene)
+  if (!renderHeadless && camera && renderer.compile && !glLost()) renderer.compile(worldGroup, camera, scene)
   warmEffects()
   for (const m of materials) m.dispose()
 }
@@ -14185,6 +14251,32 @@ function hookSend() {
   return true
 }
 const hookCheck = (ok, what) => { if (!ok) throw new TypeError(what) }
+// every program's link and compile status, which a draw with shader checks off leaves unread: failures name the shaders and
+// the materials that use the program
+function shaderCheck() {
+  if (!isHost || serving) return { ok: false, error: 'host only' }
+  if (!renderer?.getContext) return { ok: false, error: 'no renderer yet' }
+  const gl = renderer.getContext()
+  if (gl.isContextLost()) return { ok: false, error: 'the GL context is lost' }
+  const programs = renderer.info.programs || [], owners = new Map(), stage = { [gl.VERTEX_SHADER]: 'vertex', [gl.FRAGMENT_SHADER]: 'fragment' }, failures = []
+  scene?.traverse(o => {
+    for (const m of Array.isArray(o.material) ? o.material : o.material ? [o.material] : []) for (const p of renderer.properties.get(m).programs?.values() || []) {
+      const L = owners.get(p) || owners.set(p, []).get(p), n = (m.name || m.type) + (o.name ? ' on ' + o.name : '')
+      if (L.length < 4 && !L.includes(n)) L.push(n)
+    }
+  })
+  for (const p of programs) {
+    if (!p.program) continue
+    const shaders = []
+    let linked = true, log = ''
+    for (const s of gl.getAttachedShaders(p.program) || []) if (!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+      shaders.push({ stage: stage[gl.getShaderParameter(s, gl.SHADER_TYPE)] || 'shader', log: String(gl.getShaderInfoLog(s) || '').slice(0, 2000) })
+    linked = !!gl.getProgramParameter(p.program, gl.LINK_STATUS)
+    if (!linked) log = String(gl.getProgramInfoLog(p.program) || '').slice(0, 2000)
+    if (!linked || shaders.length) failures.push({ name: p.name, type: p.type, cacheKey: String(p.cacheKey).slice(0, 160), linked, log, shaders, materials: owners.get(p) || [] })
+  }
+  return failures.length ? { ok: false, programs: programs.length, failed: failures.length, failures } : { ok: true, programs: programs.length }
+}
 Object.defineProperty(globalThis, 'gameHooks', { value: Object.freeze({
   // fn(data, { type, match }) on each event of type ('*': every type); returns what removes it
   on(type, fn) {
@@ -14256,6 +14348,8 @@ Object.defineProperty(globalThis, 'gameHooks', { value: Object.freeze({
   restart() { if (!isHost || !hookSend()) return false; GAME.match.restart(); return true },
   // a stream every viewer plays on the level's screens: an https URL, or null to stop
   broadcast(url) { if (!isHost || !hookSend()) return false; return bcastSet(url ?? '') },
+  // each GL program's link and compile status: { ok, programs } or the failures, host only
+  shaderCheck,
   players: () => isHost ? [...players.values()].map(c => ({ ...hookWho(c), kills: c.kills | 0, hp: Math.round(c.hp), dead: c.dead > 0, x: r2(c.x), y: r2(c.y), z: r2(c.z) })) : [],
   room() {
     const all = [...players.values()]
@@ -17637,14 +17731,18 @@ function bakeChunk(c) {
 }
 // up is where the camera looks: a vehicle's chase camera, else the aim
 const viewYaw = me => (seatOf(me) || me.ride ? chase.yaw + chase.look : watchBody ? me.yaw : input.yaw) || 0
-// every radar mark is drawn here: x, y a body's place from the disc's centre; past the rim it sits on it as an arrow pointing its way
+// every radar mark is drawn here: x, y a body's place from the disc's centre; past the rim it sits on it as an arrow pointing its way;
+// the free-for-all's leader wears a gold ring, or a gold arrow
+const LEAD_GOLD = '#ffd23f'
 function drawBlip(g, o, x, y, R, mine) {
-  const d = Math.hypot(x, y), rim = d > R - 5, k = rim ? (R - 5) / d : 1, row = rowFor(o.id, o.cid)
-  g.fillStyle = gameMode !== 'ffa' && row.side === mine ? css(sideColor(row)) : '#f85149'
+  const d = Math.hypot(x, y), rim = d > R - 5, k = rim ? (R - 5) / d : 1, row = rowFor(o.id, o.cid), lead = o.id === leadId
+  g.fillStyle = lead && rim ? LEAD_GOLD : gameMode !== 'ffa' && row.side === mine ? css(sideColor(row)) : '#f85149'
   g.save(); g.translate(R + x * k, R + y * k); g.beginPath()
   if (rim) { g.rotate(Math.atan2(x, -y)); g.moveTo(0, -5); g.lineTo(4.5, 4); g.lineTo(0, 1.5); g.lineTo(-4.5, 4); g.closePath() }
   else g.arc(0, 0, 3, 0, 2 * Math.PI)
-  g.fill(); g.restore()
+  g.fill()
+  if (lead && !rim) { g.strokeStyle = LEAD_GOLD; g.lineWidth = 2; g.beginPath(); g.arc(0, 0, 6.5, 0, 2 * Math.PI); g.stroke() }
+  g.restore()
 }
 function drawRadar(me, others, t) {
   const on = phase === 'playing' && !menuUp() && !(me.dead > 0) && (bigLevel() || !!(seatOf(me) || me.ride))
