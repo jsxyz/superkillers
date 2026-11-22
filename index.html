@@ -888,8 +888,9 @@ const THREE = ENABLE3D.THREE
 // swing: { range m, pace: m/s it travels }. bones: { box_man bone: [x, y, z] } (y: length). sparks: running-spark colour
 const VITOSCREEN_SKIN = { shell: 0xe1dec7, rim: 0x536651, screen: 0x78d72b,
   phosphor: 0x94dd43, ink: 0x254e24, gold: 0xe8c24a }
-// SIDES (CHARS `side`): color: picker; guns: false = players carry none (clicks fire atk/far); waves: the waves' side
-const SIDES = { killers: { name: 'Superkillers', color: 0xe8a33d, waves: true }, heroes: { name: 'Superheroes', color: 0x2d6fd4, guns: false } }
+// SIDES (CHARS `side`): color: picker; guns: false = players carry none (clicks fire atk/far); waves: the waves' side;
+//   radar: false = its players get no radar
+const SIDES = { killers: { name: 'Superkillers', color: 0xe8a33d, waves: true }, heroes: { name: 'Superheroes', color: 0x2d6fd4, guns: false, radar: false } }
 // TEAMS (CHARS `team`): one player plays any standing member; foes: killer bots added in free-for-all
 const TEAMS = { Rangers: { name: 'Power Rangers', role: 'Colour-coded for your convenience · switch any time', foes: 4 },
   Turtles: { name: 'Ninja Turtles', role: 'Heroes in a half shell · switch any time', foes: 4 } }
@@ -17894,7 +17895,8 @@ function drawBlip(g, o, x, y, R, mine) {
   g.restore()
 }
 function drawRadar(me, others, t) {
-  const on = phase === 'playing' && !menuUp() && !(me.dead > 0) && (bigLevel() || !!(seatOf(me) || me.ride))
+  const on = phase === 'playing' && !menuUp() && !(me.dead > 0) && (bigLevel() || !!(seatOf(me) || me.ride)) &&
+    SIDES[GAME.participantOf?.(me)?.side]?.radar !== false
   hud('radar', document.body, '.radar', on)
   hud('onfoot', document.body, '.onfoot', on && !(seatOf(me) || me.ride))
   if (!on || t - radarAt < RADAR_MS) return
