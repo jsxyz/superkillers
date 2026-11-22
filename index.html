@@ -93,6 +93,8 @@
   #pick-note,#pick-role,#pick-keys,#pick-stats,#pick-atk em{color:#7d8590;font-size:12.5px}
   #pick-note{flex:1}
   #pick-room{color:#58a6ff;background:none;border:1px solid;border-radius:6px;padding:3px 12px;letter-spacing:.2em}
+  #pick-copy{color:#58a6ff;background:none;border:1px solid;border-radius:6px;padding:3px 12px}
+  #pick-room:empty + #pick-copy{display:none}
   #pick-room:empty,body.touch #pick-keys{display:none}
   #pick-cards{grid-area:cards;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(112px,20vw),1fr));
     gap:8px;align-content:start;padding:2px}
@@ -119,6 +121,7 @@
     #pick-top{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 10px}
     #pick-title{grid-column:2/4}
     #pick-note{grid-column:1/3}
+    #pick-copy{grid-column:3;justify-self:stretch}
     #pick-info{display:grid;grid-template-columns:40% 1fr}
     #pick-go{position:fixed;left:16px;right:16px;bottom:calc(14px + env(safe-area-inset-bottom))} }
   @media (max-height:500px) and (min-aspect-ratio:1/1){
@@ -692,7 +695,7 @@
 </div></div>
 
 <div id="charpick" class="ovl"><div id="pick">
-  <div id="pick-top"><button id="pick-back">Back</button><h2 id="pick-title">Character</h2><span id="pick-note"></span><button id="pick-room" title="Show or hide the room code"></button></div>
+  <div id="pick-top"><button id="pick-back">Back</button><h2 id="pick-title">Character</h2><span id="pick-note"></span><button id="pick-room" title="Show or hide the room code"></button><button id="pick-copy" title="Copy the join link">Copy link</button></div>
   <div id="pick-cards"></div>
   <div id="pick-info">
     <canvas id="pick-view" width="360" height="440"></canvas>
@@ -1319,6 +1322,8 @@ const VEHICLES = [
 // sha384-Oa+BcLukVPbtZ7kColOygKyQvDUR0mmaZq4Wrj5BNFylre7BPJZVju/2zVCTMAO4
 const ASSETS =
   'https://cdn.jsdelivr.net/gh/enable3d/enable3d.github.io@1dd9baa5328249fe19b48507a880de9b11f4b4a0/src/assets/glb/'
+// a row's `file`, served beside this page
+const ASSET_DIR = 'assets/'
 const MODELS = {
   man: {
     url: ASSETS + 'box_man.glb',
@@ -1876,48 +1881,49 @@ const PROP_MODELS = {
     }
   },
 }
-// SOUNDS keys: a GUNS name (+ ' charge'), or an event; '<name> <event>' overrides it (CHARS/BOTS body, gun, power)
+// SOUNDS keys: a GUNS name (+ ' charge'), or an event; '<name> <event>' overrides it (CHARS/BOTS body, gun, power).
+// A row's `file` is a recording under assets/; `say` and `seed` describe it to a generative model (sfxMake)
 const SOUNDS = {
   // ---- weapons, as they fire: every weapon needs one, each distinct
-  Pistol: { say: 'a short, punchy pistol shot', seed: 0 },
-  Scatter: { say: 'a booming shotgun blast with a pump-action rack after it', seed: 0 },
-  Needler: { say: 'a tiny, sharp, high needle-gun tick', seed: 0 },
-  Railer: { say: 'a crack and a long descending electric zing, with a low hum left behind', seed: 0 },
-  'Bitter Sword': { say: 'a sword swish ending in a thin, ringing steel tone', seed: 0 },
-  Lance: { say: 'a buzzy energy lance discharge, falling in pitch', seed: 0 },
-  'Lance charge': { say: 'an energy lance winding up, rising and wavering, to fit its wind-up', seed: 0 },
-  Sparker: { say: 'a crackling, buzzing electric spark', seed: 0 },
-  Slug: { say: 'a heavy, low, thudding slug cannon', seed: 0 },
-  Hammer: { say: 'a heavy hammer swung through the air and a dull thump', seed: 0 },
-  Flurry: { say: 'one light, quick whip of air from a blur of punches, played every 220 ms, so short and quiet', seed: 0 },
-  Katana: { say: 'two fast blade cuts, one after the other, and a faint steel ring', seed: 0 },
-  Sai: { say: 'a quick, sharp jab with a metallic glint', seed: 0 },
-  Nunchaku: { say: 'a wooden whirl and a light wooden tok', seed: 0 },
-  'Bo Staff': { say: 'a wooden staff whooshing round into a solid knock', seed: 0 },
-  Shoryuken: { say: 'a rising uppercut whoosh that climbs in pitch, with the connect under it', seed: 0 },
-  Hadoken: { say: 'a roaring fireball released from the hands', seed: 0 },
-  'Hadoken charge': { say: 'energy gathering between cupped hands, building, to fit its wind-up', seed: 0 },
-  Raygun: { say: 'a classic sci-fi raygun pew with a warbling fall', seed: 0 },
-  Zap: { say: 'a harsh, buzzing electric zap', seed: 0 },
-  Spoiler: { say: 'a soft two-note chime', seed: 0 },
-  'Belly Flop': { say: 'a huge, heavy body slam onto the ground', seed: 0 },
-  'Ground Slam': { say: 'a sonic boom diving in, then a fist cracking the ground like a quake', seed: 0 },
-  Static: { say: 'a crackle of radio static over a low mains hum', seed: 0 },
-  'Super Punch': { say: 'a single colossal punch landing like a thunderclap', seed: 0 },
-  'Pie Construct': { say: 'a deep humming energy whoosh as a huge glowing shape swings past', seed: 0 },
-  'Mallet Construct': { say: 'a humming energy swing ending in a heavy hollow thud', seed: 0 },
-  'Ring Blaster': { say: 'a bright, ringing green energy zap', seed: 0 },
-  'Heat Vision': { say: 'a searing, crackling heat-ray hum from the eyes', seed: 0 },
-  'Speed Dash': { say: 'a crackling electric whoosh as he blurs off at super speed', seed: 0 },
-  'Talon Rake': { say: 'a vicious claw rake tearing through the air in a wide arc, talons ripping', seed: 0 },
-  'Extinction Breath': { say: 'a roaring fiery blast of flame erupting from a monster\'s jaws', seed: 0 },
-  'Extinction Breath charge': { say: 'a deep growl and a rising rush of fire building in a monster\'s throat, to fit its wind-up', seed: 0 },
-  'Xeno Punch': { say: 'two fast fist impacts with a sharp crackle of energy', seed: 0 },
-  'Beam Blast': { say: 'a bright, ringing energy beam fired in one burst', seed: 0 },
-  'Energy Whip': { say: 'a crackling energy whip lashing out and snapping at full length', seed: 0 },
-  'Freeze Breath': { say: 'a long icy exhale, crackling into frost', seed: 0 },
-  'Spider Strike': { say: 'a fast, springy punch landing with a heavy smack', seed: 0 },
-  'Web Shooter': { say: 'a quick sticky thwip of a web line firing', seed: 0 },
+  Pistol: { say: 'a short, punchy pistol shot', seed: 0, file: 'pistol.95a5b801.ogg' },
+  Scatter: { say: 'a booming shotgun blast with a pump-action rack after it', seed: 0, file: 'scatter.cef3d27d.ogg' },
+  Needler: { say: 'a tiny, sharp, high needle-gun tick', seed: 0, file: 'needler.c3e64acf.ogg' },
+  Railer: { say: 'a crack and a long descending electric zing, with a low hum left behind', seed: 0, file: 'railer.397ac3e8.ogg' },
+  'Bitter Sword': { say: 'a sword swish ending in a thin, ringing steel tone', seed: 0, file: 'bitter-sword.bbc7b95f.ogg' },
+  Lance: { say: 'a buzzy energy lance discharge, falling in pitch', seed: 0, file: 'lance.3f0f415e.ogg' },
+  'Lance charge': { say: 'an energy lance winding up, rising and wavering, to fit its wind-up', seed: 0, file: 'lance-charge.c16b5fb4.ogg' },
+  Sparker: { say: 'a crackling, buzzing electric spark', seed: 0, file: 'sparker.99b6739a.ogg' },
+  Slug: { say: 'a heavy, low, thudding slug cannon', seed: 0, file: 'slug.f9ac4bd9.ogg' },
+  Hammer: { say: 'a heavy hammer swung through the air and a dull thump', seed: 0, file: 'hammer.a4b54976.ogg' },
+  Flurry: { say: 'one light, quick whip of air from a blur of punches, played every 220 ms, so short and quiet', seed: 0, file: 'flurry.26f8cfe4.ogg' },
+  Katana: { say: 'two fast blade cuts, one after the other, and a faint steel ring', seed: 0, file: 'katana.cfd943db.ogg' },
+  Sai: { say: 'a quick, sharp jab with a metallic glint', seed: 0, file: 'sai.2cdad948.ogg' },
+  Nunchaku: { say: 'a wooden whirl and a light wooden tok', seed: 0, file: 'nunchaku.5170af6e.ogg' },
+  'Bo Staff': { say: 'a wooden staff whooshing round into a solid knock', seed: 0, file: 'bo-staff.77ab0162.ogg' },
+  Shoryuken: { say: 'a rising uppercut whoosh that climbs in pitch, with the connect under it', seed: 0, file: 'shoryuken.e12ceba1.ogg' },
+  Hadoken: { say: 'a roaring fireball released from the hands', seed: 0, file: 'hadoken.cb37e67a.ogg' },
+  'Hadoken charge': { say: 'energy gathering between cupped hands, building, to fit its wind-up', seed: 0, file: 'hadoken-charge.aa17f2b9.ogg' },
+  Raygun: { say: 'a classic sci-fi raygun pew with a warbling fall', seed: 0, file: 'raygun.9be1b1ee.ogg' },
+  Zap: { say: 'a harsh, buzzing electric zap', seed: 0, file: 'zap.52f5af75.ogg' },
+  Spoiler: { say: 'a soft two-note chime', seed: 0, file: 'spoiler.e4eeb765.ogg' },
+  'Belly Flop': { say: 'a huge, heavy body slam onto the ground', seed: 0, file: 'belly-flop.3a626479.ogg' },
+  'Ground Slam': { say: 'a sonic boom diving in, then a fist cracking the ground like a quake', seed: 0, file: 'ground-slam.3c4f4501.ogg' },
+  Static: { say: 'a crackle of radio static over a low mains hum', seed: 0, file: 'static.a48681d0.ogg' },
+  'Super Punch': { say: 'a single colossal punch landing like a thunderclap', seed: 0, file: 'super-punch.b4de5d0a.ogg' },
+  'Pie Construct': { say: 'a deep humming energy whoosh as a huge glowing shape swings past', seed: 0, file: 'pie-construct.ecc31029.ogg' },
+  'Mallet Construct': { say: 'a humming energy swing ending in a heavy hollow thud', seed: 0, file: 'mallet-construct.cd4b5eb3.ogg' },
+  'Ring Blaster': { say: 'a bright, ringing green energy zap', seed: 0, file: 'ring-blaster.5facea6c.ogg' },
+  'Heat Vision': { say: 'a searing, crackling heat-ray hum from the eyes', seed: 0, file: 'heat-vision.6dd1ea7b.ogg' },
+  'Speed Dash': { say: 'a crackling electric whoosh as he blurs off at super speed', seed: 0, file: 'speed-dash.3bd82cc1.ogg' },
+  'Talon Rake': { say: 'a vicious claw rake tearing through the air in a wide arc, talons ripping', seed: 0, file: 'talon-rake.51956205.ogg' },
+  'Extinction Breath': { say: 'a roaring fiery blast of flame erupting from a monster\'s jaws', seed: 0, file: 'extinction-breath.f3decd0c.ogg' },
+  'Extinction Breath charge': { say: 'a deep growl and a rising rush of fire building in a monster\'s throat, to fit its wind-up', seed: 0, file: 'extinction-breath-charge.0439735a.ogg' },
+  'Xeno Punch': { say: 'two fast fist impacts with a sharp crackle of energy', seed: 0, file: 'xeno-punch.9e70f15a.ogg' },
+  'Beam Blast': { say: 'a bright, ringing energy beam fired in one burst', seed: 0, file: 'beam-blast.da0b3802.ogg' },
+  'Energy Whip': { say: 'a crackling energy whip lashing out and snapping at full length', seed: 0, file: 'energy-whip.626f1acc.ogg' },
+  'Freeze Breath': { say: 'a long icy exhale, crackling into frost', seed: 0, file: 'freeze-breath.d7974c66.ogg' },
+  'Spider Strike': { say: 'a fast, springy punch landing with a heavy smack', seed: 0, file: 'spider-strike.f7feb338.ogg' },
+  'Web Shooter': { say: 'a quick sticky thwip of a web line firing', seed: 0, file: 'web-shooter.e97a41d1.ogg' },
 
   // ---- you, never placed
   hit: { say: 'the hit confirmation: a short, bright tick above the gunfire, the same every time, since players learn it', seed: 0 },
@@ -11829,7 +11835,7 @@ let lockRetried = false
 function lockPointer() { lockRetried = false; askLock() }
 function askLock() {
   if (IS_TOUCH || !renderer || serving) return
-  try { renderer.domElement.requestPointerLock() } catch (e) {}
+  try { renderer.domElement.requestPointerLock()?.catch?.(() => {}) } catch (e) {}
 }
 
 // Escape unlocks without a key event the page sees: an unasked unlock opens the menu
@@ -12555,8 +12561,37 @@ function initSettings() {
 }
 
 // ---------------------------------------------------------------- sound
-// generative effects hook; null, so only voices play
+// generative effects hook: (name, say, seed, out, t, span) => { srcs, len }; null, so a row without a file is silent
 let sfxMake = null
+
+// a row's recording, fetched and decoded the first time it is wanted (that use is missed); null while it loads and for good if it failed
+const sfxBufs = new Map()
+function sfxBuffer(name, R) {
+  if (!R.file) return null
+  const b = sfxBufs.get(name)
+  if (b !== undefined) return b
+  sfxBufs.set(name, null)
+  fetch(ASSET_DIR + R.file).then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status))
+    .then(a => actx.decodeAudioData(a)).then(d => sfxBufs.set(name, d)).catch(() => {})
+  return null
+}
+// a charge row plays through its wind-up; span Infinity loops
+// the player's own weapon and the events that are theirs alone start loading as they become likely
+function sfxWarm(me) {
+  const G = GUNS[me.gun], key = me.cid + ':' + me.gun
+  if (!actx || sfxSeen.warm === key) return
+  sfxSeen.warm = key
+  for (const n of [G && G.name, G && G.name + ' charge', 'hit', 'kill', 'hurt', 'die', 'spawn', 'jump', 'land']) if (SOUNDS[n]) sfxBuffer(n, SOUNDS[n])
+}
+function sfxFile(buf, out, t, span) {
+  const s = actx.createBufferSource()
+  s.buffer = buf
+  if (span === Infinity) s.loop = true
+  else if (span > 0) s.playbackRate.value = clamp(buf.duration / span, 0.5, 2)
+  s.connect(out)
+  s.start(t)
+  return { srcs: [s], len: buf.duration / s.playbackRate.value }
+}
 
 // m; gain halves per doubling past SFX_NEAR × reach; behind: lowpass to SFX_BEHIND Hz
 const SFX_NEAR = 5, SFX_FLOOR = 0.02, SFX_BEHIND = 1800
@@ -12690,7 +12725,9 @@ function sfxPlace(x, y, z, reach) {
 function sfxPlay(name, at, cat, lvl, delay, span, who) {
   if (who && SOUNDS[who + ' ' + name] !== undefined) name = who + ' ' + name
   const R = SOUNDS[name]
-  if (!R || !R.say || !sfxMake || !sfxLive()) return null
+  if (!R || !sfxLive()) return null
+  const buf = sfxBuffer(name, R)
+  if (!buf && !(R.say && sfxMake)) return null
   let gain = lvl === undefined ? 1 : lvl, pan = 0, cut = 20000
   if (at) {
     if (!(Number.isFinite(at.x) && Number.isFinite(at.y) && Number.isFinite(at.z))) return null
@@ -12714,7 +12751,7 @@ function sfxPlay(name, at, cat, lvl, delay, span, who) {
     p.pan.value = pan
     to.connect(p); to = p
   }
-  const made = sfxMake(name, R.say, R.seed, v.out, t, span || 0)
+  const made = buf ? sfxFile(buf, v.out, t, span || 0) : sfxMake(name, R.say, R.seed, v.out, t, span || 0)
   if (!made || !made.srcs || !made.srcs.length) { v.out.disconnect(); return null }
   to.connect(sfxOut)
   v.srcs = made.srcs
@@ -12786,6 +12823,7 @@ function sfxFrame(me, others, t, objects = []) {
     // a gap (hidden tab) is a new baseline
     const fresh = s.me !== me || !(t - s.t < 400) || !sfxLive()
     const C = CHARS[me.cid] || CHARS[START], who = C.name
+    if (sfxWanted()) sfxWarm(me)
     const you = (name, as, lvl = 1) => sfxPlay(name, null, 'you', lvl, 0, 0, as)
     const alive = !(me.dead > 0), was = !(s.dead > 0), same = me.cid === s.cid
     // none in waves (guests are sent 0)
@@ -13315,6 +13353,13 @@ function initPause() {
   backdrop('charpick', () => joinPick() || pickBack())
   el('#pick-back').onclick = pickBack
   el('#pick-room').onclick = () => { pickCodeShown = !pickCodeShown; el('#pick-room').blur(); hud('pickroom', el('#pick-room'), 'textContent', 'Room ' + pickCode()) }
+  el('#pick-copy').onclick = async () => {
+    const b = el('#pick-copy'); b.blur()
+    if (!roomCodeStr || codeText() === OPENING) return
+    const ok = await copyText(qrText(roomCodeStr))
+    b.textContent = ok ? 'Copied' : 'Copy failed'
+    setTimeout(() => { b.textContent = 'Copy link' }, 1500)
+  }
   el('#pick-go').onclick = pickGo
   el('#pause-resume').onclick = closePause
   el('#pause-settings').onclick = fromPause(openSettings)
