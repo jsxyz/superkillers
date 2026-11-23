@@ -1764,7 +1764,7 @@ const LEVELS = [
 //   lamps (an item's lights, lit as drawn): at [x, y, z] in the item, color (a list: one by the row's seed), halo [half-width m, strength]
 //   about the head, pool [radius m, strength] on the ground under it; a chunk's lamps are one additive mesh
 const STREET_KIT = {
-  file: 'streetkit.8483d2a1.glb', at: 0.5, clear: 3, door: 2.8, range: 70, lampRange: 120,
+  file: 'streetkit.aea33748.glb', at: 0.5, clear: 3, door: 2.8, range: 70, lampRange: 120,
   items: {
     light: { at: 0.4, node: 'streetlight', far: 'streetlight_far', deco: true, boxes: [[0.16, 3.5, 0.16, 0, 3.5, 0]], r: 0.35, shadow: true, fall: 0x3b4147,
       lamps: [{ at: [0, 6.9, 1.9], color: 0xffd9a0, halo: [1.2, 0.9], pool: [5.5, 0.5] }] },
@@ -2019,7 +2019,8 @@ const MODELS = {
 // BODIES (CHARS `mesh`): a body served from ASSET_DIR beside the page, on the shared 65-joint skeleton; the row's box_man rig
 //   still runs every clip and pose and drives it. The row's costume draws until it loads, if it fails, or with the page
 //   opened on its own. far: its distant mesh's node. map: an atlas it wears in place of the file's own (rows may share a
-//   file). The file's extras: box_man's bind joints (rig) and, per driven joint, its box_man bones, their blend and its
+//   file). tint: the skin slots its atlas carries (alpha 255 - 16 * slot, 1 for the first): each takes that colour from the
+//   wearer's `skin`, so a recolour stays a CHARS edit. Bodies load in the background, the soonest needed first. The file's extras: box_man's bind joints (rig) and, per driven joint, its box_man bones, their blend and its
 //   world matrix while box_man stands in its bind (drive)
 const BODIES = {
   sam: { file: 'sam.cd1890c0.glb', far: 'sam_lod' },
@@ -2975,7 +2976,8 @@ const roofs = (B, scenery) => {
 function buildingExtras(row) {
   const K = STREET_KIT.buildings
   if (!K || row.kind !== 'building') return []
-  const out = [], rng = genRng(cityHash(row.seed ^ 0xb17d)), d = row.district ?? 1, tiers = row.boxes.length > 1 && !row.interior ? [row.boxes[0], row.boxes.at(-1)] : [row.env || row.boxes[0]]
+  const out = [], rng = genRng(cityHash(row.seed ^ 0xb17d)), d = row.district ?? 1, base = row.env || row.boxes[0], last = row.boxes.at(-1)
+  const tiers = last.cy + last.ey > base.cy + base.ey + 1e-3 ? [base, last] : [base]      // a tall building: its base and an upper tier, hollow or not
   const U = row.roofAccess ? null : roofUnit(row.seed, row.boxes.at(-1)), top = tiers.at(-1), topY = Math.max(...row.boxes.map(b => b.cy + b.ey)), Q = Math.PI / 2
   const sides = f => [[0, f.ez, 0, f.ex], [0, -f.ez, 2 * Q, f.ex], [f.ex, 0, Q, f.ez], [-f.ex, 0, -Q, f.ez]]
   const trim = (f, y, item) => { for (const [dx, dz, yaw, half] of sides(f)) out.push({ item, x: f.cx + dx, y, z: f.cz + dz, yaw, sx: 2 * half, seed: row.seed }) }
@@ -2987,7 +2989,7 @@ function buildingExtras(row) {
     if (!keepR || top.ex < R.min || top.ez < R.min) continue
     if (row.roofAccess && Math.max(Math.abs(dx), Math.abs(dz)) < 4.8) continue
     if (U && Math.abs(top.cx + dx - U.cx) < 1.4 + U.ex && Math.abs(top.cz + dz - U.cz) < 1.4 + U.ez) continue
-    out.push({ item: R.item, x: top.cx + dx, y: topY, z: top.cz + dz, yaw, roof: true, seed: row.seed })
+    out.push({ item: R.item, x: top.cx + dx, y: topY, z: top.cz + dz, yaw, roof: true, top, seed: row.seed })
   }
   return out
 }
@@ -7339,6 +7341,7 @@ function ownMaterials(root) {
     if (!copies.has(n.material)) {
       const m = n.material.clone()
       if (m.userData.capCloth) capFabric(m)
+      if (m.userData.tint) tintShader(m)
       if (m.userData.ghostDither) ghostMaterial(m)
       copies.set(n.material, m)
     }
@@ -9592,7 +9595,29 @@ function driveBody(g) {
 }
 const bindAt = (mesh, i, m = new THREE.Matrix4()) => m.copy(mesh.bindMatrix).invert().multiply(mesh.skeleton.boneInverses[i].clone().invert())
 // a served body on the rig of `root` (a fresh clone of a rigged proto, so at its bind): the rig keeps its bones and draws nothing
-function wearServed(root, B, key) {
+// a tinted atlas: neutral paint, a skin slot in alpha; each slot multiplies the colour by the wearer's skin colour for it, the four
+// slots round a pixel blended bilinearly (read exactly, so an edge between two slots is a smooth step, never a third slot). The colours
+// ride in userData, so a cloned material (ownMaterials) is tinted again
+const skinHex = v => v && typeof v === 'object' ? v.color : v
+function tintServed(m, B, skin) {
+  if (!m.map) return
+  m.userData.tint = Array.from({ length: 15 }, (_, k) => skinHex(skin?.[B.tint[k]]) ?? 0xffffff)
+  tintShader(m)
+}
+function tintShader(m) {
+  const cols = m.userData.tint.map(h => new THREE.Color(h))
+  m.onBeforeCompile = s => {
+    s.uniforms.tintCol = { value: cols }
+    s.fragmentShader = s.fragmentShader.replace('#include <map_pars_fragment>', `#include <map_pars_fragment>
+uniform vec3 tintCol[15];
+vec3 tintAt(ivec2 p, ivec2 n) { float k = floor((1.0 - texelFetch(map, clamp(p, ivec2(0), n - 1), 0).a) * 255.0 / 16.0 + 0.5); return k > 0.5 ? tintCol[int(k) - 1] : vec3(1.0); }`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+  { ivec2 n = textureSize(map, 0); vec2 f = vMapUv * vec2(n) - 0.5; ivec2 i = ivec2(floor(f)); vec2 w = fract(f);
+    diffuseColor.rgb *= mix(mix(tintAt(i, n), tintAt(i + ivec2(1, 0), n), w.x), mix(tintAt(i + ivec2(0, 1), n), tintAt(i + ivec2(1, 1), n), w.x), w.y); diffuseColor.a = 1.0; }`)
+  }
+  m.customProgramCacheKey = () => 'tint'
+}
+function wearServed(root, B, key, skin) {
   let rig
   root.traverse(n => { if (n.isSkinnedMesh && !rig) rig = n })
   rig.geometry = builtGeo.get(key + ':rig') || shareGeo(key + ':rig', rig.geometry.clone().setIndex([]))
@@ -9606,7 +9631,7 @@ function wearServed(root, B, key) {
     return { name, a, b, f, at: name === 'pelvis', qa: new THREE.Quaternion().setFromRotationMatrix(dm.extractRotation(Ca)), qb: new THREE.Quaternion().setFromRotationMatrix(dm.extractRotation(Cb)),
       ta: new THREE.Vector3().setFromMatrixPosition(Ca) } }))
   const body = cloneSkinned(meshDetail ? B.farTemplate : B.template)
-  body.traverse(n => { if (n.isMesh) n.material = n.material.clone() })
+  body.traverse(n => { if (n.isMesh) { n.material = n.material.clone(); if (B.tint) tintServed(n.material, B, skin) } })
   body.userData.drive = key
   root.updateMatrixWorld(true)        // at its bind: bone · inverse maps the rig's bind space to the world
   rig.parent.matrixWorld.clone().invert().multiply(rig.skeleton.bones[0].matrixWorld).multiply(rig.skeleton.boneInverses[0]).multiply(T)
@@ -9636,8 +9661,28 @@ function onBodyLoaded(B, gltf, image) {
     if (image) s.traverse(n => { if (n.isMesh && n.material.map) n.material = wear(n.material) })
     g.add(...s.children); return g }
   B.template = template(false); B.farTemplate = meshes.some(isFar) ? template(true) : B.template
-  builtBounds.clear(); walkLows.clear(); detailCache.clear(); prepKept.clear(); DRIVES.clear(); prepAt = null
-  if (MODELS.man.proto) rebuildAvatars()
+  builtBounds.clear(); walkLows.clear(); detailCache.clear(); DRIVES.clear(); prepAt = null
+  if (MODELS.man.proto) bodyArrived(B)
+  if (typeof pickArts !== 'undefined') {           // the portraits of whoever wears it, drawn again (where the pick screen exists)
+    for (const i of [...pickArts.keys()]) if ((teamOf(i) ? members(teamOf(i)) : [i]).some(c => BODIES[CHARS[c]?.mesh] === B)) pickArts.delete(i)
+    if (typeof document !== 'undefined' && document.getElementById?.('charpick')?.classList.contains('open')) pickPlan()
+  }
+}
+// a body arrived: only the avatars wearing it are built again, and the rows waiting on it prepared again (built, compiled, shadowed)
+function bodyArrived(B) {
+  const wears = (id, cid) => BODIES[GAME.participant(id, cid)?.mesh] === B, waiting = bodyWaiting.get(B) || []
+  bodyWaiting.delete(B)
+  for (const p of waiting) { const k = GAME.looks.key(...p), r = prepReady.get(k)
+    if (r) { r.a.mixer?.stopAllAction(); freeMaterials(r.a.mesh); prepReady.delete(k) }
+    prepKept.delete(k) }
+  for (const id of [...avatars.keys()]) {
+    const { cid, cap, mesh } = avatars.get(id), parent = mesh.parent
+    if (!wears(id, cid)) continue
+    mesh.removeFromParent(); dropAvatar(id)
+    const next = avatarFor(id, cid, cap)
+    if (parent) parent.add(next); else next.removeFromParent()
+  }
+  if (typeof prepareRows === 'function') prepareRows(waiting)
 }
 // the bodies the roster wears, from ASSET_DIR beside the page, else from the published site; none opened from a file
 let gltfLoading = null
@@ -9646,17 +9691,51 @@ const servedGLTF = () => gltfLoading ||= (self.THREE = THREE, geoLoad(BODY_LIBS)
   try { D.useWorkers(2) } catch (e) {}
   return { env, loader: new env.GLTF.GLTFLoader().setMeshoptDecoder(D) }
 })
-async function loadBodies() {
-  const want = Object.values(BODIES).filter(B => CHARS.some(C => BODIES[C.mesh] === B))
-  if (!want.length || location.protocol === 'file:') return
-  const { loader } = await servedGLTF(), images = new THREE.ImageLoader().setCrossOrigin('anonymous'), files = new Map()
+// The queue, soonest needed first: a match's rows and the next wave's go to its head (prepareRows), and so does a body an avatar wants
+// now; the rest follow from startup. One step a frame (bodyLoad): the fetch and decode run off the frame, then the arrival, then the
+// tinted material's compile, each a frame of its own, and in play only on a frame no slower than the page's usual.
+const bodyQueue = [], bodyFiles = new Map(), bodyWaiting = new Map(), bodyDts = [], BODY_CALM = 1.25
+let bodyT = 0
+function queueBody(B, first) {
+  if (B.template || B.failed || typeof location === 'undefined' || location.protocol === 'file:') return
+  const i = bodyQueue.findIndex(E => E.B === B)
+  if (i >= 0) { if (first && i > 0 && !bodyQueue[i].gen) bodyQueue.unshift(...bodyQueue.splice(i, 1)); return }
+  first ? bodyQueue.unshift({ B }) : bodyQueue.push({ B })
+}
+const wantBody = B => queueBody(B, true)
+function bodyLoad() {
+  const t = now(), dt = t - bodyT; bodyT = t
+  bodyDts.push(dt); if (bodyDts.length > 60) bodyDts.shift()
+  if (!bodyQueue.length || renderHeadless || serving || !renderer) return
+  // in play, only on a calm frame by this page's own pace (a slow phone's frames are all slow): under 1.25x its recent median
+  if (!offPlay() && dt > BODY_CALM * [...bodyDts].sort((a, b) => a - b)[bodyDts.length >> 1]) return
+  const E = bodyQueue[0]
+  try { if ((E.gen ||= bodyLoadSteps(E.B)).next().done) bodyQueue.shift() } catch (e) { bodyQueue.shift(); E.B.failed = true; throw e }      // a failing body drops alone
+}
+async function fetchBody(B) {
+  const { loader } = await servedGLTF(), images = new THREE.ImageLoader().setCrossOrigin('anonymous')
   const fetchFirst = async (name, load) => { for (const url of [ASSET_DIR + name, ASSET_SITE + name]) {
     try { return await load(url) } catch (e) { console.warn('body ' + url + ' failed:', e && e.message) } } }
-  for (const B of want) {
-    const gltf = await (files.get(B.file) || files.set(B.file, fetchFirst(B.file, u => loader.loadAsync(u))).get(B.file))
-    const image = gltf && B.map && await fetchFirst(B.map, u => images.loadAsync(u))
-    if (gltf && (!B.map || image)) onBodyLoaded(B, gltf, image)        // else its code body draws
-  }
+  const gltf = await (bodyFiles.get(B.file) || bodyFiles.set(B.file, fetchFirst(B.file, u => loader.loadAsync(u))).get(B.file))
+  const image = gltf && B.map && await fetchFirst(B.map, u => images.loadAsync(u))
+  return gltf && (!B.map || image) ? { gltf, image } : null          // else its code body draws
+}
+function* bodyLoadSteps(B) {
+  let got; fetchBody(B).then(v => got = { v }, () => got = { v: null })
+  while (!got) yield
+  if (B.template) return
+  if (!got.v) { B.failed = true; return }
+  yield
+  onBodyLoaded(B, got.v.gltf, got.v.image)
+  yield
+  // a tinted copy compiled now, so the first sight of a wearer compiles nothing
+  let done = false
+  if (camera && renderer.compileAsync) {
+    const s = cloneSkinned(B.template)
+    s.traverse(n => { if (n.isMesh) { n.material = n.material.clone(); if (B.tint) tintServed(n.material, B, {}) } })
+    renderer.compileAsync(s, camera, scene).catch(() => {}).then(() => { done = true })
+  } else done = true
+  while (!done) yield
 }
 // the cars' file (CAR_MODELS), from assets/ beside the page, else the published site; none opened from a file
 async function loadCars() {
@@ -9679,7 +9758,7 @@ function loadModels() {
       console.warn('model ' + name + ' unavailable, using capsules:', e && e.message)
     }
   }
-  loadBodies().catch(e => console.warn('bodies unavailable:', e && e.message))
+  for (const B of Object.values(BODIES)) queueBody(B, false)          // every body, in the background
   loadServed().catch(e => console.warn('served parts unavailable:', e && e.message))
   loadCars().catch(e => console.warn('cars unavailable:', e && e.message))
 }
@@ -11152,6 +11231,7 @@ function bodyStep(B, M, id, cid, key, more) {
 }
 function prepareRows(pairs) {
   if (renderHeadless || serving || !renderer) return
+  for (const p of pairs) { const B = BODIES[GAME.participant(...p)?.mesh]; if (B && !B.template) { wantBody(B); (bodyWaiting.get(B) || bodyWaiting.set(B, []).get(B)).push(p) } }
   prepareLooks(pairs)
   for (const p of pairs) {
     const k = GAME.looks.key(...p)
@@ -11275,7 +11355,9 @@ function* bodySteps(M, id, cid, key, C) {
     return root
   }
   root = cloneSkinned(M.proto)
-  if (BODIES[C.mesh]?.template) { wearServed(root, BODIES[C.mesh], key); return root }
+  const B = BODIES[C.mesh]
+  if (B?.template) { wearServed(root, B, key, GAME.looks.skin(id, cid)); return root }
+  if (B && id !== PICK_SHOT) wantBody(B)          // its code body until the file comes; a portrait never asks
   // Measure after dressing: bind-pose rotations can turn added girth into height.
   yield* dressSteps(root, GAME.looks.skin(id, cid), GAME.looks.shape(id, cid), key)
   root.traverse(n => { if (n.isSkinnedMesh && !rig) rig = n })
@@ -20143,6 +20225,7 @@ function frameBody() {
     startLog.frames.push(t - (startLog.last ?? t)); startLog.last = t
   }
   try { if (phase === 'menu') prepMenu(); prepareStep() } catch (e) { prepQueue.shift(); prepAt = null; frameFailed('prep', e) }      // a failing row drops only itself
+  try { bodyLoad() } catch (e) { frameFailed('bodies', e) }
   try { drawSlices() } catch (e) { frameFailed('chunk', e) }
   try { interiorFrame() } catch (e) { frameFailed('interiors', e) }
   if (screensDirty) try { screensDraw() } catch (e) { frameFailed('screens', e) }
