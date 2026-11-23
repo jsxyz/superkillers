@@ -877,7 +877,7 @@ const THREE = ENABLE3D.THREE
 
 // ---------------------------------------------------------------- tuning
 // ---- CONTENT, what a reskin edits: CHARS (bots: BOTS; teams: TEAMS + `team`), SIDES, WAVES, GUNS + SOUNDS,
-//   POWERS, HEALS, OBJECTS, LEVELS, VEHICLES (VEHICLE_STYLES, CAR_MODELS), MODELS (COSTUMES), BODIES, TEXT, READINGS + SPEECH, RADIO
+//   POWERS, HEALS, OBJECTS, LEVELS, VEHICLES (VEHICLE_STYLES, CAR_MODELS), MODELS (COSTUMES), BODIES, STREET_KIT, TEXT, READINGS + SPEECH, RADIO
 // Swap a character's look: a MODELS row (`url`: a rig under ASSET_DIR), named by its CHARS row's `model`, or a BODIES row (`file`: a
 // served body), named by `mesh`. Its words: TEXT, and SPEECH for what it says. Its sound: a SOUNDS row's `file` (under ASSET_DIR).
 // A car's look: its VEHICLES row's VEHICLE_STYLES entry, a style in CAR_MODELS (`file`, under ASSET_DIR).
@@ -924,7 +924,7 @@ const TEXT = {
   eventCurrent: ' ({on})', eventNone: 'none', setBalance: 'Balance teams: {v}', rateAuto: 'Auto, {hz} / s', rateFixed: '{hz} / s',
   noLimit: 'no limit', minutes: '{n} min', untimed: 'untimed',
   // heroes' moves
-  disguisedAs: '§7Disguised as §f{name}',
+  disguisedAs: '§7Disguised as §f{name}', heartAttack: 'Moon Spiral Heart Attack',
   // the settings
   controls: 'Controls', camera: 'Camera', graphics: 'Graphics', sound: 'Sound', mouseSens: 'Mouse sensitivity', padSens: 'Pad look speed',
   fov: 'Field of view', volume: 'Volume', bcastVolume: 'Broadcast volume', fullscreen: 'Fullscreen',
@@ -955,6 +955,8 @@ const TEXT = {
   runEnd: '§e{why} §7The run reached §f{wave}', reviveOut: '§eA revive is out.', reviveHidden: '§eA revive is hidden {where}.',
   hideWhere: { roof: 'on a roof', sewer: 'in the sewers', inside: 'inside a building' },
   reviveBack: '§f{name} §7is back.',
+  // waves: a wave joined by heroes from others, and the word before a list's last
+  waveWith: '§e{wave}§7, and §f{heroes}§7!', listAnd: ' and ',
   // kills: the feed's line between killer and victim, the callouts (what the screen shows, what the announcer says) and a spree's end
   feedMid: ' › {weapon} › ', spreeEnded: 'Spree ended by {who}', unnamed: '?',
   // the HUD's word for a use at a manhole
@@ -1100,6 +1102,11 @@ for (const { id, of, ...look } of OUTFITS) {
 // look boomerang: a spinning disc of radius disc m flies the aim line and back over flight s, looping aside by bow m; with kind pierce it
 //   hits what the line crosses
 // kind radius with heal: restores heal hp to its user and each living body of its side within range, up to its full hp
+// backstab: { as, arc } on a melee row: its user disguised, a hit on a body from behind (its back within arc degrees of the line behind it,
+//   both facing the same way) kills it and clears the user's disguise wait; the GUNS row `as` is the kill's name, sound and look
+// look heart: the shot's span is the victim, feet to head; its blood bursts out of the chest, then for flashMs the shooter holds the row's model up
+//   (it beats: beat { hz, depth }) and drips `drip`, then crushes it: a `burst` and a heart outline with sparkles (glint { color, size m, spark m }), over life s. gore:
+//   { streaks, reach m, rise }: the kill's blood streaks up and out from the chest. feed: the TEXT key of the kill feed's name. cues: [[SOUNDS row, s]]
 // kind disguise: the user is drawn by the other sides as the next of `as` (CHARS names), `msg` (a TEXT key, {name}) tells it who, until it attacks
 //   or loses hp, then `wait` s before it can again; POWERS' `veil` row is how its own side sees it
 // ground marks a GUNS row's `scar` names: r m, color centre, edge rim
@@ -1145,6 +1152,7 @@ const PARTICLES = {
   spark: { n: 12, life: [0.18, 0.4], speed: [5, 12], size: [0.1, 0.16], cone: 1, fall: 12, grow: 0.4, add: true, cell: 0, stretch: 0.07, hot: 0.55 },
   puff: { n: 4, life: [0.35, 0.7], speed: [0.3, 1.2], size: [0.18, 0.3], cone: 1.4, fall: -0.6, grow: 3, cell: 0, color: 0x8a8378 },
   dust: { n: 6, life: [0.45, 0.85], speed: [0.6, 1.8], size: [0.22, 0.36], cone: 1.2, fall: -0.4, grow: 2.6, cell: 0, color: 0xc9c0ae },
+  heartBlood: { n: 36, life: [0.35, 0.9], speed: [4, 10], size: [0.1, 0.2], cone: 1.4, fall: 9, grow: 0.7, cell: 0, color: 0xb01020 },
   claw: { n: 9, life: [0.12, 0.26], speed: [6, 11], size: [0.06, 0.1], cone: 0.35, fall: 6, grow: 0.3, add: true, cell: 0, stretch: 0.12, hot: 0.4 },
   blood: { n: 10, life: [0.4, 0.9], speed: [2.2, 7.5], size: [0.05, 0.11], cone: 0.6, fall: 16, grow: 0.5, cell: 0, stretch: 0.06 },
   gib: { n: 10, life: [0.5, 1.1], speed: [3, 9], size: [0.07, 0.16], cone: 0.9, fall: 15, grow: 0.7, cell: 0 },
@@ -1246,13 +1254,16 @@ const GUNS = [
   { name:'Necroplasm', scar:'scorch', rate:1.20, dmg:28, spread:0.02, range:46, knock: 8.0, color:0x4dff7a,
     windup:0.45, look:'beam', orb:0.5, held:false, punch:'palms', punchMs:350, charge:'palms' },
   { name:'Moon Kick', rate:0.50, dmg:14, spread:0.16, pellets:3, range: 2.8, knock:12.0, color:0xff9ad1,
-    melee:true, held:false, punch:'rise', punchMs:360 },
+    melee:true, held:false, punch:'rise', punchMs:360, backstab:{ as:'Moon Spiral Heart Attack', arc:120 } },
   { name:'Moon Tiara', scar:'scorch', kind:'pierce', rate:0.90, dmg:22, range:30, knock: 4.0, color:0xffd86b,
     held:false, look:'boomerang', flight:0.7, disc:0.42, bow:1.7 },
   { name:'Moon Healing Escalation', kind:'radius', heal:40, rate:6.0, dmg: 0, range: 7, knock: 0, color:0xffe3f1,
     held:false, punch:'palms', punchMs:500 },
   { name:'Disguise Pen', kind:'disguise', as:['Sam', 'Beck', 'Vito'], wait:8, msg:'disguisedAs', rate:0.5, dmg: 0, range: 0, knock: 0,
     color:0xc9b6ff, held:false },
+  { name:'Moon Spiral Heart Attack', feed:'heartAttack', look:'heart', model:'Heart', life:3.2, flashMs:1500, punch:'jab', punchMs:300, beat:{ hz:2, depth:0.14 },
+    rate:0, dmg: 0, range: 0, knock: 0, color:0x7a0f18, glint:{ color:0xff8fd8, size:0.26, spark:0.2 }, gore:{ streaks:34, reach:2.4, rise:0.8 }, burst:'heartBlood', drip:'heartBlood',
+    cues:[['Heartbeat', 0.4], ['Heartbeat', 0.9], ['Heart Crush', 1.5]] },
 ].map(G => ({ ...GUN_ROW, ...G }))
 // POWERS: dur s, then scales of move jump rate give take fuel jet reach lift (jet 0 grounds; reach 0 spares melee)
 // drop:false: by `apply` only. look: an EFFECT_LOOKS overlay. veil: how a disguised body's own side sees it
@@ -1326,6 +1337,9 @@ const WAVES = [
   { name: 'SPAWN',               pick: { name: 'Spawn' } },
   { name: 'SAILOR MOON',         pick: { name: 'Sailor Moon' } },
 ]
+// a wave's chance of more heroes joining it from other waves: 1 in oneIn, `heroes` of them, one from each of as many other
+// waves (never on a run's first wave)
+const WAVE_EXTRAS = { oneIn: 5, heroes: 2 }
 // a LEVELS row's `theme` overrides THEME. TOR_TOP: tornado top (m), or the lid if lower
 const TOR_TOP = 25
 // host-picked, in 96 m chunks
@@ -1377,7 +1391,11 @@ const LEVELS = [
     objects: ['8 .55 24 Ball', '-24 .55 -14 Ball',
       '16 .8 -12 Crate', '17.7 .8 -12 Crate', '16.85 2.4 -12 Crate', '-6 .8 -40 Crate', '0 .25 -30 Kryptonite'],
     reach: [1, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, '-59.55 4.2 -39.6'],
-    screens: ['0 12 -70.94 16 9 0', '-28 7.6 46 12 6.75 3.1416 board'] },
+    screens: ['0 12 -70.94 16 9 0', '-28 7.6 46 12 6.75 3.1416 board'],
+    theme: { textures: {
+      floor: { color: { 512: 'yard-floor-512.d73ab86e.webp', 1024: 'yard-floor-1024.ef18f112.webp' }, normal: { 1024: 'yard-floor-n-1024.1888904f.webp' } },
+      wall: { color: { 512: 'yard-wall-512.8895bd27.webp', 1024: 'yard-wall-1024.2f930474.webp' }, normal: { 1024: 'yard-wall-n-1024.2d70deff.webp' } }
+    } } },
   // nowhere to stand lower than the tallest character
   { name: 'Foundry', brushes: [
     '0 -1 0 72 1 72',
@@ -1394,12 +1412,20 @@ const LEVELS = [
     spawns: [['q', '60.48 3 60.48', '60.48 3 7.2', '7.2 3 60.48']],
     objects: ['20 .55 0 Ball', '-20 .55 0 Ball',
       '20 .8 20 Crate', '21.7 .8 20 Crate', '20.85 2.4 20 Crate', '-20 .8 -20 Crate', '36 .25 -30 Kryptonite'],
-    reach: ['pads', '0 2.8 0', '0 6.4 44.64', '44.64 6.4 0', '-44.64 6.4 0', '0 6.4 -44.64', ['q', '53.6 6.4 53.6'], '0 12.2 0'] },
-  { name: 'Sprawl', gen: { kind: 'sprawl', seed: 1337, size: 2 }, objects: ['0 .25 0 Kryptonite'], reach: ['pads'] },
+    reach: ['pads', '0 2.8 0', '0 6.4 44.64', '44.64 6.4 0', '-44.64 6.4 0', '0 6.4 -44.64', ['q', '53.6 6.4 53.6'], '0 12.2 0'],
+    theme: { textures: {
+      floor: { color: { 512: 'foundry-floor-512.1faa1566.webp', 1024: 'foundry-floor-1024.aa7b1cbf.webp' }, normal: { 1024: 'foundry-floor-n-1024.af38f830.webp' } },
+      wall: { color: { 512: 'foundry-wall-512.4738720b.webp', 1024: 'foundry-wall-1024.4d88d66c.webp' }, normal: { 1024: 'foundry-wall-n-1024.ef7f424d.webp' } }
+    } } },
+  { name: 'Sprawl', gen: { kind: 'sprawl', seed: 1337, size: 2 }, objects: ['0 .25 0 Kryptonite'], reach: ['pads'],
+    theme: { textures: {
+      floor: { color: { 512: 'sprawl-floor-512.6dd9e511.webp', 1024: 'sprawl-floor-1024.6fa0bb50.webp' }, normal: { 1024: 'sprawl-floor-n-1024.5b2df311.webp' } },
+      wall: { color: { 512: 'sprawl-wall-512.e1dc5194.webp', 1024: 'sprawl-wall-1024.8d02f09f.webp' }, normal: { 1024: 'sprawl-wall-n-1024.e4cf52b8.webp' } }
+    } } },
   { name: 'City', screens: [{ buildings: 6, roofs: 8 }], gen: { kind: 'city', seed: 2026, size: 20, cores: [[-180, -260], [330, 290]],
       heights: [[140, 72, 168, 0], [300, 36, 120, 0], [520, 16.8, 54, 1], [800, 8.4, 25.2, 1], [Infinity, 4.2, 8.4, 2]] },
     theme: { fog: [0x252b3a], view: [31, 192], textures: {
-      facade: { color: { 512: 'city-facade-512.5fd00db7.webp', 1024: 'city-facade-1024.dc08b76c.webp' }, normal: { 1024: 'city-facade-n-1024.ed152ace.webp' } },
+      facade: { color: { 512: 'city-facade-512.c7178f31.webp', 1024: 'city-facade-1024.dc08b76c.webp' }, normal: { 1024: 'city-facade-n-1024.ed152ace.webp' } },
       street: { color: { 512: 'city-street-1024.4e69d3c7.webp', 1024: 'city-street-2048.094a5083.webp' } },
       paving: { color: { 512: 'city-paving-512.157174a6.webp', 1024: 'city-paving-1024.52c4085a.webp' }, normal: { 1024: 'city-paving-n-1024.2bd569ee.webp' } },
       roof: { color: { 512: 'city-roof-512.3161d451.webp', 1024: 'city-roof-1024.b669ab90.webp' } }
@@ -1527,6 +1553,49 @@ const LEVELS = [
       '-19.2 2.4 -60.24 Crate', '7.2 0.25 -28.8 Kryptonite',
     ], reach: ['pads'] },
 ]
+// STREET_KIT: the City's street furniture, a GLB served from assets/ beside the page (a node per item), placed by the generator
+//   from the seed. items: node (its mesh in the file), far (a lighter node drawn past the near LOD, else none), deco (its bodies are for cars and loose objects: walkers and shots pass small clutter), boxes (its bodies as
+//   [half x, y, z, offset x, y, z], at its footing, turned with it), at (m in from the road to its middle), r (m kept around it), shadow (casts one), tint (colours its instances pick from), fall (the colour its
+//   boxes draw in with no file). layers run in order over each block's four kerbs (`at` overrides the item's), `clear` m from its corners:
+//   pick: [[item, weight]], every: mean spacing m, p: the share of spots kept, roads: only where the road is an 'avenue' or a 'street'.
+//   mode 'corner' puts one at each of a block's corners, 'park' walks a park's edges facing in. door: m kept from a building's door;
+//   range: m from the middle of a quarter of a chunk past which its items that cast no shadow are not drawn; lampRange: the same for a chunk's lamps
+//   lamps (an item's lights, lit as drawn): at [x, y, z] in the item, color (a list: one by the row's seed), halo [half-width m, strength]
+//   about the head, pool [radius m, strength] on the ground under it; a chunk's lamps are one additive mesh
+const STREET_KIT = {
+  file: 'streetkit.c73993e4.glb', at: 0.5, clear: 3, door: 2.8, range: 70, lampRange: 120,
+  items: {
+    light: { at: 0.4, node: 'streetlight', far: 'streetlight_far', deco: true, boxes: [[0.16, 3.5, 0.16, 0, 3.5, 0]], r: 0.35, shadow: true, fall: 0x3b4147,
+      lamps: [{ at: [0, 6.9, 1.9], color: 0xffd9a0, halo: [1.2, 0.9], pool: [5.5, 0.5] }] },
+    signal: { at: 0.35, node: 'signal', deco: true, boxes: [[0.12, 2.6, 0.12, 0, 2.6, 0]], r: 0.4, shadow: true, fall: 0x3b4147,
+      lamps: [{ at: [0, 4.5, 0.4], color: [0xff3a2a, 0xffb020, 0x30e070], halo: [0.5, 1], pool: [1.6, 0.25] }] },
+    busstop: { at: 0.45, node: 'busstop', boxes: [[1.5, 1.15, 0.14, 0, 1.15, -0.30], [0.85, 0.25, 0.2, 0, 0.25, -0.17]], r: 1.7, shadow: true, fall: 0x7f9fae },
+    sign_stop: { at: 0.2, node: 'sign_stop', deco: true, boxes: [[0.06, 1.25, 0.06, 0, 1.25, 0]], r: 0.3, shadow: true, fall: 0xc9281f },
+    sign_bus: { at: 0.2, node: 'sign_bus', deco: true, boxes: [[0.06, 1.35, 0.06, 0, 1.35, 0]], r: 0.3, shadow: true, fall: 0x2159a8 },
+    sign_street: { at: 0.2, node: 'sign_street', deco: true, boxes: [[0.06, 1.5, 0.06, 0, 1.5, 0]], r: 0.3, shadow: true, fall: 0x1e6e47 },
+    bench: { at: 0.3, node: 'bench', deco: true, boxes: [[0.9, 0.43, 0.27, 0, 0.43, 0]], r: 1, fall: 0x8c5b36 },
+    bin: { at: 0.33, node: 'bin', deco: true, boxes: [[0.32, 0.48, 0.32, 0, 0.48, 0]], r: 0.4, fall: 0x35604a },
+    hydrant: { at: 0.25, node: 'hydrant', deco: true, boxes: [[0.2, 0.4, 0.2, 0, 0.4, 0]], r: 0.3, fall: 0xc0392b },
+    mailbox: { at: 0.28, node: 'mailbox', deco: true, boxes: [[0.3, 0.65, 0.25, 0, 0.65, 0]], r: 0.5, fall: 0x2159a8 },
+    meter: { at: 0.15, node: 'meter', deco: true, boxes: [[0.1, 0.7, 0.1, 0, 0.7, 0]], r: 0.3, fall: 0xa7afb4 },
+    newsbox: { at: 0.26, node: 'newsbox', deco: true, boxes: [[0.29, 0.57, 0.24, 0, 0.57, 0]], r: 0.4, tint: [0xc0392b, 0x2f6fb5, 0xe8b923, 0x3c8c4a], fall: 0xd6d6d6 },
+    planter: { at: 0.35, node: 'planter', deco: true, boxes: [[0.68, 0.3, 0.33, 0, 0.3, 0]], r: 0.8, fall: 0xb7b3a9 },
+    planter_round: { at: 0.47, node: 'planter_round', deco: true, boxes: [[0.47, 0.3, 0.47, 0, 0.3, 0]], r: 0.55, fall: 0x84402f },
+    bollard: { at: 0.15, node: 'bollard', deco: true, boxes: [[0.1, 0.45, 0.1, 0, 0.45, 0]], r: 0.25, fall: 0xa7afb4 },
+    barrier: { at: 0.3, node: 'barrier', deco: true, boxes: [[1, 0.4, 0.28, 0, 0.4, 0]], r: 1.1, fall: 0xb7b3a9 },
+  },
+  layers: [
+    { pick: [['signal', 1]], mode: 'corner', roads: 'avenue', p: 0.7 },
+    { pick: [['sign_stop', 1]], mode: 'corner', roads: 'street', p: 0.35 },
+    { pick: [['hydrant', 1]], mode: 'corner', p: 0.2 },
+    { pick: [['light', 1]], every: 54 },
+    { pick: [['busstop', 1]], every: 150, clear: 8, roads: 'avenue', p: 0.8 },
+    { pick: [['sign_bus', 1]], every: 120, clear: 6, roads: 'avenue', p: 0.5 },
+    { pick: [['bench', 4], ['bin', 4], ['newsbox', 1], ['mailbox', 1], ['meter', 3], ['planter', 2], ['bollard', 2], ['barrier', 1], ['sign_street', 1]], every: 16, p: 0.55 },
+    { pick: [['hydrant', 1]], every: 110, clear: 4, p: 0.8 },
+    { pick: [['bench', 3], ['bin', 2], ['planter', 1], ['planter_round', 1]], mode: 'park', every: 12, at: 1.5, p: 0.5 },
+  ],
+}
 // OBJECTS: r: ball radius, or half: box half-extents (m); mass (player 1); hit: × shot knock; roll: rolling friction
 // weakens: { effect, within m, struck s }: gives `weak` bodies their `weakness`, else this effect
 const OBJECTS = [
@@ -2171,6 +2240,13 @@ const PROP_MODELS = {
       m = k.add({ g: ['lathe', [[0, 0], [w, 0], [w, h], [0, h + w * 1.6]], 6], m: 'accent', r: [rx, 0, rz], tag: 'crystal' }).material
     m.flatShading = true; m.emissive.copy(m.color).multiplyScalar(0.1)
   },
+  Heart(k) {
+    const U = 0.6, q = p => p.map(x => x * U)
+    k.add({ g: ['lathe', [[0, -0.12], [0.03, -0.105], [0.07, -0.07], [0.10, -0.02], [0.115, 0.04], [0.105, 0.09], [0.06, 0.115], [0, 0.12]].map(q), 18], m: 'accent', tag: 'ventricles' })
+    for (const s of [-1, 1]) k.add({ g: ['sphere', 0.07 * U, 12, 8], m: 'accent', p: q([s * 0.065, 0.1, 0]), s: [1, 0.9, 0.95], tag: 'atrium' })
+    k.add({ g: ['tube', [[0, 0.1, 0], [0.01, 0.17, -0.01], [-0.04, 0.215, -0.01]].map(q), 0.028 * U, 8, 6], m: 'red', tag: 'aorta' })
+    for (const s of [-1, 1]) k.add({ g: ['cylinder', 0.021 * U, 0.021 * U, 0.07 * U, 8], m: 'red', p: q([s * 0.075, 0.16, 0]), r: [0, 0, -s * 0.5], tag: 'vein' })
+  },
   Pie(k) {
     const r = [-Math.PI / 2, 0, 0]
     k.add({ g: ['lathe', [[0, 0], [0.30, 0], [0.36, 0.09], [0.33, 0.09], [0.28, 0.02], [0, 0.02]], 24], m: 'steel', r, tag: 'dish' })
@@ -2294,6 +2370,9 @@ const SOUNDS = {
   'Moon Tiara': { say: 'a glowing tiara spinning away with a bright rising chime', seed: 0 },
   'Moon Healing Escalation': { say: 'a warm, shimmering wash of soft bells swelling and fading', seed: 0 },
   'Disguise Pen': { say: 'a quick magical click and a swirl of sparkles', seed: 0 },
+  'Moon Spiral Heart Attack': { say: 'a wet, tearing rip of flesh and a crack of ribs', seed: 0 },
+  Heartbeat: { say: 'a single deep, wet heartbeat thump', seed: 0 },
+  'Heart Crush': { say: 'a heart crushed in a fist with a wet squelch, then a soft sparkling chime', seed: 0 },
 
   // ---- you, never placed
   hit: { say: 'the hit confirmation: a short, bright tick above the gunfire, the same every time, since players learn it', seed: 0, file: 'hit.b3b157ce.ogg' },
@@ -2646,6 +2725,7 @@ const roofs = (B, scenery) => {
     if (!s.roofAccess) B.push(roofUnit(s.seed, s.boxes.at(-1)))
     for (const p of s.interior?.props || []) if (p.solid) B.push({ cx: p.box[0], cy: p.box[1], cz: p.box[2], ex: p.box[3], ey: p.box[4], ez: p.box[5], vis: false })
   }
+  for (const s of scenery || []) if (s.kind === 'prop' && s.deco) for (const b of s.boxes) b.deco = true
   return scenery
 }
 function chunkPlan(seed, S, ci, cj) {
@@ -2774,14 +2854,14 @@ function cityChunk(seed, S, ci, cj, B = [], scenery = [], spot = [[], [], [], []
   const A = S * 48, k = 72 / A
   const at = (x, y, z, ...e) => [x * k, y, z * k, ...e].map(v => +v.toFixed(3)).join(' ')
   const box = (x, y, z, ex, ey, ez, tag = '') => B.push(at(x, y, z, ex * k, ey, ez * k) + tag) - 1
-  const { rng, xs, zs } = chunkPlan(seed, S, ci, cj), X = ci * 96 - A, Z = cj * 96 - A
+  const { rng, xs, zs } = chunkPlan(seed, S, ci, cj), X = ci * 96 - A, Z = cj * 96 - A, blocks = [], parks = []
   for (let a = 0; a + 1 < xs.length; a++) for (let b = 0; b + 1 < zs.length; b++) {
     const x0 = X + xs[a] + (a ? 4 : 0), x1 = X + xs[a + 1] - (a + 1 < xs.length - 1 ? 4 : 0)
     const z0 = Z + zs[b] + (b ? 4 : 0), z1 = Z + zs[b + 1] - (b + 1 < zs.length - 1 ? 4 : 0)
     for (const [i, j, w, h] of genSplit(rng, (x1 - x0) / 2 | 0, (z1 - z0) / 2 | 0, 6)) {
       const cx = x0 + (i + w / 2) * 2, cz = z0 + (j + h / 2) * 2, ex = w - 1, ez = h - 1, far = Math.hypot(cx, cz) / A, r = rng()
       if (r < 0.12) {
-        box(cx, KERB / 2, cz, ex, KERB / 2, ez, ' paint')
+        box(cx, KERB / 2, cz, ex, KERB / 2, ez, ' paint'); parks.push([cx, cz, ex, ez])
         for (let n = Math.min(6, w * h / 16 | 0); n--;) {
           const tx = cx + (rng() - 0.5) * 2 * (ex - 1), tz = cz + (rng() - 0.5) * 2 * (ez - 1), th = 3 + (rng() * 3 | 0)
           scenery.push({ kind: 'tree', seed: rng() * 2 ** 32 >>> 0, family: ['round', 'conifer', 'cluster'][rng() * 3 | 0],
@@ -2807,6 +2887,13 @@ function cityChunk(seed, S, ci, cj, B = [], scenery = [], spot = [[], [], [], []
     }
     // after its lots, so a lawn on the same plane keeps its own top
     scenery.push({ kind: 'walk', box: box((x0 + x1) / 2, KERB / 2, (z0 + z1) / 2, (x1 - x0) / 2, KERB / 2, (z1 - z0) / 2, ' paint') })
+    blocks.push({ x0, x1, z0, z1, roads: [a ? 'street' : 'avenue', a + 2 < xs.length ? 'street' : 'avenue', b ? 'street' : 'avenue', b + 2 < zs.length ? 'street' : 'avenue'] })
+  }
+  const avoid = scenery.flatMap(s => s.interior?.door ? [[...s.interior.door, STREET_KIT.door]] : s.kind === 'tree' ? [[s.x, s.z, 0.6]] : [])
+  for (const p of furnish(seed, S, ci, cj, blocks, parks, avoid)) {
+    const I = STREET_KIT.items[p.item], c = Math.round(Math.cos(p.yaw)), s = Math.round(Math.sin(p.yaw))
+    scenery.push({ kind: 'prop', ...p, deco: !!I.deco, boxes: I.boxes.map(([hx, hy, hz, ox, oy, oz]) =>
+      box(p.x + ox * c + oz * s, oy, p.z - ox * s + oz * c, c ? hx : hz, hy, c ? hz : hx)) })
   }
   if (ci && cj) spot[1].push([X, 0, Z])
   for (const [d, edge] of [[0, ci], [1, cj]]) for (const t of [30, 66]) if (edge < S - 1 && VEHICLES.length && rng() < 0.5) {
@@ -3011,6 +3098,36 @@ function sewerUnit(plan, kind, k) {
   }
   plan.units.set(key, U)
   return U
+}
+
+// STREET_KIT's placements in one chunk: every layer walks each block's kerbs, corners or a park's edges from its own seeded stream (the
+// chunk's rng is never drawn from, so its plan is the same with or without them); a spot near a door, a tree or an earlier item stays free
+function furnish(seed, S, ci, cj, blocks, parks, avoid) {
+  const K = STREET_KIT, out = [], taken = [], OUT = [-Math.PI / 2, Math.PI / 2, Math.PI, 0]
+  const free = (x, z, r) => !taken.some(t => Math.hypot(t[0] - x, t[1] - z) < t[2] + r + 0.25) && !avoid.some(a => Math.hypot(a[0] - x, a[1] - z) < a[2] + r)
+  K.layers.forEach((L, li) => {
+    const total = L.pick.reduce((s, p) => s + p[1], 0), clear = L.clear ?? K.clear, park = L.mode === 'park'
+    const frames = park ? parks.map(([cx, cz, ex, ez]) => ({ x0: cx - ex, x1: cx + ex, z0: cz - ez, z1: cz + ez })) : blocks
+    frames.forEach((f, fi) => {
+      const rng = genRng(Math.imul(cityHash(seed ^ Math.imul(ci + 1, 73856093) ^ Math.imul(cj + 1, 19349663)) ^ Math.imul(li + 1, 83492791), 2654435761) ^ Math.imul(fi + 1, 40503))
+      const spot = () => { let t = rng() * total; const name = (L.pick.find(p => (t -= p[1]) < 0) || L.pick.at(-1))[0]; return { name, keep: rng() < (L.p ?? 1), seed: rng() * 2 ** 32 >>> 0 } }
+      const at = name => L.at ?? K.items[name].at ?? K.at, put = ({ name, keep, seed }, x, z, yaw) => { if (keep && free(x, z, K.items[name].r)) { out.push({ item: name, x, z, yaw, seed }); taken.push([x, z, K.items[name].r]) } }
+      if (L.mode === 'corner') {
+        for (const [cx, cz, sa, sb] of [[f.x0, f.z0, 0, 2], [f.x1, f.z0, 1, 2], [f.x0, f.z1, 0, 3], [f.x1, f.z1, 1, 3]]) {
+          const s = spot(), side = rng() < 0.5 ? sa : sb, d = at(s.name)
+          if (!L.roads || f.roads[sa] === L.roads || f.roads[sb] === L.roads) put(s, cx + (cx === f.x0 ? d : -d), cz + (cz === f.z0 ? d : -d), OUT[side])
+        }
+        return
+      }
+      for (let s = 0; s < 4; s++) {
+        if (L.roads && f.roads?.[s] !== L.roads) continue
+        const [lo, hi] = s < 2 ? [f.z0, f.z1] : [f.x0, f.x1]
+        for (let t = lo + clear + L.every * rng() * 0.8; t < hi - clear; t += L.every * (0.6 + 0.8 * rng()))
+          { const q = spot(), d = at(q.name); put(q, s < 2 ? (s ? f.x1 - d : f.x0 + d) : t, s < 2 ? t : (s === 2 ? f.z0 + d : f.z1 - d), OUT[s] + (park ? Math.PI : 0)) }
+      }
+    })
+  })
+  return out
 }
 
 const tagged = (t, pad) => t === 'paint' ? { paint: true } : t && { mark: pad }
@@ -3223,6 +3340,8 @@ const picked = pick => BOTS.flatMap((B, i) =>
 // [id, cid] for a bot row and its alt
 const botPairs = list => list.flatMap(i => [[BOT_ID0 + i, BOTS[i].cid], ...BOTS[i].altRow ? [[BOT_ID0 + i, BOTS[i].altRow.cid]] : []])
 let waveAt = -1, waveGap = 0, waveNo = 0
+// the heroes from other waves the next wave brings, rolled when the gap before it begins
+let waveExtra = []
 // a break holds while the next wave's rows (or any other queued look) still prepare, WAVE_HOLD_S longer at most
 const WAVE_GAP_S = 4, WAVE_HOLD_S = 10
 
@@ -5198,11 +5317,12 @@ function addChunk(boxes, cell, tris = [], slim, solid, crowns = []) {
     A.destroy(v)
     body.setFriction(0.9)
     if (cell[0] === 'g') body.setContactProcessingThreshold(0.0005)      // crater pieces abut: solve only what touches
+    if (b.deco) { world.addRigidBody(body, ...COLLIDE.deco); B.deco = true; bodies.push(B); continue }
     if (b.mark) { body.setCollisionFlags(body.getCollisionFlags() | 4); world.addRigidBody(body, ...COLLIDE.pad); padBodies.set(A.getPointer(body), b) }
     else world.addRigidBody(body, ...COLLIDE.static)
     bodies.push(B)
   }
-  const c = { cell, src: boxes, slim, bodies, ray: rayMesh(boxes, tris, solid), crowns, crown: crowns.length ? rayMesh([], crowns, false, 'crown') : null }
+  const c = { cell, src: boxes, slim, bodies, ray: rayMesh(boxes.filter(b => !b.deco), tris, solid), crowns, crown: crowns.length ? rayMesh([], crowns, false, 'crown') : null }
   statics.push(c); return c
 }
 function dropChunk(c) {
@@ -5297,7 +5417,7 @@ function parkFar() {
   let out = 1
   for (const c of statics) {
     if (!Array.isArray(c.cell) || (c.wide ??= c.src.some(b => b.ex > 48 || b.ez > 48))) continue       // floor, walls, lid span every cell
-    if (c.away && near(c, 1)) { c.away = false; for (const b of c.bodies) { b.out = false; world.addRigidBody(b.body, ...padBodies.has(A.getPointer(b.body)) ? COLLIDE.pad : COLLIDE.static) } }
+    if (c.away && near(c, 1)) { c.away = false; for (const b of c.bodies) { b.out = false; world.addRigidBody(b.body, ...padBodies.has(A.getPointer(b.body)) ? COLLIDE.pad : b.deco ? COLLIDE.deco : COLLIDE.static) } }
     else if (!c.away && !near(c, 2)) if (out-- > 0) { c.away = true; for (const b of c.bodies) { b.out = true; world.removeRigidBody(b.body) } } else awaySig = ''
   }
   for (const o of objs) {
@@ -5688,7 +5808,7 @@ function inSight(c, o) {
 }
 const G_STATIC = 2, G_CAPSULE = 32, G_OBJ = 64      // capsules skip group 1: a car's wheel rays pass people
 // [group, mask] per body kind. Wheel rays (group 1) hit only ray copies: vs a City-wide box a ray misses
-const COLLIDE = { capsule: [G_CAPSULE, -2], object: [G_OBJ, -1], static: [G_STATIC, -1 ^ G_STATIC ^ 1], pad: [G_PAD, PAD_ASK],
+const COLLIDE = { capsule: [G_CAPSULE, -2], object: [G_OBJ, -1], static: [G_STATIC, -1 ^ G_STATIC ^ 1], deco: [G_STATIC, -1 ^ G_STATIC ^ 1 ^ G_CAPSULE], pad: [G_PAD, PAD_ASK],
   ray: [RAY_GROUP, RAY_CAST | 1], solid: [RAY_GROUP | G_STATIC, -1 ^ G_STATIC], crown: [CROWN_GROUP, RAY_CAST], hub: [0, 0] }
 // 1 cm margin: Bullet's 4 cm default floats it off the floor
 function hullShape(pts) {
@@ -6129,6 +6249,11 @@ function launchObject(o, L, ux, uz) {
   impVec.setValue(uz * L.spin * k, 0, -ux * L.spin * k); o.body.setAngularVelocity(impVec); o.body.activate()
 }
 
+// c is behind h: within arc degrees of the line behind h's facing, and facing the way h does
+function behind(c, h, arc) {
+  const half = Math.cos(arc * Math.PI / 360), fx = -Math.sin(h.yaw), fz = -Math.cos(h.yaw), dx = c.x - h.x, dz = c.z - h.z
+  return -(dx * fx + dz * fz) / (Math.hypot(dx, dz) || 1) >= half && -Math.sin(c.yaw) * fx - Math.cos(c.yaw) * fz >= half
+}
 // a seated rider is struck through its vehicle, once a volley (rode)
 function strike(c, h, G, ux, uy, uz, rode) {
   const s = seatOf(h)
@@ -6138,6 +6263,7 @@ function strike(c, h, G, ux, uy, uz, rode) {
   if (G.apply) { h.mark = powerNamed(G.apply); h.markT = POWERS[h.mark - 1]?.dur ?? 0 }
   // Amp is read off the shooter, Shield off the shot: they compose
   if (G.lethal) h.hp = 0
+  else if (G.stab && behind(c, h, G.stab.arc)) { h.hp = 0; h.stabbed = true }
   else h.hp -= stat(h, 'take', stat(c, 'give', G.dmg * profDmg(c, G.name)))
   if (was && !hookHit(c, h, G.name, was)) return
   knockChar(h, ux, uy, uz, G.knock * (1 + profExtra(c, G.name, 'knock')))
@@ -6238,9 +6364,21 @@ function resolveShot(shooter, targets, onKill, viewT, G, gunId) {
   // friendly fire; rewound once per volley, not per pellet
   const aimed = viewT === undefined ? targets : rewindTargets(targets, shooter, viewT)
   if (G.kind) return deliver(shooter, G, gunId, aimed, onKill)
+  const stab = G.backstab && shooter.veil >= 0 ? G.backstab : null
   unveil(shooter)
-  const fx = []
+  const GS = stab ? { ...G, stab } : G, fx = [], extra = []
   let hits = 0
+  const landed = v => {
+    hits++
+    const done = downed(v), B = v.stabbed && done && GUNS[gunNamed(stab.as)]
+    v.stabbed = false
+    if (B) {
+      shooter.veilWait = 0
+      const id = gunNamed(stab.as), feet = v.y - v.h - v.r
+      extra.push([r2(v.x), r2(feet), r2(v.z), r2(v.x), r2(feet + 2 * (v.h + v.r)), r2(v.z), id, 0], ...heartGore(v, id))
+    }
+    if (done && onKill) onKill(v, B || G, profRoll(shooter, B || G))
+  }
   const shots = profPellets(shooter, G.name, G.pellets)
   const [aimYaw, aimPitch] = aimAngles(shooter)
   for (let i = 0; i < shots; i++) {
@@ -6250,25 +6388,22 @@ function resolveShot(shooter, targets, onKill, viewT, G, gunId) {
       : (Math.random() - 0.5) * 2 * G.spread
     const yaw = aimYaw + off
     const pitch = aimPitch + (G.melee ? 0 : (Math.random() - 0.5) * 2 * G.spread)
-    const v = castPellet(shooter, aimed, yaw, pitch, G, fx)
-    if (v) {
-      hits++
-      if (downed(v) && onKill) onKill(v, G, profRoll(shooter, G))
-    }
+    const v = castPellet(shooter, aimed, yaw, pitch, GS, fx)
+    if (v) landed(v)
   }
   // even sweeps have no centre ray: on a miss the aim line strikes once
   if (G.melee && shots % 2 === 0 && !hits) {
-    const v = castPellet(shooter, aimed, aimYaw, aimPitch, G, null)
-    if (v) { hits++; if (downed(v) && onKill) onKill(v, G, profRoll(shooter, G)) }
+    const v = castPellet(shooter, aimed, aimYaw, aimPitch, GS, null)
+    if (v) landed(v)
   }
   if (G.melee && fx.length > 1) {
     const arc = []
     for (let i = 0; i < fx.length - 1; i++)
       arc.push([fx[i][3], fx[i][4], fx[i][5], fx[i + 1][3], fx[i + 1][4], fx[i + 1][5],
                 gunId, hits > 0 ? 1 : 0])
-    return arc
+    return arc.concat(extra)
   }
-  return fx.map(f => [f[0], f[1], f[2], f[3], f[4], f[5], gunId, hits > 0 ? 1 : 0])
+  return fx.map(f => [f[0], f[1], f[2], f[3], f[4], f[5], gunId, hits > 0 ? 1 : 0]).concat(extra)
 }
 
 function fireHitscan(shooter, targets, onKill, viewT) {
@@ -6378,6 +6513,11 @@ function resetMatch() {
 function sprayFx(v, gunId, kind, n, y, ray) {
   return Array.from({ length: n }, (_, i) => { const [a, f, up] = ray(i)
     return [r2(v.x), r2(y), r2(v.z), r2(v.x + Math.cos(a) * f), r2(y + up * f), r2(v.z + Math.sin(a) * f), gunId, kind] })
+}
+// the kill's blood: gore.streaks gib streaks up and out from the chest
+function heartGore(v, id) {
+  const R = GUNS[id].gore
+  return sprayFx(v, id, 4, R.streaks, v.y + v.h * 0.3, () => [Math.random() * Math.PI * 2, R.reach * (0.4 + Math.random() * 0.6), R.rise * (0.5 + Math.random())])
 }
 function impactFx(v, gunId, big) {
   const n = big ? 13 : 9, r = (big ? 1.5 : 1.0) * (v.r + 0.3)
@@ -9636,9 +9776,11 @@ function servedPicture(t, img) {
 function serveTextures() {
   if (!servedOn()) return
   for (const [slot, S] of servedSlots) for (const [kind, t] of [['color', S.map], ['normal', S.normal]]) {
-    const file = t && LV.theme.textures[slot]?.[kind]?.[servedTier()]
-    if (!file || t.userData.file === file) continue
+    const file = t && LV.theme.textures[slot]?.[kind]?.[servedTier()] || ''
+    if (!t || (t.userData.file || '') === file) continue
+    t.userData.base ||= t.image
     t.userData.file = file
+    if (!file) { servedPicture(t, t.userData.base); continue }
     servedImage(file).then(img => { if (!img) return; if (t.userData.file === file) servedPicture(t, img); else img.close() })
   }
 }
@@ -9648,8 +9790,8 @@ function serveSlot(slot, map, normal) {
   serveTextures()
   return servedSlots.get(slot)
 }
-// the slot's normal map, or none below the 1024 tier
-const cityNormal = slot => servedOn() && servedTier() >= 1024 ? (servedSlots.get(slot)?.normal || serveSlot(slot, null, flatTexture('rgb(128,128,255)', false)).normal) : undefined
+// the slot's normal map as material options where the level has a file for the tier, else none
+const servedNormal = slot => servedOn() && LV.theme.textures[slot]?.normal?.[servedTier()] ? { normalMap: servedSlots.get(slot)?.normal || serveSlot(slot, null, flatTexture('rgb(128,128,255)', false)).normal } : {}
 let roofMap = null
 const cityRoofMap = () => roofMap || serveSlot('roof', roofMap = flatTexture('#535962', true)).map
 
@@ -9715,7 +9857,7 @@ function cityBuildingMesh(rows, faces) {
       }
     })
     g.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-    root.add(new THREE.Mesh(footShade(g, Math.min(...boxes.map(b => b.cy - b.ey))), new THREE.MeshStandardMaterial({ map: cityFacadeMap(), normalMap: cityNormal('facade'), vertexColors: true, roughness: 0.9 })))
+    root.add(new THREE.Mesh(footShade(g, Math.min(...boxes.map(b => b.cy - b.ey))), new THREE.MeshStandardMaterial({ map: cityFacadeMap(), ...servedNormal('facade'), vertexColors: true, roughness: 0.9 })))
   }
   if (roof.length) root.add(new THREE.Mesh(mergeBoxes(boxes, 'floor', roof), new THREE.MeshStandardMaterial({ map: cityRoofMap(), roughness: 0.95 })))
   root.traverse(n => { if (n.isMesh) n.castShadow = n.receiveShadow = true })
@@ -9843,6 +9985,146 @@ function interiorFrame() {
     interiorDrop(far)
   }
   I.group.add(rec.mesh = interiorMesh(rec)); I.drawn.add(rec)
+}
+
+// ---- street furniture: STREET_KIT's file, a node per item. A chunk's rows merge into a mesh per pass (tall casts shadows, low
+// does not, far stands in past the near LOD); a part is an item's triangles in metres. Until the file arrives, or with none, an item
+// draws as its collision boxes in its `fall` colour, and the chunks drawn so far take the file's meshes when it comes
+const kit = { file: null, parts: new Map(), chunks: [], load: null }
+// one for each draw of the world: a rebuild disposes what its meshes held
+const kitMaterial = () => kit.file ? kit.file.material.clone() : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75 })
+function kitPart(name, far) {
+  const key = name + (far ? ':far' : ''), cached = kit.parts.get(key)
+  if (cached) return cached
+  const I = STREET_KIT.items[name], node = kit.file?.scene.getObjectByName(far ? I.far : I.node), P = { p: [], n: [], uv: [], c: [], i: [] }
+  if (node?.isMesh) {
+    node.updateWorldMatrix(true, false)
+    const g = node.geometry, a = g.attributes, m = node.matrixWorld, nm = new THREE.Matrix3().getNormalMatrix(m), v = new THREE.Vector3()
+    for (let i = 0; i < a.position.count; i++) {
+      v.fromBufferAttribute(a.position, i).applyMatrix4(m).toArray(P.p, i * 3); v.fromBufferAttribute(a.normal, i).applyMatrix3(nm).normalize().toArray(P.n, i * 3)
+      P.uv.push(a.uv.getX(i), a.uv.getY(i)); P.c.push(a.color.getX(i), a.color.getY(i), a.color.getZ(i))
+    }
+    P.i = Array.from(g.index.array)
+  } else {
+    const c = new THREE.Color(I.fall)
+    for (const [hx, hy, hz, ox, oy, oz] of I.boxes) {
+      const g = new THREE.BoxGeometry(hx * 2, hy * 2, hz * 2).translate(ox, oy, oz), a = g.attributes, at = P.p.length / 3
+      P.p.push(...a.position.array); P.n.push(...a.normal.array); P.uv.push(...new Array(a.position.count * 2).fill(0))
+      for (let i = 0; i < a.position.count; i++) P.c.push(c.r, c.g, c.b)
+      P.i.push(...Array.from(g.index.array, k => k + at))
+    }
+  }
+  kit.parts.set(key, P)
+  return P
+}
+// rows' parts as one geometry, each at its row's place and yaw; none: null
+function propGeometry(rows, pass) {
+  const list = rows.filter(r => { const I = STREET_KIT.items[r.item]; return pass === 'far' ? I.far : pass === 'tall' ? I.shadow : !I.shadow })
+  if (!list.length) return null
+  const parts = list.map(r => kitPart(r.item, pass === 'far')), n = parts.reduce((s, P) => s + P.p.length / 3, 0), k = parts.reduce((s, P) => s + P.i.length, 0)
+  const p = new Float32Array(n * 3), nr = new Float32Array(n * 3), uv = new Float32Array(n * 2), col = new Float32Array(n * 3), idx = n > 65535 ? new Uint32Array(k) : new Uint16Array(k), tint = new THREE.Color()
+  let v = 0, j = 0
+  list.forEach((r, q) => {
+    const P = parts[q], c = Math.cos(r.yaw), s = Math.sin(r.yaw), T = STREET_KIT.items[r.item].tint
+    T ? tint.setHex(T[r.seed % T.length]) : tint.setRGB(1, 1, 1)
+    for (let i = 0; i < P.p.length; i += 3, v++) {
+      const x = P.p[i], z = P.p[i + 2], nx = P.n[i], nz = P.n[i + 2]
+      p.set([r.x + x * c + z * s, P.p[i + 1] + KERB, r.z - x * s + z * c], v * 3); nr.set([nx * c + nz * s, P.n[i + 1], -nx * s + nz * c], v * 3)
+      col.set([P.c[i] * tint.r, P.c[i + 1] * tint.g, P.c[i + 2] * tint.b], v * 3); uv.set([P.uv[i / 3 * 2], P.uv[i / 3 * 2 + 1]], v * 2)
+    }
+    const base = v - P.p.length / 3
+    for (const i of P.i) idx[j++] = i + base
+  })
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.BufferAttribute(p, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nr, 3))
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setIndex(new THREE.BufferAttribute(idx, 1))
+  g.computeBoundingSphere()
+  return g
+}
+// a soft round falloff, 1 at the middle and 0 at the rim
+let lampTexture = null
+const lampMap = () => lampTexture ||= (() => {
+  const S = 64, d = new Uint8Array(S * S * 4)
+  for (let i = 0; i < S * S; i++) {
+    const r = Math.hypot(i % S + 0.5 - S / 2, (i / S | 0) + 0.5 - S / 2) / (S / 2), v = r >= 1 ? 0 : Math.round(255 * (1 - r * r) ** 1.5)
+    d.fill(v, i * 4, i * 4 + 4)
+  }
+  const t = new THREE.DataTexture(d, S, S)
+  t.needsUpdate = true
+  return t
+})()
+// rows' lamps as quads, coloured by strength: each at its row's place and yaw
+function lampGeometry(rows) {
+  const p = [], uv = [], col = [], idx = [], size = [], c = new THREE.Color()
+  const quad = (a, b, d, e, k, h = 0) => {      // corners a, b, d, e in order, coloured k; a halo's four are one point, h wide, turned to the camera
+    const at = p.length / 3
+    size.push(h, h, h, h)
+    p.push(...a, ...b, ...d, ...e); uv.push(0, 0, 1, 0, 1, 1, 0, 1); for (let i = 0; i < 4; i++) col.push(k.r, k.g, k.b)
+    idx.push(at, at + 1, at + 2, at, at + 2, at + 3)
+  }
+  for (const r of rows) for (const L of STREET_KIT.items[r.item].lamps || []) {
+    const cs = Math.cos(r.yaw), sn = Math.sin(r.yaw), [ax, ay, az] = L.at, x = r.x + ax * cs + az * sn, z = r.z - ax * sn + az * cs, y = ay + KERB
+    c.set(Array.isArray(L.color) ? L.color[r.seed % L.color.length] : L.color)
+    if (L.pool) { const [h, k] = L.pool; quad([x - h, KERB * 2, z - h], [x - h, KERB * 2, z + h], [x + h, KERB * 2, z + h], [x + h, KERB * 2, z - h], c.clone().multiplyScalar(k)) }
+    if (L.halo) { const [h, k] = L.halo; quad([x, y, z], [x, y, z], [x, y, z], [x, y, z], c.clone().multiplyScalar(k), h) }
+  }
+  if (!p.length) return null
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setAttribute('size', new THREE.Float32BufferAttribute(size, 1))
+  g.setIndex(idx); g.computeBoundingSphere()
+  return g
+}
+let lampMat = null
+const lampMaterial = () => lampMat ||= Object.assign(new THREE.MeshBasicMaterial({ map: lampMap(), vertexColors: true, ...FX, blending: THREE.AdditiveBlending, fog: false, toneMapped: false,
+  polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, visible: sunTier.lamps !== false }), {
+  // a halo's corners are offset in view space by its size, so it faces the camera from any side; a pool has size 0
+  onBeforeCompile: shader => { shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nattribute float size;')
+    .replace('#include <project_vertex>', 'vec4 mvPosition = modelViewMatrix * vec4( transformed, 1.0 );\n\tmvPosition.xy += ( uv - 0.5 ) * 2.0 * size;\n\tgl_Position = projectionMatrix * mvPosition;') } })
+// the lamps' lights on or off with the quality row
+const lampsOn = on => { if (lampMat) lampMat.visible = on }
+function cityPropMeshes(rows, near, far, cx, cz) {
+  if (!rows.length) return
+  kitLoad()
+  const entry = { meshes: [] }, K = STREET_KIT, add = (part, pass, group, shadow, at) => {
+    const lamp = pass === 'lamp', g = lamp ? lampGeometry(part) : propGeometry(part, pass)
+    if (!g) return
+    const m = new THREE.Mesh(g, lamp ? lampMaterial() : kitMaterial())
+    m.castShadow = shadow; m.receiveShadow = !lamp; m.userData.noScar = true; m.userData.lamp = lamp
+    if (!lamp) depthFor(m)
+    if (at) {      // a quarter of the chunk is drawn up to K.range from its middle
+      const lod = new THREE.LOD()
+      lod.update = flatLOD; lod.position.set(...at); m.position.set(-at[0], 0, -at[2])
+      lod.addLevel(m, 0); lod.addLevel(new THREE.Object3D(), lamp ? K.lampRange : K.range); group.add(lod)
+    } else group.add(m)
+    if (!lamp) entry.meshes.push([m, pass, part])
+  }
+  add(rows, 'tall', near, true); add(rows, 'far', far, false)
+  for (let q = 0; q < 4; q++) {
+    const quarter = rows.filter(r => (r.x >= cx) + 2 * (r.z >= cz) === q), at = [cx + (q & 1 ? 24 : -24), 0, cz + (q & 2 ? 24 : -24)]
+    add(quarter, 'low', near, false, at)
+  }
+  add(rows, 'lamp', near, false, [cx, 0, cz])
+  if (kit.chunks.length > 256) kit.chunks = kit.chunks.filter(e => { let o = e.meshes[0][0]; while (o.parent) o = o.parent; return o === scene })
+  kit.chunks.push(entry)
+}
+// the file's meshes replace the boxes in the chunks drawn so far
+function kitTaken(gltf) {
+  kit.file = { scene: gltf.scene, material: gltf.scene.getObjectByProperty('isMesh', true).material }
+  kit.parts.clear(); gltf.scene.updateMatrixWorld(true)
+  const material = kitMaterial()
+  for (const e of kit.chunks) for (const [m, pass, rows] of e.meshes) { const g = propGeometry(rows, pass); m.geometry.dispose(); m.geometry = g; m.material = material }
+}
+// from assets/ beside the page, else the published site; none opened from a file. One try
+function kitLoad() {
+  if (kit.load || typeof location === 'undefined' || location.protocol === 'file:') return
+  kit.load = (async () => {
+    const env = await (self.THREE = THREE, geoLoad(BODY_LIBS)), D = env.Meshopt.MeshoptDecoder
+    try { D.useWorkers(2) } catch (e) {}
+    const loader = new env.GLTF.GLTFLoader().setMeshoptDecoder(D)
+    for (const url of [ASSET_DIR + STREET_KIT.file, ASSET_SITE + STREET_KIT.file]) {
+      try { kitTaken(await loader.loadAsync(url)); return } catch (e) { console.warn('street kit ' + url + ' failed:', e && e.message) }
+    }
+  })().catch(e => console.warn('street kit unavailable:', e && e.message))
 }
 
 function cityRoofDetails(rows) {
@@ -9978,9 +10260,9 @@ function streetGround(street, walks = [], into) {
     }
   }
   if (into) { into.forEach((m, k) => groundAdd(m, [road, pave][k])); return into }
-  return [[road, streetAtlas()], [pave, pavingMap(), cityNormal('paving')]].map(([o, map, normalMap]) => { const g = new THREE.BufferGeometry()
+  return [[road, streetAtlas()], [pave, pavingMap(), servedNormal('paving')]].map(([o, map, normal]) => { const g = new THREE.BufferGeometry()
     g.setDrawRange(0, 0); g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), A * 1.5)
-    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map, normalMap, roughness: 0.95 })); m.receiveShadow = true; groundAdd(m, o); return m })
+    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map, ...normal, roughness: 0.95 })); m.receiveShadow = true; groundAdd(m, o); return m })
 }
 // uploads only the appended range; capacity doubles when full
 function groundAdd(m, o) {
@@ -10008,7 +10290,7 @@ function* citySteps(rows, faces) {
   yield
   for (const row of rows) {
     if (row.kind === 'street' || row.kind === 'walk') continue
-    const b = row.kind === 'tree' ? row.box : row.boxes[0]
+    const b = row.box || row.boxes[0]
     const x = Math.floor(b.cx / 96), z = Math.floor(b.cz / 96), key = x + ':' + z
     if (!chunks.has(key)) chunks.set(key, { x: x * 96 + 48, z: z * 96 + 48, rows: [] })
     chunks.get(key).rows.push(row)
@@ -10017,6 +10299,7 @@ function* citySteps(rows, faces) {
     const buildings = chunk.rows.filter(r => r.kind === 'building'), trees = chunk.rows.filter(r => r.kind === 'tree')
     const group = cityBuildingMesh(buildings, faces), lod = new THREE.LOD()
     const near = cityRoofDetails(buildings), far = new THREE.Group()
+    cityPropMeshes(chunk.rows.filter(r => r.kind === 'prop'), near, far, chunk.x, chunk.z)
     lod.position.set(chunk.x, 0, chunk.z)
     near.position.set(-chunk.x, 0, -chunk.z); far.position.copy(near.position)
     lod.addLevel(near, 0); lod.addLevel(far, 120, 0.12); far.visible = false; lod.update = flatLOD
@@ -10285,7 +10568,7 @@ function placeChunk(cell, g) {
   g.userData.cell = cell
   worldGroup.add(g)
   still(g); shareMaterials(g)
-  g.traverse(n => { if (n.isMesh && !n.isInstancedMesh) mine.push(n) })
+  g.traverse(n => { if (n.isMesh && !n.isInstancedMesh && !n.userData.noScar) mine.push(n) })
   scarSurfaces.push(...mine); scarSend(mine); groundStale = !!cityGround
   screensTake(g)
 }
@@ -10446,7 +10729,7 @@ function rebuildWorld() {
     if (n.geometry && !n.geometry.userData.shared) geometries.add(n.geometry)
     for (const m of Array.isArray(n.material) ? n.material : [n.material]) if (m) materials.add(m)
   })
-  screenMat = screenRim = null                     // the level's own: disposed with it, made again for the next
+  screenMat = screenRim = lampMat = null           // the level's own: disposed with it, made again for the next
   worldGroup.clear()
   for (const g of geometries) g.dispose()
   const [sky] = LV.theme.fog
@@ -10474,13 +10757,15 @@ function rebuildWorld() {
     t.colorSpace = THREE.SRGBColorSpace
     t.anisotropy = aniso
     baseTex[kind] = t
+    serveSlot(kind, t)
   }
+  serveTextures()
   screenSpots.length = 0; screenGroup = null
   worldGroup.add(...drawBoxes(BOXES, LV.scenery || []).children)   // the level's own meshes stay worldGroup's children
   if (LV.screens?.length) { screenSpots.push(...LV.screens.filter(s => BOXES.includes(s.frame))); screensDirty = true }
   screensTake(worldGroup)
   still(worldGroup)
-  worldGroup.traverse(n => { if (n.isMesh && !n.isInstancedMesh) scarSurfaces.push(n) })
+  worldGroup.traverse(n => { if (n.isMesh && !n.isInstancedMesh && !n.userData.noScar) scarSurfaces.push(n) })
   prepareScars()
   screensDraw()                      // after the scars' surfaces: the panels are remade as chunks grow
   // the new level takes over the old one's programs before they go
@@ -10491,7 +10776,7 @@ function rebuildWorld() {
 function drawBoxes(list, city, clip = []) { return drain(drawSteps(list, city, clip)) }
 function* drawSteps(list, city, clip = []) {
   const group = new THREE.Group(), surfaces = { floor: [], wall: [] }, decorated = []
-  const cityBoxes = new Set(city.flatMap(r => r.kind === 'building' ? r.boxes : [r.box]))
+  const cityBoxes = new Set(city.flatMap(r => r.boxes || [r.box]))
   for (const b of list) {
     if (b.vis === false) continue
     if (cityBoxes.has(b)) continue
@@ -10515,7 +10800,7 @@ function* drawSteps(list, city, clip = []) {
   for (const kind of ['floor', 'wall']) {
     if (!surfaces[kind].length) continue
     const m = new THREE.Mesh(mergeBoxes(surfaces[kind], kind, faces),
-      new THREE.MeshStandardMaterial({ map: baseTex[kind],
+      new THREE.MeshStandardMaterial({ map: baseTex[kind], ...servedNormal(kind),
                                        roughness: kind === 'wall' ? 0.9 : 0.95 }))
     m.receiveShadow = true; m.castShadow = true
     group.add(m)
@@ -11798,6 +12083,7 @@ function drawHeld(id, state, t, view = null, fade = 1) {
     const pitch = Number.isFinite(state.pitch) ? state.pitch : a.shotPitch || 0, yaw = a.seatAim?.active ? state.yaw || 0 : a.face ?? (state.yaw || 0)
     held.rotation.set(pitch, yaw + (G.tether && a.shotGun === gun && age >= 0 && age < SLASH_MS ? (age / SLASH_MS - 0.5) * 2 * G.spread : G.melee && a.seatAim?.active ? a.seatAim.theta : 0), 0, 'YXZ')
   }
+  if (G.beat) held.scale.multiplyScalar(1 + G.beat.depth * Math.max(0, Math.sin(Math.PI * 2 * G.beat.hz * age / 1000)) ** 3)
   if (G.tether) {
     const L = G.tether / held.scale.x, w = 0.07 / held.scale.x
     held.translateZ(-G.tether); held.children.at(-1).position.z = L / 2; held.children.at(-1).scale.set(w, w, L)
@@ -12652,6 +12938,7 @@ const lifeOf = f => {
   if (f[7] === 3) return IMPACT_MS
   if (G.look === 'blizzard') return G.rate * 1000 + 260
   if (G.look === 'boomerang') return G.flight * 1000
+  if (G.look === 'heart') return G.life * 1000
   if (G.look === 'beam') return BEAM_MS
   return TRACER_MS
 }
@@ -13023,6 +13310,36 @@ function fxHeal(o, G, age, hex) {
   for (let i = 0; i < 16; i++) {
     const a = i / 16 * Math.PI * 2 + age * 2, k = e * f[3]
     fxGlow(f[0] + Math.cos(a) * k, f[1] + 0.3 + age * (1 + i % 3 * 0.4), f[2] + Math.sin(a) * k, 0.6, hex, fade * 0.8)
+  }
+}
+// look heart: the victim's chest bursts, then for flashMs drips fall from the shooter's hand (the held heart is drawHeld's) and the heart
+// is crushed there: a burst, a heart outline and sparkles rising
+const fxHand = new THREE.Vector3()
+function fxHeart(o, G, hex, age) {
+  const f = o.f, T = age * G.life, hold = G.flashMs / 1000, a = avatars.get(f[8]), chest = f[1] + (f[4] - f[1]) * 0.62
+  if (a) handAt(a, fxHand); else fxHand.set(f[0], chest, f[2])
+  if (!o.burst) {
+    o.burst = true
+    const sx = a ? a.mesh.position.x : f[0], sz = a ? a.mesh.position.z : f[2] + 1, l = Math.hypot(f[0] - sx, f[2] - sz) || 1
+    const dx = (f[0] - sx) / l, dz = (f[2] - sz) / l
+    GAME.view.heartBurst(G, f[0], chest, f[2], dx, dz, hex)
+  }
+  if (T < hold) {
+    const n = Math.floor(T / 0.25)
+    if (G.drip && n > (o.drips ?? -1)) { o.drips = n; burst(G.drip, fxHand.x, fxHand.y - 0.05, fxHand.z, 0, -1, 0, hex, 0.2) }
+    return
+  }
+  if (!o.crushed) { o.crushed = true; if (G.burst) burst(G.burst, fxHand.x, fxHand.y, fxHand.z, 0, 1, 0, hex, 1.2) }
+  const u = (T - hold) / Math.max(0.01, G.life - hold), fade = 1 - u, s = 0.014 * (0.7 + u * 0.9), up = new THREE.Vector3(0, 1, 0), right = new THREE.Vector3(1, 0, 0)
+  if (camera) { up.applyQuaternion(camera.quaternion); right.applyQuaternion(camera.quaternion) }
+  const cx = fxHand.x, cy = fxHand.y + 0.3 + u * 0.9, cz = fxHand.z
+  for (let i = 0; i < 24; i++) {
+    const t = i / 24 * Math.PI * 2, hx = 16 * Math.sin(t) ** 3, hy = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)
+    fxGlow(cx + right.x * hx * s + up.x * hy * s, cy + right.y * hx * s + up.y * hy * s, cz + right.z * hx * s + up.z * hy * s, G.glint.size, G.glint.color, fade)
+  }
+  for (let i = 0; i < 18; i++) {
+    const w = (i * 0.37) % 1 * Math.PI * 2, r = 0.1 + 0.3 * u * (0.5 + ((i * 0.53) % 1))
+    fxGlow(fxHand.x + Math.cos(w) * r, fxHand.y + u * (0.6 + (i * 0.618) % 1), fxHand.z + Math.sin(w) * r, G.glint.spark, G.glint.color, fade, 3)
   }
 }
 function fxOrb(x, y, z, r, hex, alpha, tall = 1) {
@@ -13572,6 +13889,10 @@ function drawTracers(t, me, others, viewId) {
     }
     if (G && G.look === 'boomerang') {
       fxToss(o, G, age, t, hex)
+      continue
+    }
+    if (G && G.look === 'heart') {
+      fxHeart(o, G, hex, age)
       continue
     }
     if (G && G.look === 'beam' && G.strand) {
@@ -14378,9 +14699,9 @@ function drawDebug(me, fps) {
 // localStorage throws on opaque origins (file://): every access guarded. Renaming the 'arena.' key drops saved settings
 const SET_KEY = 'arena.settings.v1'
 const QUALITY = {
-  high:   { ratio: 2,    shadowMap: 1024, farMap: 2048, shadows: true,  fx: 1, tex: 1024, touch: { shadowMap: 512, half: 40 } },
-  medium: { ratio: 1.25, shadowMap: 512,  farMap: 1024, shadows: true,  fx: 0.5, tex: 512 },
-  low:    { ratio: 1,    shadowMap: 512,  farMap: 512,  shadows: false, fx: 0.25, tex: 512 },
+  high:   { ratio: 2,    shadowMap: 1024, farMap: 2048, shadows: true,  fx: 1, tex: 1024, lamps: true, touch: { shadowMap: 512, half: 40 } },
+  medium: { ratio: 1.25, shadowMap: 512,  farMap: 1024, shadows: true,  fx: 0.5, tex: 512, lamps: true },
+  low:    { ratio: 1,    shadowMap: 512,  farMap: 512,  shadows: false, fx: 0.25, tex: 512, lamps: false },
 }
 const QNAMES = Object.keys(QUALITY)
 const GPU_SOFTWARE = /swiftshader|llvmpipe|softwarerasterizer|basic render|mesa offscreen/i
@@ -14495,7 +14816,7 @@ function applySettings() {
     scene.traverse(o => { if (o.material) o.material.needsUpdate = true })
     warmEffects()
   }
-  sunShadows()
+  sunShadows(); lampsOn(Q.lamps)
   viewScale = VIEW[settings.distance]; applyView()
   for (const id in SET_BUTTONS) { const b = el('#' + id); if (b) b.textContent = SET_BUTTONS[id][0](Q) }
   GAME.audio.apply()
@@ -14869,6 +15190,7 @@ function sfxFx(list, only) {
           const gap = G.burst > 1 ? G.burstGap : G.rate
           for (let n = 0; n < shots; n++)
             if (sfxPlay(G.name, at, cat, mine ? 0.8 : 1, n * gap)) started++
+          for (const [name, delay] of G.cues || []) if (sfxPlay(name, at, cat, mine ? 0.8 : 1, delay)) started++
         }
       }
       i = j
@@ -14878,6 +15200,14 @@ function sfxFx(list, only) {
 
 // from the state on screen, so host and guest hear the same
 let sfxOthers = new Map(), sfxOthersNext = new Map(), sfxObjs = new Map()
+// whether this player won the match just ended, as its own machine sees it: team deathmatch by side (the heroes while one
+// is up), a run of waves lost with every superkiller down, else the most kills
+function wonMatch(me, others, top) {
+  const all = [{ id: myId, cid: me.cid, dead: me.dead }, ...others], side = o => GAME.participant(o.id, o.cid).side
+  if (gameMode === 'tdm') return side(all[0]) === (all.some(o => side(o) === TDM.hero && !(o.dead > 0)) ? TDM.hero : TDM.squad)
+  if (gameMode === 'waves' && all.filter(o => side(o) === TDM.squad).every(o => o.dead > 0)) return false
+  return !!top && top.id === myId
+}
 function sfxFrame(me, others, t, objects = []) {
   if (!actx) return
   try {
@@ -14927,7 +15257,7 @@ function sfxFrame(me, others, t, objects = []) {
 
       if (resultsLeft > 0 && !(s.results > 0)) {
         const top = standings(others)[0]
-        you(top && top.id === myId ? 'win' : 'over')
+        you(wonMatch(me, others, top) ? 'win' : 'over')
       }
 
       // on a kill only: a changed limit or late join is no crossing
@@ -15917,7 +16247,7 @@ function killTally(k, victim) {
   return { m: k.multi, s: k.run, x: victim.ended | 0 }
 }
 function killTell(k, victim, G) {
-  const e = killTally(k, victim), ev = { k: 'kf', a: k.id, v: victim.id, w: String(G.name).slice(0, 24), ...e }
+  const e = killTally(k, victim), ev = { k: 'kf', a: k.id, v: victim.id, w: String(G.feed ? gameText(G.feed) : G.name).slice(0, 24), ...e }
   killShow(ev)
   broadcast(ev)
   const j = calloutOf(e.m, e.s)
@@ -18315,14 +18645,29 @@ function startWave(i) {
   const w = WAVES[i]
   if (hooked.wave) hookEmit('wave', { name: w.name, number: i + 1 })
   spawnList(picked(w.pick))
+  const extra = waveExtra
+  waveExtra = []
+  if (extra.filter(addBot).length && conns.size) pushRoster()
   for (const c of players.values())
     if (!c.bot) { c.spLeft = {}; restoreSpecial(c) }
   grantOutfits()
   waveGap = WAVE_GAP_S
-  announce('§e' + w.name)
+  announce(extra.length ? gameText('waveWith', { wave: w.name, heroes: listOf(extra.map(j => BOTS[j].name)) }) : '§e' + w.name)
   speak('announcer', i)
 }
 
+// a, b and c
+const listOf = a => a.length > 1 ? a.slice(0, -1).join(', ') + TEXT.listAnd + a.at(-1) : a[0] || ''
+// wave `next`'s roll: on a hit, WAVE_EXTRAS.heroes rows from other waves, one from each, none of its own or on the field
+function rollExtras(next) {
+  const E = WAVE_EXTRAS, own = picked(WAVES[next].pick)
+  if (!(Math.random() * E.oneIn < 1)) return []
+  const from = WAVES.flatMap((w, j) => { const r = picked(w.pick).filter(i => !own.includes(i) && !players.has(BOT_ID0 + i)); return j !== next && r.length ? [r] : [] })
+  for (let j = from.length; j > 1; j--) { const k = Math.random() * j | 0; [from[j - 1], from[k]] = [from[k], from[j - 1]] }
+  const out = []
+  for (const r of from) { const i = r[Math.random() * r.length | 0]; if (out.length < E.heroes && !out.includes(i)) out.push(i) }
+  return out
+}
 // every wave's rows, the one on the field (as the roster shows) first
 const waveOrder = (on = Math.max(0, WAVES.findIndex(w => picked(w.pick).some(i => roster.has(BOT_ID0 + i))))) =>
   WAVES.flatMap((_, j) => picked(WAVES[(on + j) % WAVES.length].pick))
@@ -18330,7 +18675,10 @@ const waveOrder = (on = Math.max(0, WAVES.findIndex(w => picked(w.pick).some(i =
 function stepWaves(dt) {
   if (gameMode !== 'waves') return
   if ([...players.values()].some(c => c.bot && !c.bot.squad)) return
-  if (waveGap > 0) { if (waveGap === WAVE_GAP_S) prepareRows(botPairs(picked(WAVES[(waveAt + 1) % WAVES.length].pick))); waveGap -= dt; return }
+  if (waveGap > 0) {
+    if (waveGap === WAVE_GAP_S) { waveExtra = rollExtras((waveAt + 1) % WAVES.length); prepareRows(botPairs([...picked(WAVES[(waveAt + 1) % WAVES.length].pick), ...waveExtra])) }
+    waveGap -= dt; return
+  }
   if (waveGap > -WAVE_HOLD_S && prepQueue.some(q => !Array.isArray(q) || botPairs(picked(WAVES[(waveAt + 1) % WAVES.length].pick)).some(p => skinKey(...p) === skinKey(...q)))) { waveGap -= dt; return }
   startWave((waveAt + 1) % WAVES.length)
 }
@@ -18347,7 +18695,7 @@ function newWave(up) {
 // a new run: everyone down back up, from its first wave
 function newRun() {
   newWave(true); runT = 0; waveOn = false
-  waveAt = -1; waveGap = 0; waveNo = 0; outfitSent.clear()
+  waveAt = -1; waveGap = 0; waveNo = 0; outfitSent.clear(); waveExtra = []
 }
 // the City's roofs a pad reaches, in the chunks within R of (x, z): [x, roof y, z]
 const cityRoofs = new WeakMap()
@@ -20105,6 +20453,11 @@ function drawHurt(me, t) {
 }
 // what the host draws of the pickups: the ones standing, as their snapshot rows
 const hostPickups = () => pickups.filter(p => p.respawn <= 0).map(p => [p.x, p.y, p.z, p.gun, p.pow, p.heal])
+// the victim's chest burst of a heart look, out along (dx, dz): the shared gore effect when there is one
+function heartBurst(G, x, y, z, dx, dz, hex) {
+  if (GAME.gore?.kill) GAME.gore.kill(x, y, z, dx, 0.2, dz, 1)
+  else if (G.burst) burst(G.burst, x, y, z, dx, 0.2, dz, hex)
+}
 // a disguised body as me sees it: another side's drawn as the character it shows as, its own side's as itself, marked
 function viewed(o, me) {
   if (!(o.veil >= 0)) return o
@@ -20119,7 +20472,7 @@ function debugRows(row, v, p) {
     (voiceWorker ? row('voices', esc(voiceStatus()[0])) +
                    row('chatterbox', voiceFail ? '<span class="w">' + esc(voiceStatus()[1]) + '</span>' : esc(voiceStatus()[1])) : '')
 }
-GAME.view = { serverReset: () => { srvSig = null; srvDrawnAt = 0 }, tab: drawTab, results: drawResults, server: drawServer, serverInit: initServerPanel, hud: drawHud, faceYaw, radar: drawRadar, hurt: hurtFrom, pickups: hostPickups, passengerAim: (id, c, t, seat) => seat > 0 && seatRanged(GUNS[heldGun(id, c, t)]), debug: debugRows, viewed }
+GAME.view = { serverReset: () => { srvSig = null; srvDrawnAt = 0 }, tab: drawTab, results: drawResults, server: drawServer, serverInit: initServerPanel, hud: drawHud, faceYaw, radar: drawRadar, hurt: hurtFrom, pickups: hostPickups, passengerAim: (id, c, t, seat) => seat > 0 && seatRanged(GUNS[heldGun(id, c, t)]), debug: debugRows, viewed, heartBurst }
 
 // ---------------------------------------------------------------- boot
 class Arena extends ENABLE3D.Scene3D {
