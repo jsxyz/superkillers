@@ -19097,7 +19097,8 @@ function hidesAround(x, z, R, kinds) {
   if (kinds.includes('inside')) out.push(...GAME.interiors.spots().map(p => [p.x, p.y, p.z, 'inside']).filter(near))
   return out
 }
-// a revive on the map: hidden near where c fell (the row's `hide` kinds), else on the ground at a spawn spot
+// a revive on the map: hidden near where c fell (the row's `hide` kinds), else on the ground at a spawn spot clear
+// of a living superkiller — one under it would take it at once — any free spot only if every one is under one
 function dropRevive(c) {
   const H = reviveRow(), free = s => !pickups.some(p => Math.hypot(p.x - s[0], p.z - s[2]) < 2), any = a => a[Math.random() * a.length | 0]
   const off = s => Math.hypot(s[0] - c.x, s[2] - c.z)
@@ -19105,7 +19106,8 @@ function dropRevive(c) {
   const spot = kind && any(spots.filter(s => s[3] === kind).sort((a, b) => off(a) - off(b)).slice(0, 3))
   let at
   if (spot) at = [spot[0], spot[1] + 0.75, spot[2]]
-  else { const s = any(SPAWNS.filter(free).length ? SPAWNS.filter(free) : SPAWNS); at = [s[0], s[1] - staticRay(s[0], s[1], s[2], 0, -1, 0, 30) + 0.75, s[2]] }
+  else { const freeSpots = SPAWNS.filter(free), openSpots = freeSpots.filter(s => ![...players.values()].some(c2 => sideOf(c2) === TDM.squad && !(c2.dead > 0) && Math.hypot(c2.x - s[0], c2.z - s[2]) < 2))
+    const s = any(openSpots.length ? openSpots : freeSpots.length ? freeSpots : SPAWNS); at = [s[0], s[1] - staticRay(s[0], s[1], s[2], 0, -1, 0, 30) + 0.75, s[2]] }
   pickups.push({ x: at[0], y: at[1], z: at[2], gun: 0, pow: 0, heal: reviveId(), respawn: 0, dropped: true })
   announce(spot ? gameText('reviveHidden', { where: TEXT.hideWhere[spot[3]] }) : TEXT.reviveOut)
 }
