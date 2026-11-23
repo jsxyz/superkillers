@@ -511,42 +511,42 @@
 </style>
 
 <div id="ui"><div id="vhs-read"><b id="vhs-ch">PLAY &#9654;</b><b id="vhs-tc"></b></div><div id="panel">
-  <h1>SUPERKILLERs</h1>
+  <h1 data-text="title"></h1>
   <div id="evtitle"></div>
-  <div class="sub" id="tag">The Agency's killers against the heroes they're paid to cancel.</div>
+  <div class="sub" id="tag" data-text="tagline"></div>
   <div class="sub" id="ios-hint" style="margin-top:8px;display:none">
     No fullscreen button in this browser — Share → Add to Home Screen hides the URL bar.
   </div>
 
   <div id="lobby-self">
-  <label for="name-in">NAME</label>
+  <label for="name-in" data-text="nameLabel"></label>
   <input id="name-in" maxlength="16" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
   </div>
 
   <div id="stage-menu">
     <div id="duo">
     <section id="host-card" class="pc">
-      <h2>HOST GAME</h2>
-      <label>LEVEL</label>
+      <h2 data-text="hostCard"></h2>
+      <label data-text="levelLabel"></label>
       <div id="levels" class="cards"></div>
-      <label>MODE</label>
-      <div class="sides"><button id="mode-waves">Waves</button><button id="mode-ffa">Free-for-all</button><button id="mode-tdm">Team deathmatch</button></div>
-      <label>EVENT</label>
+      <label data-text="modeLabel"></label>
+      <div class="sides"><button id="mode-waves" data-text="modeWaves"></button><button id="mode-ffa" data-text="modeFfa"></button><button id="mode-tdm" data-text="modeTdm"></button></div>
+      <label data-text="eventLabel"></label>
       <div class="sides" id="events"></div>
-      <button id="host-btn" class="go">Host game</button>
+      <button id="host-btn" class="go" data-text="hostBtn"></button>
     </section>
     <section id="join-card" class="pc">
-      <h2>JOIN GAME</h2>
-      <input id="join-code" placeholder="room code" maxlength="8" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" inputmode="text">
+      <h2 data-text="joinCard"></h2>
+      <input id="join-code" data-placeholder="roomCodeHint" maxlength="8" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" inputmode="text">
       <div class="row">
-      <button id="join-btn" class="go">Join</button>
-      <button id="join-scan" title="Scan a QR code"><svg viewBox="0 0 21 21" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 0h9v9H0V0zm2 2v5h5V2H2zm2 2h1v1H4V4zM12 0h9v9h-9V0zm2 2v5h5V2h-5zm2 2h1v1h-1V4zM0 12h9v9H0v-9zm2 2v5h5v-5H2zm2 2h1v1H4v-1zM10 0h1v2h-1V0zm0 3h1v2h-1V3zm0 3h1v2h-1V6zM0 10h2v1H0v-1zm3 0h2v1H3v-1zm3 0h2v1H6v-1zM10 9h1v2h-1V9zm2 1h2v1h-2v-1zm3 0h2v1h-2v-1zm3 0h3v1h-3v-1zM10 12h1v2h-1v-2zm2 1h2v2h-2v-2zm4 0h2v2h-2v-2zm3 2h2v2h-2v-2zM10 15h1v2h-1v-2zm2 3h2v2h-2v-2zm4-1h2v2h-2v-2zm3 2h2v2h-2v-2zM10 18h1v2h-1v-2z"/></svg>Scan QR</button>
+      <button id="join-btn" class="go" data-text="joinBtn"></button>
+      <button id="join-scan" data-title="scanTip"><svg viewBox="0 0 21 21" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M0 0h9v9H0V0zm2 2v5h5V2H2zm2 2h1v1H4V4zM12 0h9v9h-9V0zm2 2v5h5V2h-5zm2 2h1v1h-1V4zM0 12h9v9H0v-9zm2 2v5h5v-5H2zm2 2h1v1H4v-1zM10 0h1v2h-1V0zm0 3h1v2h-1V3zm0 3h1v2h-1V6zM0 10h2v1H0v-1zm3 0h2v1H3v-1zm3 0h2v1H6v-1zM10 9h1v2h-1V9zm2 1h2v1h-2v-1zm3 0h2v1h-2v-1zm3 0h3v1h-3v-1zM10 12h1v2h-1v-2zm2 1h2v2h-2v-2zm4 0h2v2h-2v-2zm3 2h2v2h-2v-2zM10 15h1v2h-1v-2zm2 3h2v2h-2v-2zm4-1h2v2h-2v-2zm3 2h2v2h-2v-2zM10 18h1v2h-1v-2z"/></svg>Scan QR</button>
       </div>
     </section>
     </div>
     <div class="row" id="menu-foot">
-      <button id="menu-set">Settings</button>
-      <button id="serve-btn" class="link" title="Run the room on this machine without playing in it, and join it from another">Run a server</button>
+      <button id="menu-set" data-text="settings"></button>
+      <button id="serve-btn" class="link" data-title="serveTip" data-text="serveBtn"></button>
     </div>
   </div>
   <div id="stage-host" style="display:none">
@@ -644,58 +644,58 @@
 <div id="dbg"></div>
 
 <div id="pause" class="ovl"><div class="mbox">
-  <h2>Menu</h2>
+  <h2 data-text="pauseTitle"></h2>
   <p id="pause-note"></p>
   <div class="mcol">
-    <button id="pause-resume">Resume</button>
-    <button id="pause-char">Change character</button>
-    <button id="pause-settings">Settings</button>
-    <button id="pause-host">Host</button>
-    <button id="pause-code">Room code</button>
-    <button id="pause-leave" class="danger">Leave game</button>
+    <button id="pause-resume" data-text="resume"></button>
+    <button id="pause-char" data-text="changeChar"></button>
+    <button id="pause-settings" data-text="settings"></button>
+    <button id="pause-host" data-text="host"></button>
+    <button id="pause-code" data-text="roomCode"></button>
+    <button id="pause-leave" class="danger" data-text="leaveGame"></button>
   </div>
   <div id="pause-hint"></div>
 </div></div>
 
 <div id="hostset" class="ovl"><div class="mbox">
-  <h2 id="host-title">Host</h2>
-  <p id="host-note">Yours to set, and everyone in the room plays it.</p>
-  <label>LEVEL</label>
+  <h2 id="host-title" data-text="host"></h2>
+  <p id="host-note" data-text="hostNote"></p>
+  <label data-text="levelLabel"></label>
   <div id="host-levels" class="cards"></div>
   <div id="host-only">
-  <label>CITY SIZE</label>
+  <label data-text="citySize"></label>
   <div id="host-city" class="cards"></div>
-  <div class="row" id="set-mode-row"><button id="set-mode">Enemies: waves</button></div>
-  <div class="row" id="set-event-row"><button id="set-event">Event: Auto</button></div>
+  <div class="row" id="set-mode-row"><button id="set-mode"></button></div>
+  <div class="row" id="set-event-row"><button id="set-event"></button></div>
   <div class="setrow" id="set-bots-row">
-    <label for="set-bots">Bots per side</label>
+    <label for="set-bots" data-text="botsPerSide"></label>
     <input type="range" id="set-bots" min="0" max="6" step="1">
     <span class="setval" id="set-bots-v"></span>
   </div>
-  <div class="row" id="set-balance-row"><button id="set-balance">Balance teams: on</button></div>
+  <div class="row" id="set-balance-row"><button id="set-balance"></button></div>
   <div class="setrow" id="set-frags-row">
-    <label for="set-frags">Kills to win</label>
+    <label for="set-frags" data-text="killsToWin"></label>
     <input type="range" id="set-frags" min="0" step="1">
     <span class="setval" id="set-frags-v"></span>
   </div>
   <div class="setrow" id="set-time-row">
-    <label for="set-time">Time limit</label>
+    <label for="set-time" data-text="timeLimit"></label>
     <input type="range" id="set-time" min="0" step="1">
     <span class="setval" id="set-time-v"></span>
   </div>
   <div class="setrow" id="set-rate-row">
-    <label for="set-rate">Updates</label>
+    <label for="set-rate" data-text="updates"></label>
     <input type="range" id="set-rate" min="0" max="6" step="1">
     <span class="setval" id="set-rate-v"></span>
   </div>
   </div>
   <div class="mrow" style="margin-top:16px">
-    <button id="host-back">Back</button>
+    <button id="host-back" data-text="back"></button>
   </div>
 </div></div>
 
 <div id="charpick" class="ovl"><div id="pick">
-  <div id="pick-top"><button id="pick-back">Back</button><h2 id="pick-title">Character</h2><span id="pick-note"></span><button id="pick-room" title="Show or hide the room code"></button><button id="pick-copy" title="Copy the join link">Copy link</button></div>
+  <div id="pick-top"><button id="pick-back" data-text="back"></button><h2 id="pick-title" data-text="character"></h2><span id="pick-note"></span><button id="pick-room" data-title="pickRoomTip"></button><button id="pick-copy" data-title="copyTip" data-text="copyLink"></button></div>
   <div id="pick-cards"></div>
   <div id="pick-info">
     <canvas id="pick-view" width="360" height="440"></canvas>
@@ -706,70 +706,70 @@
 </div></div>
 
 <div id="settings" class="ovl"><div class="mbox">
-  <h2>Settings</h2>
+  <h2 data-text="settings"></h2>
   <div class="setgrps">
   <div class="setgrp">
-    <h3>Controls</h3>
+    <h3 data-text="controls"></h3>
     <div class="setrow">
-      <label for="set-sens">Mouse sensitivity</label>
+      <label for="set-sens" data-text="mouseSens"></label>
       <input type="range" id="set-sens" min="0.2" max="3" step="0.05">
       <span class="setval" id="set-sens-v"></span>
     </div>
     <div class="setrow">
-      <label for="set-padsens">Pad look speed</label>
+      <label for="set-padsens" data-text="padSens"></label>
       <input type="range" id="set-padsens" min="0.2" max="3" step="0.05">
       <span class="setval" id="set-padsens-v"></span>
     </div>
     <div class="mrow">
-      <button id="set-padinvert">Pad invert Y: off</button>
-      <button id="set-padrumble">Pad vibration: on</button>
+      <button id="set-padinvert"></button>
+      <button id="set-padrumble"></button>
     </div>
   </div>
   <div class="setgrp">
-    <h3>Camera</h3>
+    <h3 data-text="camera"></h3>
     <div class="setrow">
-      <label for="set-fov">Field of view</label>
+      <label for="set-fov" data-text="fov"></label>
       <input type="range" id="set-fov" min="60" max="110" step="1">
       <span class="setval" id="set-fov-v"></span>
     </div>
     <div class="mrow">
-      <button id="set-view">View: third</button>
-      <button id="set-shake">Camera shake: on</button>
+      <button id="set-view"></button>
+      <button id="set-shake"></button>
     </div>
   </div>
   <div class="setgrp">
-    <h3>Graphics</h3>
+    <h3 data-text="graphics"></h3>
     <div class="mrow">
-      <button id="set-quality">Quality: high</button>
-      <button id="set-distance">View distance: normal</button>
-      <button id="set-shadows">Shadows: on</button>
-      <button id="set-vhs">VHS: on</button>
-      <button id="set-full">Fullscreen</button>
+      <button id="set-quality"></button>
+      <button id="set-distance"></button>
+      <button id="set-shadows"></button>
+      <button id="set-vhs"></button>
+      <button id="set-full" data-text="fullscreen"></button>
     </div>
   </div>
   <div class="setgrp">
-    <h3>Sound</h3>
+    <h3 data-text="sound"></h3>
     <div class="setrow">
-      <label for="set-vol">Volume</label>
+      <label for="set-vol" data-text="volume"></label>
       <input type="range" id="set-vol" min="0" max="1" step="0.05">
       <span class="setval" id="set-vol-v"></span>
     </div>
     <div class="setrow">
-      <label for="set-bvol">Broadcast volume</label>
+      <label for="set-bvol" data-text="bcastVolume"></label>
       <input type="range" id="set-bvol" min="0" max="1" step="0.05">
       <span class="setval" id="set-bvol-v"></span>
     </div>
     <div class="mrow">
-      <button id="set-sound">Sound: on</button>
-      <button id="set-voices" title="Characters speak lines made on this machine: about 700 MB, fetched and run in the background. Needs WebGPU.">AI voices: off</button>
-      <button id="set-radio">Car radio: on</button>
-      <button id="set-bcast">Broadcasts: on</button>
+      <button id="set-sound"></button>
+      <button id="set-voices" data-title="voicesTip"></button>
+      <button id="set-radio"></button>
+      <button id="set-bcast"></button>
     </div>
-    <div class="sub">A broadcast plays from its owner's server, which sees your address.</div>
+    <div class="sub" data-text="bcastNote"></div>
   </div>
   </div>
   <div class="mrow" style="margin-top:4px">
-    <button id="set-back">Back</button>
+    <button id="set-back" data-text="back"></button>
   </div>
 </div></div>
 
@@ -866,15 +866,18 @@
    wireRow trims trailing zeros to 16 columns; absent tail fields read as 0.
    ammo/sp use -1 for unlimited; anim is one integer; cid selects the row.
 
-   Reskin: edit the CONTENT tables and look recipes. Keep pack/unpack and the
-   wire guards aligned.
+   Reskin: edit the CONTENT tables and look recipes: TEXT holds every string a player reads (the markup's data-text names its
+   key), MODELS, BODIES and SOUNDS name the served files, CHARS rows rename a character. Keep pack/unpack and the wire guards aligned.
 */
 
 const THREE = ENABLE3D.THREE
 
 // ---------------------------------------------------------------- tuning
 // ---- CONTENT, what a reskin edits: CHARS (bots: BOTS; teams: TEAMS + `team`), SIDES, WAVES, GUNS + SOUNDS,
-//   POWERS, HEALS, OBJECTS, LEVELS, VEHICLES, MODELS (COSTUMES), BODIES, READINGS + SPEECH, RADIO
+//   POWERS, HEALS, OBJECTS, LEVELS, VEHICLES, MODELS (COSTUMES), BODIES, TEXT, READINGS + SPEECH, RADIO
+// Swap a character's look: a MODELS row (`url`: a rig under ASSET_DIR), named by its CHARS row's `model`, or a BODIES row (`file`: a
+// served body), named by `mesh`. Its words: TEXT, and SPEECH for what it says. Its sound: a SOUNDS row's `file` (under ASSET_DIR).
+// Served files are named only in these rows
 // CHARS: roster first, then the rows BOTS play. r, h: capsule = hitbox = drawn size (m). card: name if not `name`
 // skin: colour per body part (partOf). atk: a bot's spawn weapon; atk/far may list several, one per engagement
 // weak: OBJECTS or CHARS that weaken it; weakness: the POWERS effect they apply (else theirs). weakens: as OBJECTS'
@@ -895,6 +898,55 @@ const SIDES = { killers: { name: 'Superkillers', color: 0xe8a33d, waves: true },
 // TEAMS (CHARS `team`): one player plays any standing member; foes: killer bots added in free-for-all
 const TEAMS = { Rangers: { name: 'Power Rangers', role: 'Colour-coded for your convenience · switch any time', foes: 4 },
   Turtles: { name: 'Ninja Turtles', role: 'Heroes in a half shell · switch any time', foes: 4 } }
+// TEXT: every string a reskin changes, by key. '{name}' is filled by gameText(key, { name }); § colours a chat line.
+// The markup's labels name their key in data-text (their text), data-title, data-placeholder and data-label (aria-label),
+// filled when the page starts; the code reads the rest through gameText.
+const TEXT = {
+  // the menu
+  title: 'SUPERKILLERs', tagline: "The Agency's killers against the heroes they're paid to cancel.",
+  nameLabel: 'NAME', hostCard: 'HOST GAME', joinCard: 'JOIN GAME', levelLabel: 'LEVEL', modeLabel: 'MODE', eventLabel: 'EVENT',
+  modeWaves: 'Waves', modeFfa: 'Free-for-all', modeTdm: 'Team deathmatch', hostBtn: 'Host game', joinBtn: 'Join',
+  roomCodeHint: 'room code', scanTip: 'Scan a QR code', settings: 'Settings', serveBtn: 'Run a server',
+  serveTip: 'Run the room on this machine without playing in it, and join it from another',
+  // the pause menu
+  pauseTitle: 'Menu', resume: 'Resume', changeChar: 'Change character', host: 'Host', roomCode: 'Room code', leaveGame: 'Leave game',
+  back: 'Back',
+  // the host's settings
+  voteTitle: 'Vote level', hostNote: 'Yours to set, and everyone in the room plays it.', voteNote: 'Pick one to put it to the room.',
+  citySize: 'CITY SIZE', cityKm: '{size} · {km} km', botsPerSide: 'Bots per side', killsToWin: 'Kills to win', timeLimit: 'Time limit',
+  updates: 'Updates', setMode: 'Enemies: {mode}', modeSet: '§7Mode: §f{mode}', setEvent: 'Event: {event}', eventAuto: 'Auto', eventOff: 'Off',
+  eventCurrent: ' ({on})', eventNone: 'none', setBalance: 'Balance teams: {v}', rateAuto: 'Auto, {hz} / s', rateFixed: '{hz} / s',
+  noLimit: 'no limit', minutes: '{n} min', untimed: 'untimed',
+  // the settings
+  controls: 'Controls', camera: 'Camera', graphics: 'Graphics', sound: 'Sound', mouseSens: 'Mouse sensitivity', padSens: 'Pad look speed',
+  fov: 'Field of view', volume: 'Volume', bcastVolume: 'Broadcast volume', fullscreen: 'Fullscreen',
+  bcastNote: "A broadcast plays from its owner's server, which sees your address.",
+  voicesTip: 'Characters speak lines made on this machine: about 700 MB, fetched and run in the background. Needs WebGPU.',
+  on: 'on', off: 'off', setView: 'View: {v}', viewFirst: 'first', viewThird: 'third', setQuality: 'Quality: {v}',
+  setDistance: 'View distance: {v}', setShadows: 'Shadows: {v}', shadowsQuality: 'off (quality)', setShake: 'Camera shake: {v}',
+  setPadInvert: 'Pad invert Y: {v}', setPadRumble: 'Pad vibration: {v}', padNoRumble: ' (not in this browser)', setRadio: 'Car radio: {v}',
+  setBcast: 'Broadcasts: {v}', setVhs: 'VHS: {v}', setVoices: 'AI voices: {v}', voicesNoGpu: ' (needs WebGPU)', setSound: 'Sound: {v}',
+  soundOnLabel: 'Sound on — click or press M to mute', soundOffLabel: 'Sound off — click or press M to unmute',
+  // the character pick
+  character: 'Character', copyLink: 'Copy link', copyTip: 'Copy the join link', copied: 'Copied', copyFailed: 'Copy failed', pickTitleJoin: 'Choose your character', pickLeave: 'Leave', pickRoomTip: 'Show or hide the room code',
+  pickWait: 'Changing again in a moment.', pickKeep: 'You keep the damage you have taken; this is not a respawn.',
+  pickKeys: 'Arrow keys choose · Enter picks · Esc: {back}', pickOthers: 'Others', statSpeed: 'Speed', statHealth: 'Health', statJump: 'Jump',
+  pickClick: 'Click', pickFire: 'FIRE', pickRightClick: 'Right-click', pickAtk: 'ATK', pickWpn: 'WPN', pickSwitch: 'switch',
+  playingAs: 'Playing as {name}', playAs: 'Play as {name}', changeTo: 'Change to {name}', pickRoom: 'Room {code}',
+  // team deathmatch: how a round ends, and its bar
+  tdmSquadWins: 'The squad §7wins', tdmHeroesWin: 'The heroes §7win', tdmHeroWins: '{name} §7wins', tdmEnd: '§e{why} §f{who}',
+  matchEnd: '§e{why} §f{who} §7wins with §f{kills}', newRound: '§7New round.', roundSquad: 'SQUAD {up}/{all}',
+  endWhy: { 'Time.': 'Time.', 'Frag limit.': 'Frag limit.', 'The hero is down.': 'The hero is down.', 'The squad is down.': 'The squad is down.' },
+  // kills: the feed's line between killer and victim, the callouts (what the screen shows, what the announcer says) and a spree's end
+  feedMid: ' › {weapon} › ', spreeEnded: 'Spree ended by {who}', unnamed: '?',
+  callouts: [
+    { text: 'Double kill',   say: 'Double kill!' },
+    { text: 'Triple kill',   say: 'Triple kill!' },
+    { text: 'Multi kill',    say: 'Multi kill!' },
+    { text: 'Killing spree', say: 'Killing spree!' },
+    { text: 'Rampage',       say: 'Rampage!' },
+  ],
+}
 // EVENTS: on from..to [month, day] by the host's local date; while on, CHARS rows with its name as `event` play, `cls`
 //   themes the page and `world` recolours the level: sky (fog and background), sun and hemi [colour, × intensity]
 const EVENTS = [
@@ -2025,15 +2077,8 @@ const SPEECH = {
   Kaiji:        ['gruff 666',   '[angry] RRRAAAWRGH!', 'Extinction is forever.'],
   Xenotype:     ['gruff 731',   'Sweet dreams.', 'Caught in the dreamcatcher.'],
 }
-// what the announcer calls and the centre of the screen shows: kills within MULTI_MS of each other (2, 3, 4 or more), then
-// SPREE_AT and RAMPAGE_AT kills without a death. `say` is read in the announcer's voice after the waves' lines
-const CALLOUTS = [
-  { text: 'Double kill',   say: 'Double kill!' },
-  { text: 'Triple kill',   say: 'Triple kill!' },
-  { text: 'Multi kill',    say: 'Multi kill!' },
-  { text: 'Killing spree', say: 'Killing spree!' },
-  { text: 'Rampage',       say: 'Rampage!' },
-]
+// the callouts (TEXT.callouts): kills within MULTI_MS of each other (2, 3, 4 or more), then SPREE_AT and RAMPAGE_AT kills without
+// a death. The announcer reads each one's `say` after the waves' lines
 const MULTI_MS = 4000, SPREE_AT = 5, RAMPAGE_AT = 10
 const FEED_MAX = 5, FEED_MS = 5000, KILL_MS = 520, CALL_MS = 1800, LEAD_MIN = 3
 
@@ -2532,7 +2577,7 @@ for (const [i, B] of BOTS.entries()) {
 for (const C of CHARS) C.shift &&= ref(C.shift)
 const START = ref('Sam')
 const MODES = ['ffa', 'waves', 'tdm']
-const MODE_NAMES = { ffa: 'Free-for-all', waves: 'Waves', tdm: 'Team deathmatch' }
+const MODE_NAMES = { ffa: TEXT.modeFfa, waves: TEXT.modeWaves, tdm: TEXT.modeTdm }
 // team deathmatch: one hero against the squad, a life each a round. hpPer: the hero's hp is its row's times this times
 // the squad's size at the round's start; minutes: the round's length when the host sets none
 const TDM = { hero: 'heroes', squad: 'killers', hpPer: 1, minutes: 5 }
@@ -2541,7 +2586,7 @@ let gameMode = 'waves'
 let eventOn = null
 const offEvent = R => !!R.event && R.event !== eventOn?.name
 // the host's Event setting: 'auto' (the date decides), 'off', or an EVENTS name
-const eventPicks = () => ['auto', 'off', ...EVENTS.map(E => E.name)], eventLabel = k => k === 'auto' ? 'Auto' : k === 'off' ? 'Off' : k
+const eventPicks = () => ['auto', 'off', ...EVENTS.map(E => E.name)], eventLabel = k => k === 'auto' ? TEXT.eventAuto : k === 'off' ? TEXT.eventOff : k
 const picked = pick => BOTS.flatMap((B, i) =>
   !B.squad && !offEvent(B) && Object.entries(pick).every(([k, v]) => [v].flat().includes(B[k] || false)) ? [i] : [])
 // [id, cid] for a bot row and its alt
@@ -2565,6 +2610,19 @@ const el = sel => elCache[sel] ||
     ? document.getElementById(sel.slice(1)) : document.querySelector(sel))
 // an overlay shown or hidden by its open class
 const show = (id, on) => el('#' + id).classList.toggle('open', !!on)
+// a string of TEXT, its {name} placeholders filled from v; a key the table lacks reads as itself
+const gameText = (key, v) => String(TEXT[key] ?? key).replace(/\{(\w+)\}/g, (m, k) => v?.[k] ?? m)
+// the markup's own strings, from the keys it names
+function fillText() {
+  for (const n of document.querySelectorAll('[data-text],[data-title],[data-placeholder],[data-label]')) {
+    const d = n.dataset
+    if (d.text) n.textContent = gameText(d.text)
+    if (d.title) n.title = gameText(d.title)
+    if (d.placeholder) n.placeholder = gameText(d.placeholder)
+    if (d.label) n.setAttribute('aria-label', gameText(d.label))
+  }
+}
+fillText()
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v
 const lerp = (a, b, t) => a + (b - a) * t
 const now = () => performance.now()
@@ -5478,10 +5536,10 @@ function endMatch(why) {
   if (gameMode === 'tdm') {
     const hero = heroBody(), won = hero && !(hero.dead > 0), many = [...players.values()].filter(c => sideOf(c) === TDM.hero).length > 1
     roundOn = false
-    announce('§e' + why + ' §f' + (!won ? 'The squad §7wins' : many ? 'The heroes §7win' : nameOf(hero) + ' §7wins'))
+    announce(gameText('tdmEnd', { why: TEXT.endWhy[why] ?? why, who: !won ? TEXT.tdmSquadWins : many ? TEXT.tdmHeroesWin : gameText('tdmHeroWins', { name: nameOf(hero) }) }))
     return hookMatchEnd(why === 'Time.' ? 'time' : 'elimination', best, won ? TDM.hero : TDM.squad)
   }
-  announce('§e' + why + ' §f' + who + ' §7wins with §f' + (best ? best.kills : 0))
+  announce(gameText('matchEnd', { why: TEXT.endWhy[why] ?? why, who, kills: best ? best.kills : 0 }))
   hookMatchEnd(why === 'Time.' ? 'time' : 'frags', best)
 }
 
@@ -5495,7 +5553,7 @@ function resetMatch() {
   if (gameMode === 'tdm') roundHero()
   for (const p of pickups) p.respawn = 0
   clearTornado()
-  announce('§7New round.')
+  announce(TEXT.newRound)
 }
 
 // ray(i) -> [angle, reach m, rise per m]
@@ -12708,23 +12766,23 @@ function applySettings() {
   for (const id in SET_BUTTONS) { const b = el('#' + id); if (b) b.textContent = SET_BUTTONS[id][0](Q) }
   GAME.audio.apply()
 }
-const onOff = v => v ? 'on' : 'off', nextOf = (list, v) => list[(list.indexOf(v) + 1) % list.length]
+const onOff = v => v ? TEXT.on : TEXT.off, nextOf = (list, v) => list[(list.indexOf(v) + 1) % list.length]
 const padNoRumble = () => !!padFrame?.connected && !navigator.getGamepads?.()[padFrame.index]?.vibrationActuator?.playEffect
 const SET_BUTTONS = {
-  'set-view': [() => 'View: ' + (firstPerson ? 'first' : 'third'), () => setView(!firstPerson)],
-  'set-quality': [() => 'Quality: ' + settings.quality,
+  'set-view': [() => gameText('setView', { v: firstPerson ? TEXT.viewFirst : TEXT.viewThird }), () => setView(!firstPerson)],
+  'set-quality': [() => gameText('setQuality', { v: settings.quality }),
     () => { settings.quality = nextOf(QNAMES, settings.quality); settings.qualityChosen = true; qualityAuto = '' }],
-  'set-distance': [() => 'View distance: ' + settings.distance, () => { settings.distance = nextOf(Object.keys(VIEW), settings.distance) }],
-  'set-shadows': [Q => 'Shadows: ' + (Q.shadows ? onOff(settings.shadows) : 'off (quality)'), () => { settings.shadows = !settings.shadows }],
-  'set-shake': [() => 'Camera shake: ' + onOff(settings.shake), () => { settings.shake = !settings.shake }],
-  'set-padinvert': [() => 'Pad invert Y: ' + onOff(settings.padInvert), () => { settings.padInvert = !settings.padInvert }],
-  'set-padrumble': [() => 'Pad vibration: ' + onOff(settings.padRumble) + (padNoRumble() ? ' (not in this browser)' : ''),
+  'set-distance': [() => gameText('setDistance', { v: settings.distance }), () => { settings.distance = nextOf(Object.keys(VIEW), settings.distance) }],
+  'set-shadows': [Q => gameText('setShadows', { v: Q.shadows ? onOff(settings.shadows) : TEXT.shadowsQuality }), () => { settings.shadows = !settings.shadows }],
+  'set-shake': [() => gameText('setShake', { v: onOff(settings.shake) }), () => { settings.shake = !settings.shake }],
+  'set-padinvert': [() => gameText('setPadInvert', { v: onOff(settings.padInvert) }), () => { settings.padInvert = !settings.padInvert }],
+  'set-padrumble': [() => gameText('setPadRumble', { v: onOff(settings.padRumble) }) + (padNoRumble() ? TEXT.padNoRumble : ''),
     () => { settings.padRumble = !settings.padRumble }],
-  'set-balance': [() => 'Balance teams: ' + onOff(settings.balance), () => { settings.balance = !settings.balance }],
-  'set-radio': [() => 'Car radio: ' + onOff(settings.radio), () => { settings.radio = !settings.radio }, () => GAME.audio.radio()],
-  'set-bcast': [() => 'Broadcasts: ' + onOff(settings.bcast), () => { settings.bcast = !settings.bcast }, () => bcastPlay()],
-  'set-vhs': [() => 'VHS: ' + onOff(settings.vhs !== false), () => { settings.vhs = settings.vhs === false }],
-  'set-voices': [() => 'AI voices: ' + onOff(settings.voices) + (settings.voices && !('gpu' in navigator) ? ' (needs WebGPU)' : ''), () => GAME.audio.voicesToggle()],
+  'set-balance': [() => gameText('setBalance', { v: onOff(settings.balance) }), () => { settings.balance = !settings.balance }],
+  'set-radio': [() => gameText('setRadio', { v: onOff(settings.radio) }), () => { settings.radio = !settings.radio }, () => GAME.audio.radio()],
+  'set-bcast': [() => gameText('setBcast', { v: onOff(settings.bcast) }), () => { settings.bcast = !settings.bcast }, () => bcastPlay()],
+  'set-vhs': [() => gameText('setVhs', { v: onOff(settings.vhs !== false) }), () => { settings.vhs = settings.vhs === false }],
+  'set-voices': [() => gameText('setVoices', { v: onOff(settings.voices) }) + (settings.voices && !('gpu' in navigator) ? TEXT.voicesNoGpu : ''), () => GAME.audio.voicesToggle()],
 }
 
 let settingsOpen = false
@@ -12761,19 +12819,19 @@ function openHost() {
   const lv = el('#host-levels')
   if (!lv.children.length) buildLevelCards(lv, levelId, i => { if (i === levelId) return; if (isHost) return setLevel(i); closeSettings(); voteFor(i); lockPointer() })
   el('#host-only').style.display = isHost ? '' : 'none'
-  el('#host-title').textContent = isHost ? 'Host' : 'Vote level'
-  el('#host-note').textContent = isHost ? 'Yours to set, and everyone in the room plays it.' : 'Pick one to put it to the room.'
+  el('#host-title').textContent = isHost ? TEXT.host : TEXT.voteTitle
+  el('#host-note').textContent = isHost ? TEXT.hostNote : TEXT.voteNote
   markLevel(lv, levelId)
   const cs = el('#host-city')
   if (!cs.children.length) for (const k in CITY_SIZES) {
     const d = cs.appendChild(document.createElement('div'))
-    d.className = 'card'; d.textContent = k + ' · ' + (CITY_SIZES[k] * 0.096).toFixed(1) + ' km'
+    d.className = 'card'; d.textContent = gameText('cityKm', { size: k, km: (CITY_SIZES[k] * 0.096).toFixed(1) })
     d.onclick = () => { settings.city = k; saveSettings(); pickCard(cs, d); if (LEVELS[levelId].gen?.kind === 'city') setLevel(levelId) }
   }
   markLevel(cs, Object.keys(CITY_SIZES).indexOf(settings.city))
   const ek = settings.event || 'auto'
-  el('#set-event').textContent = 'Event: ' + eventLabel(ek) + (ek === 'auto' ? ' (' + (eventOn ? eventOn.name : 'none') + ')' : '')
-  el('#set-mode').textContent = 'Enemies: ' + MODE_NAMES[gameMode].toLowerCase()
+  el('#set-event').textContent = gameText('setEvent', { event: eventLabel(ek) + (ek === 'auto' ? gameText('eventCurrent', { on: eventOn ? eventOn.name : TEXT.eventNone }) : '') })
+  el('#set-mode').textContent = gameText('setMode', { mode: MODE_NAMES[gameMode].toLowerCase() })
   for (const id of ['bots', 'balance', 'frags', 'time']) el('#set-' + id + '-row').style.display = gameMode === 'ffa' || gameMode === 'tdm' && (id === 'bots' || id === 'time') ? '' : 'none'
   const bots = el('#set-bots'), out = el('#set-bots-v')
   bots.max = regulars()
@@ -12782,19 +12840,19 @@ function openHost() {
   bots.oninput = () => { out.textContent = bots.value }
   bots.onchange = () => GAME.match.bots(+bots.value)
   const re = el('#set-rate'), ro = el('#set-rate-v')
-  const rateText = () => settings.rate ? settings.rate + ' / s' : 'Auto, ' + snapHz(players.size) + ' / s'
+  const rateText = () => settings.rate ? gameText('rateFixed', { hz: settings.rate }) : gameText('rateAuto', { hz: snapHz(players.size) })
   re.value = SNAP_STEPS.indexOf(settings.rate)
   ro.textContent = rateText()
   re.oninput = () => { settings.rate = SNAP_STEPS[+re.value] || 0; ro.textContent = rateText(); saveSettings() }
   // "no limit" at the right end
   const fr = el('#set-frags'), fo = el('#set-frags-v'), fn = GAME.match.fragSteps.length
-  const fragText = () => GAME.match.fragLimit ? String(GAME.match.fragLimit) : 'no limit'
+  const fragText = () => GAME.match.fragLimit ? String(GAME.match.fragLimit) : TEXT.noLimit
   fr.max = fn - 1
   fr.value = (GAME.match.fragSteps.findIndex(v => v >= GAME.match.fragLimit) + fn - 1) % fn
   fo.textContent = fragText()
   fr.oninput = () => { GAME.match.frags(GAME.match.fragSteps[(+fr.value + 1) % fn]); fo.textContent = fragText() }
   const tm = el('#set-time'), to = el('#set-time-v')
-  const timeText = () => GAME.match.timeLimit ? +(GAME.match.timeLimit / 60).toFixed(2) + ' min' : 'untimed'
+  const timeText = () => GAME.match.timeLimit ? gameText('minutes', { n: +(GAME.match.timeLimit / 60).toFixed(2) }) : TEXT.untimed
   tm.max = GAME.match.minuteSteps.length - 1
   tm.value = GAME.match.minuteSteps.findIndex(v => v >= GAME.match.timeLimit / 60)
   to.textContent = timeText()
@@ -12819,7 +12877,7 @@ function initSettings() {
   }
   el('#set-mode').onclick = () => {
     GAME.match.mode(nextOf(MODES, gameMode))
-    announce('§7Mode: §f' + MODE_NAMES[gameMode])
+    announce(gameText('modeSet', { mode: MODE_NAMES[gameMode] }))
     openHost()
   }
   el('#host-back').onclick = settingsBack
@@ -12919,13 +12977,12 @@ function sfxWake() {
 }
 
 function sfxApply(starting) {
-  const say = 'Sound: ' + (settings.sound ? 'on' : 'off'), sb = el('#set-sound')
+  const say = gameText('setSound', { v: onOff(settings.sound) }), sb = el('#set-sound')
   if (sb && sb.textContent !== say) sb.textContent = say
   const hb = el('#hudsound')
   if (hb) {
     hb.classList.toggle('muted', !settings.sound)
-    const lab = settings.sound ? 'Sound on — click or press M to mute'
-                               : 'Sound off — click or press M to unmute'
+    const lab = settings.sound ? TEXT.soundOnLabel : TEXT.soundOffLabel
     if (hb.getAttribute('aria-label') !== lab) hb.setAttribute('aria-label', lab)
     hb.title = lab
   }
@@ -13388,7 +13445,7 @@ async function startVoices() {
   actStage = 'is looking for lines kept from an earlier visit'
   const lines = WAVES.map((w, i) => ['announcer:' + i, SPEECH.announcer[0],
                                      w.name.charAt(0) + w.name.slice(1).toLowerCase() + '!'])
-  CALLOUTS.forEach((c, j) => lines.push(['announcer:' + (WAVES.length + j), SPEECH.announcer[0], c.say]))
+  TEXT.callouts.forEach((c, j) => lines.push(['announcer:' + (WAVES.length + j), SPEECH.announcer[0], c.say]))
   for (const who in SPEECH) for (let i = 1; i < SPEECH[who].length; i++)
     lines.push([who + ':' + (i - 1), SPEECH[who][0], SPEECH[who][i]])
   voiceLines = lines.length
@@ -13547,17 +13604,17 @@ function paintPicker() {
   const wrap = el('#pick-cards'), live = selfChar(), joining = joinPick(), now = live ? live.cid : myCid
   if (pickAt < 0) pickAt = joining && GAME.rows.refusal(now) ? pickAll().find(i => !GAME.rows.refusal(i)) ?? pickEntry(now) : pickEntry(now)
   pickAt ??= pickAll()[0]
-  el('#pick-title').textContent = joining ? 'Choose your character' : 'Character'
-  el('#pick-back').textContent = joining ? 'Leave' : 'Back'
+  el('#pick-title').textContent = joining ? TEXT.pickTitleJoin : TEXT.character
+  el('#pick-back').textContent = joining ? TEXT.pickLeave : TEXT.back
   el('#pick-note').textContent = joining ? roomName() + ' · ' + LEVELS[levelId].name + GAME.rows.pickNote()
-    : live && live.shiftCool > 0 ? 'Changing again in a moment.' : 'You keep the damage you have taken; this is not a respawn.'
-  el('#pick-keys').textContent = 'Arrow keys choose · Enter picks · Esc: ' + el('#pick-back').textContent
+    : live && live.shiftCool > 0 ? TEXT.pickWait : TEXT.pickKeep
+  el('#pick-keys').textContent = gameText('pickKeys', { back: el('#pick-back').textContent })
   wrap.innerHTML = ''
   for (const k of pickSides()) {
     const E = pickEntries(k)
     if (!E.length) continue
     const h = wrap.appendChild(document.createElement('div'))
-    h.className = 'hd'; h.textContent = SIDES[k]?.name ?? 'Others'; h.style.borderLeftColor = css(SIDES[k]?.color ?? 0x7d8590)
+    h.className = 'hd'; h.textContent = SIDES[k]?.name ?? TEXT.pickOthers; h.style.borderLeftColor = css(SIDES[k]?.color ?? 0x7d8590)
     for (const i of E) {
       const why = GAME.rows.refusal(i), n = teamOf(i) ? members(teamOf(i)).length : 1, d = wrap.appendChild(document.createElement('div'))
       d.className = 'card pc' + (i === pickAt ? ' sel' : '') + (why ? ' taken' : '')
@@ -13573,7 +13630,7 @@ function paintPicker() {
   pickSel(pickAt)
 }
 const pickCards = () => [...el('#pick-cards').children].filter(d => d.dataset.i !== undefined)
-const PICK_STATS = [['Speed', 'speed'], ['Health', 'hp'], ['Jump', 'jump']]
+const PICK_STATS = [[TEXT.statSpeed, 'speed'], [TEXT.statHealth, 'hp'], [TEXT.statJump, 'jump']]
 function pickSel(i) {
   if (pickAt !== i) pickAtT = now()
   pickAt = i
@@ -13584,10 +13641,10 @@ function pickSel(i) {
   el('#pick-stats').innerHTML = PICK_STATS.map(([k, f]) => '<div><span>' + k + '</span><i><b style="width:' +
     Math.round(100 * C[f] / Math.max(...PICKABLE.map(j => CHARS[j][f]))) + '%;background:' + css(sideColor(C)) + '"></b></i><span>' + +C[f].toFixed(1) + '</span></div>').join('')
   const atks = [].concat(C.atk ?? []), many = gunless(C) && atks.length > 1, right = primaryName({ cid: i })
-  el('#pick-atk').innerHTML = '<div><em>' + (IS_TOUCH ? 'FIRE' : 'Click') + '</em>' + (many ? atks.join(' · ') + ' <kbd>' + (IS_TOUCH ? 'WPN' : 'R') + '</kbd> switch' : (GUNS[handsOf(C)]?.name ?? '')) + '</div>' +
-    (right ? '<div><em>' + (IS_TOUCH ? 'ATK' : 'Right-click') + '</em>' + right + '</div>' : '')
+  el('#pick-atk').innerHTML = '<div><em>' + (IS_TOUCH ? TEXT.pickFire : TEXT.pickClick) + '</em>' + (many ? atks.join(' · ') + ' <kbd>' + (IS_TOUCH ? TEXT.pickWpn : 'R') + '</kbd> ' + TEXT.pickSwitch : (GUNS[handsOf(C)]?.name ?? '')) + '</div>' +
+    (right ? '<div><em>' + (IS_TOUCH ? TEXT.pickAtk : TEXT.pickRightClick) + '</em>' + right + '</div>' : '')
   const go = el('#pick-go')
-  go.textContent = why || (mine ? 'Playing as ' : joinPick() ? 'Play as ' : 'Change to ') + pickName(i)
+  go.textContent = why || gameText(mine ? 'playingAs' : joinPick() ? 'playAs' : 'changeTo', { name: pickName(i) })
   go.disabled = !!(why || mine)
 }
 function pickGo() {
@@ -13623,13 +13680,13 @@ function initPause() {
   el('#vote-yes').onclick = () => voteBallot(true); el('#vote-no').onclick = () => voteBallot(false); el('#vote-cancel').onclick = cancelVote
   backdrop('charpick', () => joinPick() || pickBack())
   el('#pick-back').onclick = pickBack
-  el('#pick-room').onclick = () => { pickCodeShown = !pickCodeShown; el('#pick-room').blur(); hud('pickroom', el('#pick-room'), 'textContent', 'Room ' + pickCode()) }
+  el('#pick-room').onclick = () => { pickCodeShown = !pickCodeShown; el('#pick-room').blur(); hud('pickroom', el('#pick-room'), 'textContent', gameText('pickRoom', { code: pickCode() })) }
   el('#pick-copy').onclick = async () => {
     const b = el('#pick-copy'); b.blur()
     if (!roomCodeStr || codeText() === OPENING) return
     const ok = await copyText(qrText(roomCodeStr))
-    b.textContent = ok ? 'Copied' : 'Copy failed'
-    setTimeout(() => { b.textContent = 'Copy link' }, 1500)
+    b.textContent = ok ? TEXT.copied : TEXT.copyFailed
+    setTimeout(() => { b.textContent = TEXT.copyLink }, 1500)
   }
   el('#pick-go').onclick = pickGo
   el('#pause-resume').onclick = closePause
@@ -14113,7 +14170,7 @@ function nameTag(id) {
 
 // kills: the host counts each killer's run since its last death and its kills within MULTI_MS of each other, and tells every
 // player (`kf`: killer, victim, weapon, multi m, run s, the victim's ended run x); each page draws the feed, marker and callout
-// from it. The callout a kill earns: an index into CALLOUTS, or -1
+// from it. The callout a kill earns: an index into TEXT.callouts, or -1
 const calloutOf = (m, s) => s === RAMPAGE_AT ? 4 : s === SPREE_AT ? 3 : m >= 4 ? 2 : m === 3 ? 1 : m === 2 ? 0 : -1
 function killTally(k, victim) {
   const t = now()
@@ -14139,7 +14196,7 @@ function feedColor(c) {
 const feedRows = []
 function killShow(d) {
   const t = now(), row = document.createElement('div')
-  for (const [id, text] of [[d.a, ''], [-1, ' › ' + d.w + ' › '], [d.v, '']]) {
+  for (const [id, text] of [[d.a, ''], [-1, gameText('feedMid', { weapon: d.w })], [d.v, '']]) {
     const s = document.createElement('span'), p = roster.get(id)
     s.textContent = id < 0 ? text : p ? p.name : '?'
     if (id < 0) s.className = 'w'; else if (p) s.style.color = feedColor(GAME.participant(id, p.cid).color)
@@ -14152,8 +14209,8 @@ function killShow(d) {
   if (d.a === myId && d.v !== myId) {
     killFlash = t
     const j = calloutOf(d.m, d.s)
-    if (j >= 0) { calloutText = CALLOUTS[j].text; calloutAt = t }
-  } else if (d.v === myId && d.x >= SPREE_AT) { calloutText = 'Spree ended by ' + (roster.get(d.a)?.name ?? '?'); calloutAt = t }
+    if (j >= 0) { calloutText = TEXT.callouts[j].text; calloutAt = t }
+  } else if (d.v === myId && d.x >= SPREE_AT) { calloutText = gameText('spreeEnded', { who: roster.get(d.a)?.name ?? TEXT.unnamed }); calloutAt = t }
 }
 
 function showChat(id, text, action) {
@@ -17596,7 +17653,7 @@ function frameBody() {
     try { draw(drawDt, t) } catch (e) { frameFailed('draw', e) }
     drawDt = 0
   }
-  if (pickOpen && !drawSkip) try { hud('pickroom', el('#pick-room'), 'textContent', isHost && !serving ? 'Room ' + pickCode() : ''); if (!(idleDraw && pickStill())) pickFrame(t) } catch (e) { frameFailed('pick', e) }
+  if (pickOpen && !drawSkip) try { hud('pickroom', el('#pick-room'), 'textContent', isHost && !serving ? gameText('pickRoom', { code: pickCode() }) : ''); if (!(idleDraw && pickStill())) pickFrame(t) } catch (e) { frameFailed('pick', e) }
   if (startLog && phase === 'playing' && startLog.frames.length < 30) {
     if (!startLog.frames.length) markStart('frame 1')
     startLog.frames.push(t - (startLog.last ?? t)); startLog.last = t
@@ -18030,7 +18087,7 @@ function drawHud(me, others, t) {
   if (gameMode === 'tdm') {
     const all = [{ id: myId, cid: me.cid, dead: me.dead, hp: me.hp }, ...others], squad = all.filter(o => rowFor(o.id, o.cid).side === TDM.squad)
     const heroes = all.filter(o => isHero(o.id, o.cid)), hero = heroes.find(o => !(o.dead > 0)) || heroes[0]
-    hud('round', el('#round'), 'innerHTML', 'SQUAD ' + squad.filter(o => !(o.dead > 0)).length + '/' + squad.length +
+    hud('round', el('#round'), 'innerHTML', gameText('roundSquad', { up: squad.filter(o => !(o.dead > 0)).length, all: squad.length }) +
       (hero ? '  ·  ' + esc(roster.get(hero.id)?.name || rowFor(hero.id, hero.cid).name) + ' <span class="bar"><span style="width:' +
         (hero.dead > 0 ? 0 : clamp(hero.hp / fullHp(hero.id, hero.cid), 0, 1) * 100).toFixed(1) + '%"></span></span>' : ''))
   }
