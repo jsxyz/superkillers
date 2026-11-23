@@ -1194,6 +1194,7 @@ const THEME = {
   wall: ['#2b3240', '#232935', '#343d4e'],
   pad: 0x58a6ff,                      // jump pad colour
   ramp: [-4.5, 15],                   // map shading height range (m)
+  textures: {},                       // pictures served from assets/, by slot: { color: { size: file }, normal: { size: file } }; the sizes are QUALITY's tex
 }
 // LEVELS: brushes, pads ('x y z [item it always rolls]'), spawns, objects ('x y z Kind [yaw] [seed]'), theme, gen
 // reach: spots every walker reaches on foot and back: pad indexes, 'pads' (all) or 'x y z'
@@ -1252,7 +1253,12 @@ const LEVELS = [
   { name: 'Sprawl', gen: { kind: 'sprawl', seed: 1337, size: 2 }, objects: ['0 .25 0 Kryptonite'], reach: ['pads'] },
   { name: 'City', screens: [{ buildings: 6, roofs: 8 }], gen: { kind: 'city', seed: 2026, size: 20, cores: [[-180, -260], [330, 290]],
       heights: [[140, 72, 168, 0], [300, 36, 120, 0], [520, 16.8, 54, 1], [800, 8.4, 25.2, 1], [Infinity, 4.2, 8.4, 2]] },
-    theme: { fog: [0x252b3a], view: [31, 192] }, reach: ['pads'] },
+    theme: { fog: [0x252b3a], view: [31, 192], textures: {
+      facade: { color: { 512: 'city-facade-512.5fd00db7.webp', 1024: 'city-facade-1024.dc08b76c.webp' }, normal: { 1024: 'city-facade-n-1024.ed152ace.webp' } },
+      street: { color: { 512: 'city-street-1024.4e69d3c7.webp', 1024: 'city-street-2048.094a5083.webp' } },
+      paving: { color: { 512: 'city-paving-512.157174a6.webp', 1024: 'city-paving-1024.52c4085a.webp' }, normal: { 1024: 'city-paving-n-1024.2bd569ee.webp' } },
+      roof: { color: { 512: 'city-roof-512.3161d451.webp', 1024: 'city-roof-1024.b669ab90.webp' } }
+    } }, reach: ['pads'] },
 ]
 // OBJECTS: r: ball radius, or half: box half-extents (m); mass (player 1); hit: × shot knock; roll: rolling friction
 // weakens: { effect, within m, struck s }: gives `weak` bodies their `weakness`, else this effect
@@ -8418,6 +8424,51 @@ function cityScreens(rows, faces, { buildings, roofs }) {
   return out
 }
 
+// ---- served texture sets: a level's pictures (theme.textures) come from ASSET_DIR at the quality tier's size (QUALITY tex;
+// normal maps from 1024). Each texture is made in code first (or as a flat colour) and the file's
+// picture is swapped into the same object: the code-drawn one stays while the file loads, if it fails, and with the page opened
+// on its own. A normal map is flat until its file arrives.
+const servedSlots = new Map()          // slot -> { map, normal }: the textures that stand for its files
+let servedLoader = null
+const servedOn = () => typeof createImageBitmap === 'function' && !!THREE.ImageBitmapLoader && !renderHeadless
+const servedTier = () => (QUALITY[settings.quality] || QUALITY.high).tex
+function servedImage(file) {
+  servedLoader ||= new THREE.ImageBitmapLoader().setOptions({ imageOrientation: 'flipY', premultiplyAlpha: 'none', colorSpaceConversion: 'none' })
+  return new Promise(done => servedLoader.load(ASSET_DIR + file, done, undefined, () => done(null)))
+}
+const flatTexture = (css, srgb) => {
+  const cv = document.createElement('canvas'), g = cv.getContext('2d'), t = new THREE.CanvasTexture(cv)
+  cv.width = cv.height = 1; g.fillStyle = css; g.fillRect(0, 0, 1, 1)
+  t.wrapS = t.wrapT = THREE.RepeatWrapping
+  if (srgb) t.colorSpace = THREE.SRGBColorSpace
+  return t
+}
+// the bitmap stays with its texture, so a restored context uploads it again as three does any image
+function servedPicture(t, img) {
+  const was = t.image
+  t.image = img; t.anisotropy = texAniso(); t.dispose(); t.needsUpdate = true
+  if (was instanceof ImageBitmap) was.close()
+}
+function serveTextures() {
+  if (!servedOn()) return
+  for (const [slot, S] of servedSlots) for (const [kind, t] of [['color', S.map], ['normal', S.normal]]) {
+    const file = t && LV.theme.textures[slot]?.[kind]?.[servedTier()]
+    if (!file || t.userData.file === file) continue
+    t.userData.file = file
+    servedImage(file).then(img => { if (!img) return; if (t.userData.file === file) servedPicture(t, img); else img.close() })
+  }
+}
+function serveSlot(slot, map, normal) {
+  const S = servedSlots.get(slot) || {}
+  servedSlots.set(slot, { map: map || S.map, normal: normal || S.normal })
+  serveTextures()
+  return servedSlots.get(slot)
+}
+// the slot's normal map, or none below the 1024 tier
+const cityNormal = slot => servedOn() && servedTier() >= 1024 ? (servedSlots.get(slot)?.normal || serveSlot(slot, null, flatTexture('rgb(128,128,255)', false)).normal) : undefined
+let roofMap = null
+const cityRoofMap = () => roofMap || serveSlot('roof', roofMap = flatTexture('#535962', true)).map
+
 function cityFacadeMap() {
   if (cityMap) return cityMap
   const cv = document.createElement('canvas')
@@ -8436,6 +8487,7 @@ function cityFacadeMap() {
   cityMap = new THREE.CanvasTexture(cv)
   cityMap.wrapS = cityMap.wrapT = THREE.RepeatWrapping
   cityMap.colorSpace = THREE.SRGBColorSpace
+  serveSlot('facade', cityMap)
   return cityMap
 }
 
@@ -8479,9 +8531,9 @@ function cityBuildingMesh(rows, faces) {
       }
     })
     g.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-    root.add(new THREE.Mesh(footShade(g, Math.min(...boxes.map(b => b.cy - b.ey))), new THREE.MeshStandardMaterial({ map: cityFacadeMap(), vertexColors: true, roughness: 0.9 })))
+    root.add(new THREE.Mesh(footShade(g, Math.min(...boxes.map(b => b.cy - b.ey))), new THREE.MeshStandardMaterial({ map: cityFacadeMap(), normalMap: cityNormal('facade'), vertexColors: true, roughness: 0.9 })))
   }
-  if (roof.length) root.add(new THREE.Mesh(mergeBoxes(boxes, 'floor', roof), new THREE.MeshStandardMaterial({ color: 0x535962, roughness: 0.95 })))
+  if (roof.length) root.add(new THREE.Mesh(mergeBoxes(boxes, 'floor', roof), new THREE.MeshStandardMaterial({ map: cityRoofMap(), roughness: 0.95 })))
   root.traverse(n => { if (n.isMesh) n.castShadow = n.receiveShadow = true })
   return root
 }
@@ -8567,6 +8619,7 @@ function streetAtlas() {
   rect('#2a2b2e', 0, 248, 512, 8)                                                                                              // its face
   streetMap = new THREE.CanvasTexture(cv)
   streetMap.wrapS = THREE.RepeatWrapping; streetMap.colorSpace = THREE.SRGBColorSpace; streetMap.anisotropy = texAniso()
+  serveSlot('street', streetMap)
   return streetMap
 }
 // 1 m slabs in a running bond, TILE_M per texture
@@ -8577,6 +8630,7 @@ function pavingMap() {
   for (let r = 0; r < 4; r++) { g.fillRect(0, r * 64, 256, 2); for (let c = 0; c < 5; c++) g.fillRect(c * 64 + r % 2 * 32, r * 64, 2, 64) }
   paveMap = new THREE.CanvasTexture(cv)
   paveMap.wrapS = paveMap.wrapT = THREE.RepeatWrapping; paveMap.colorSpace = THREE.SRGBColorSpace; paveMap.anisotropy = texAniso()
+  serveSlot('paving', paveMap)
   return paveMap
 }
 function streetGround(street, walks = [], into) {
@@ -8617,9 +8671,9 @@ function streetGround(street, walks = [], into) {
     }
   }
   if (into) { into.forEach((m, k) => groundAdd(m, [road, pave][k])); return into }
-  return [[road, streetAtlas()], [pave, pavingMap()]].map(([o, map]) => { const g = new THREE.BufferGeometry()
+  return [[road, streetAtlas()], [pave, pavingMap(), cityNormal('paving')]].map(([o, map, normalMap]) => { const g = new THREE.BufferGeometry()
     g.setDrawRange(0, 0); g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), A * 1.5)
-    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map, roughness: 0.95 })); m.receiveShadow = true; groundAdd(m, o); return m })
+    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map, normalMap, roughness: 0.95 })); m.receiveShadow = true; groundAdd(m, o); return m })
 }
 // uploads only the appended range; capacity doubles when full
 function groundAdd(m, o) {
@@ -12533,9 +12587,9 @@ function drawDebug(me, fps) {
 // localStorage throws on opaque origins (file://): every access guarded. Renaming the 'arena.' key drops saved settings
 const SET_KEY = 'arena.settings.v1'
 const QUALITY = {
-  high:   { ratio: 2,    shadowMap: 1024, farMap: 2048, shadows: true,  fx: 1, touch: { shadowMap: 512, half: 40 } },
-  medium: { ratio: 1.25, shadowMap: 512,  farMap: 1024, shadows: true,  fx: 0.5 },
-  low:    { ratio: 1,    shadowMap: 512,  farMap: 512,  shadows: false, fx: 0.25 },
+  high:   { ratio: 2,    shadowMap: 1024, farMap: 2048, shadows: true,  fx: 1, tex: 1024, touch: { shadowMap: 512, half: 40 } },
+  medium: { ratio: 1.25, shadowMap: 512,  farMap: 1024, shadows: true,  fx: 0.5, tex: 512 },
+  low:    { ratio: 1,    shadowMap: 512,  farMap: 512,  shadows: false, fx: 0.25, tex: 512 },
 }
 const QNAMES = Object.keys(QUALITY)
 const GPU_SOFTWARE = /swiftshader|llvmpipe|softwarerasterizer|basic render|mesa offscreen/i
@@ -12639,6 +12693,7 @@ function applySettings() {
   const Q = QUALITY[settings.quality] || QUALITY.high
   fxStride = Q.fx >= 1 ? 1 : Math.max(2, Math.round(1 / Q.fx))
   applyPixels()
+  serveTextures()
   sunTier = Q
   const want = shadowsWanted(Q)
   document.body?.classList.toggle('novhs', settings.vhs === false)
@@ -16064,6 +16119,7 @@ function beginPlay() {
   lastRecvAt = now()
   kickedBy = null
   el('#ui').style.display = 'none'
+  setStatus('')   // the menu is hidden: its line goes with it
   document.body.classList.add('playing')
   if (!joinPick()) lockPointer()
   sysMsg('§7Connected. §8T to chat · /help for codes · /code for the room code')
