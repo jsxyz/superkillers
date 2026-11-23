@@ -15426,7 +15426,7 @@ const SFX_NEAR = 5, SFX_FLOOR = 0.02, SFX_BEHIND = 1800
 // × SFX_NEAR; default 1
 const SFX_REACH = { Scatter: 1.6, Railer: 2.5, Lance: 2, 'Lance charge': 1.6, Slug: 1.4, Hadoken: 2.4,
   'Hadoken charge': 2.4, Raygun: 3, 'Belly Flop': 2.2, 'Ground Slam': 2.2, pad: 2, down: 1.8, boom: 3, burning: 2 }
-// voices at once per category; when full, the quietest makes way
+// voices sounding at once per category, each counted over its own span; when full, the quietest makes way
 const SFX_CAP = { mine: 4, you: 6, gun: 10, world: 6 }
 // SFX_BIG: fraction of your health heard at once; smaller hits summed, heard at most every SFX_CHIP_MS
 const SFX_BIG = 0.15, SFX_CHIP_MS = 300
@@ -15563,7 +15563,7 @@ function sfxPlay(name, at, cat, lvl, delay, span, who) {
   }
   if (!(gain >= SFX_FLOOR)) return null
   const t = actx.currentTime + (delay > 0 ? delay : 0)
-  if (!sfxRoom(cat, gain, t)) return null
+  if (!sfxRoom(cat, gain, t, span === Infinity ? 0.25 : buf ? buf.duration : 1)) return null
 
   const v = { cat, gain, t0: t, end: t, srcs: [], out: actx.createGain() }
   v.out.gain.value = gain
@@ -15587,19 +15587,20 @@ function sfxPlay(name, at, cat, lvl, delay, span, who) {
   return v
 }
 
-function sfxRoom(cat, gain, t) {
+function sfxRoom(cat, gain, t, len) {
   const now0 = actx.currentTime
   for (let i = sfxVoices.length - 1; i >= 0; i--) if (sfxVoices[i].end <= now0) sfxVoices.splice(i, 1)
-  let n = 0, low = null, lowAt = Infinity
-  for (const v of sfxVoices) {
-    if (v.cat !== cat) continue
-    n++
-    const left = v.gain * clamp((v.end - now0) / Math.max(v.end - v.t0, 1e-3), 0, 1)
+  const live = sfxVoices.filter(v => v.cat === cat && v.end > t), sounding = s => live.filter(v => v.t0 <= s && v.end > s)
+  // the new voice's span: it starts at t, and a voice scheduled to start inside its len counts there too
+  const full = [t, ...live.filter(v => v.t0 > t && v.t0 < t + len).map(v => v.t0)].find(s => sounding(s).length >= (SFX_CAP[cat] || 4))
+  if (full === undefined) return true
+  let low = null, lowAt = Infinity
+  for (const v of sounding(full)) {
+    const left = v.gain * clamp((v.end - full) / Math.max(v.end - v.t0, 1e-3), 0, 1)
     if (left < lowAt) { lowAt = left; low = v }
   }
-  if (n < (SFX_CAP[cat] || 4)) return true
   if (!low || lowAt >= gain) return false
-  sfxCut(low, now0)
+  sfxCut(low, Math.max(now0, full))
   sfxVoices.splice(sfxVoices.indexOf(low), 1)
   return true
 }
@@ -15629,7 +15630,9 @@ function sfxFx(list, only) {
           if (G.windup > 0 && sfxPlay(G.name + ' charge', at, mine ? 'mine' : 'world', 1, 0, G.windup)) started++
         } else {
           const one = G.pellets === 1 && !G.melee && !G.kind
-          const shots = one ? Math.min(j - i, 3) : 1
+          let hits = 0
+          for (let n = i; n < j; n++) if (list[n][7] === 0 || list[n][7] === 1) hits++      // the effect rows riding with a shot (bursts, gore) are not shots
+          const shots = one ? Math.min(hits, 3) : 1
           const gap = G.burst > 1 ? G.burstGap : G.rate
           for (let n = 0; n < shots; n++)
             if (sfxPlay(G.name, at, cat, mine ? 0.8 : 1, n * gap)) started++
