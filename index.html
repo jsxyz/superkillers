@@ -1189,12 +1189,12 @@ const CHARS = [
   { name:'Sam',    side:'killers', atk:'Pistol', r:0.38, h:0.51, speed:7.2, jump:8.28, hp: 95, color:0xe8a33d,
     role:'Agency assassin · 100 heroes from home', primary:'Raygun', costume:'agent', mesh:'sam',
     skin:{ head:0x3b2a55, torso:0xe8a33d, arm:0xe8a33d, hand:0xbbd3e8, leg:0xe8a33d, boot:0xbbd3e8 },
-    gait: 2.85, sprintGait: 4.75, bones: { leg_upper: [1, 1.85, 1], leg_lower: [1, 2.12, 1.25], arm_upper: [1, 1.46, 1], arm_lower: [1, 1.46, 1], head: [0.69, 0.69, 0.69], body_upper: [0.8, 1.09, 1.2], body_lower: [1, 1.15, 1] },
+    gait: 2.85, sprintGait: 4.75, bones: { leg_upper: [1, 1.76, 1], leg_lower: [1, 2.01, 1.25], arm_upper: [1, 1.36, 1], arm_lower: [1, 1.36, 1], head: [0.76, 0.76, 0.76], body_upper: [0.82, 1.04, 1.2], body_lower: [1, 1.15, 1] },
     shape:{ torso:[1.02, 1, 0.94], arm:[1, 1, 1], hand:[0.97, 1, 0.97], leg:[1.1, 1, 1.25], boot:[1.08, 1, 1.02] } },
   { name:'Beck',   side:'killers', atk:'Scatter', r:0.35, h:0.58, lean: 0.3, speed:6.0, jump:7.88, hp:125, color:0x8c86c8,
     role:'Dropout waitress · knows every hero\'s weakness', manyGuns:true, primary:'Spoiler', costume:'waitress', mesh:'beck',
     skin:{ head:0x16141e, torso:0x8c86c8, arm:0x8c86c8, hand:0xf2c9ae, leg:0x6f6282, boot:0x1d1b24, white:0xf6f4ec, sheen:0x2f8fa3, lip:0xe0a194, iris:0xa8622a, frame:0x2fb7ad, ink:0x1c1a26 },
-    bones:{ leg_upper:[1, 1.18, 1], leg_lower:[1, 1.18, 1], body_lower:[0.4, 0.48, 1], body_upper:[0.36, 1.15, 1], arm_lower:[1, 0.95, 1] },
+    bones:{ leg_upper:[1, 1.28, 1], leg_lower:[1, 1.28, 1], body_lower:[0.52, 0.45, 1], body_upper:[0.56, 0.82, 1], arm_upper:[1, 0.94, 1], arm_lower:[1, 0.9, 1], head:[1.1, 1.1, 1.1] },
     turns:[['body_IK', -0.2, 0, 0], ['leg_upper', 0.2, 0, 0], ['head', 0.123, 0, 0]], stand:[['body_IK', -0.072, 0, 0], ['leg_upper', 0.508, 0, 0], ['leg_lower', -0.66, 0, 0]] },
   { name:'Vito',   side:'killers', atk:'Railer', r:0.43, h:0.58, speed:4.7, jump:6.98, hp:175, color:0x8fbf7f, smash:{ speed:25, r:4, depth:1.2 },
     card:'Vito Talenti', role:'Agency supervisor · schedules cancellations', primary:'Belly Flop', model:'vito',
@@ -1976,7 +1976,9 @@ const MODELS = {
     sprintGait: 5,
     sprintTop: 1.875,
     // [clip rate, at pace statures/s]; rate scales as pace^0.25
-    pace: { walk: [0.875, 2.43], sprint: [0.792, 4.04] },
+    pace: { walk: [1.15, 2.43], sprint: [0.792, 4.04] },
+    // the walk: the share of its clip's trunk swing kept (body_lower, body_upper), and turns over it by its weight
+    calm: 0.3, upright: [['body_lower', -0.13, 0, 0]],
     plant: { walk: 0.4, sprint: 0.5, at: 0.27 }, // quickens through foot plants (at: phase)
     gripReach: 0.85,   // radii, without a 'hand' tag
     slots: ['head', 'torso', 'arm', 'hand', 'leg', 'boot'],
@@ -2023,13 +2025,23 @@ const MODELS = {
 //   opened on its own. far: its distant mesh's node. map: an atlas it wears in place of the file's own (rows may share a
 //   file). tint: the skin slots its atlas carries (alpha 255 - 16 * slot, 1 for the first): each takes that colour from the
 //   wearer's `skin`, so a recolour stays a CHARS edit. Bodies load in the background, the soonest needed first. The file's extras: box_man's bind joints (rig) and, per driven joint, its box_man bones, their blend and its
-//   world matrix while box_man stands in its bind (drive)
+//   world matrix while box_man stands in its bind (drive). The human cast shares one figure: about 7.5 heads tall (head
+//   measured without hair), shoulders 2.1-2.3 heads, limbs thickened with their length, feet about 1.1 heads, so a new
+//   body or a reskin keeps to it; a row's `bones` set its lengths, and its served body is built on them
+// HANDS: a served body's fingers, in degrees at each finger's _01, _02 and _03 joints, bent toward the palm from the body's bind
+// (fingers straight); the thumb's fourth turns it in toward the index. rest always; grip blended in on a hand holding a weapon
+// (the gun hand, and the other on a paired or two-handed one); trigger: the gun hand's index, along the guard. Joints are named
+// <finger>_0<1-3>_<l|r>, with hand_<l|r> and <finger>_04_leaf_<l|r>
+const HANDS = { fingers: ['thumb', 'index', 'middle', 'ring', 'pinky'],
+  rest: { thumb: [20, 20, 20, 60], index: [20, 30, 25], middle: [25, 35, 25], ring: [30, 40, 25], pinky: [35, 40, 25] },
+  grip: { thumb: [25, 30, 30, 50], index: [70, 85, 45], middle: [75, 90, 50], ring: [80, 90, 50], pinky: [85, 90, 50] },
+  trigger: [15, 20, 15] }
 const BODIES = {
-  sam: { file: 'sam.cd1890c0.glb', far: 'sam_lod' },
-  samBlood: { file: 'sam.cd1890c0.glb', far: 'sam_lod', map: 'sam_blood.21fc27a9.webp' },
-  beck: { file: 'beck.0a8d1c52.glb', far: 'beck_lod' },
-  beckBikini: { file: 'beck_bikini.8fb35f27.glb', far: 'beck_lod' },
-  beckMagical: { file: 'beck_magical.46ef352a.glb', far: 'beck_lod' },
+  sam: { file: 'sam.1a38a080.glb', far: 'sam_lod' },
+  samBlood: { file: 'sam.1a38a080.glb', far: 'sam_lod', map: 'sam_blood.b4ba8569.webp' },
+  beck: { file: 'beck.beff2a08.glb', far: 'beck_lod' },
+  beckBikini: { file: 'beck_bikini.37d5d093.glb', far: 'beck_lod' },
+  beckMagical: { file: 'beck_magical.0ab4ad25.glb', far: 'beck_lod' },
 }
 const ASSET_SITE = 'https://jsxyz.github.io/superkillers/assets/'
 const BODY_LIBS = [
@@ -2570,7 +2582,7 @@ const SOUNDS = {
   'Bitter Sword': { say: 'a sword swish ending in a thin, ringing steel tone', seed: 0, file: 'bitter-sword.bbc7b95f.ogg' },
   Lance: { say: 'a buzzy energy lance discharge, falling in pitch', seed: 0, file: 'lance.3dce52ee.ogg' },
   'Lance charge': { say: 'an energy lance winding up, rising and wavering, to fit its wind-up', seed: 0, file: 'lance-charge.c16b5fb4.ogg' },
-  Sparker: { say: 'a crackling, buzzing electric spark', seed: 0, file: 'sparker.99b6739a.ogg' },
+  Sparker: { say: 'a crackling, buzzing electric spark', seed: 0, file: 'sparker.dfe5e6d0.ogg' },
   Slug: { say: 'a heavy, low, thudding slug cannon', seed: 0, file: 'slug.e8fc97c7.ogg' },
   Hammer: { say: 'a heavy hammer swung through the air and a dull thump', seed: 0, file: 'hammer.a4b54976.ogg' },
   Flurry: { say: 'one light, quick whip of air from a blur of punches, played every 220 ms, so short and quiet', seed: 0, file: 'flurry.26f8cfe4.ogg' },
@@ -2631,12 +2643,12 @@ const SOUNDS = {
   powerdown: { say: 'a power running out: two falling notes', seed: 0, file: 'powerdown.61230124.ogg' },
   swap: { say: 'changing weapon, or a weapon running dry: a small mechanical click', seed: 0, file: 'swap.df9c02d3.ogg' },
   shift: { say: 'turning into another character: a warping, rising sweep', seed: 0, file: 'shift.c17b8b59.ogg' },
-  thrust: { say: 'a flyer\'s thrusters: a steady, airy hiss that loops for as long as they fire', seed: 0, file: 'thrust.70506e7e.ogg' },
+  thrust: { say: 'a flyer\'s thrusters: a steady, airy hiss that loops for as long as they fire', seed: 0, file: 'thrust.0487c227.ogg' },
 
   // ---- everyone else, where they are
   down: { say: 'another player dying, heard where they fell', seed: 0, file: 'down.4010aac7.ogg' },
-  boom: { say: "a vehicle's fuel tank going up: a deep, rolling boom, then falling metal and glass", seed: 0, file: 'boom.96281bf0.ogg' },
-  burning: { say: 'a vehicle on fire: a roaring, crackling blaze that builds for three seconds', seed: 0, file: 'burning.a5da0c5f.ogg' },
+  boom: { say: "a vehicle's fuel tank going up: a deep, rolling boom, then falling metal and glass", seed: 0, file: 'boom-v2.167cc806.ogg' },
+  burning: { say: 'a vehicle on fire: a roaring, crackling blaze that builds for three seconds', seed: 0, file: 'burning.a4daa5ec.ogg' },
 
   // ---- carried things, where they are; '<object> pickup' for one's own
   pickup: { say: 'lifting something off the ground: a scrape and a short grunt of effort', seed: 0, file: 'pickup.ffcf83d0.ogg' },
@@ -6995,7 +7007,7 @@ function animProfile(spec) {
     return k < 1 ? { rate, stride: k } : { rate: Math.min(v / (gait * H), top) } }
   const P = [
     at(K.idle),
-    { clip: K.walk, ...move(run, spec.gait || M.gait, M.pace.walk, M.gaitTop) },
+    { clip: K.walk, ...move(run, spec.gait || M.gait, M.pace.walk, M.gaitTop), calm: M.calm },
     spec.jet ? at(K.hover, { hold: M.hold }) : at(K.jump, { once: true }),
     at(K.fall),
     at(K.idle),
@@ -9391,19 +9403,22 @@ function planted(clip, a, at, n = 60) {
 }
 
 const STRIDES = new WeakMap()
-function strided(clip, k) {
-  if (!(k < 1)) return clip
+function strided(clip, k, calm) {
+  if (!(k < 1) && !(calm < 1)) return clip
+  k = Math.min(k ?? 1, 1)
   const by = STRIDES.get(clip) || STRIDES.set(clip, new Map()).get(clip), q = new THREE.Quaternion(), m = new THREE.Quaternion(), o = new THREE.Quaternion()
-  if (!by.has(k)) by.set(k, new THREE.AnimationClip(clip.name, clip.duration, clip.tracks.map(t => {
-    if (!/^leg_(upper|lower)[LR]\.quaternion$/.test(t.name)) return t
+  const key = k + ' ' + calm
+  if (!by.has(key)) by.set(key, new THREE.AnimationClip(clip.name, clip.duration, clip.tracks.map(t => {
+    const w = /^leg_(upper|lower)[LR]\.quaternion$/.test(t.name) ? k : calm < 1 && /^body_(lower|upper)\.quaternion$/.test(t.name) ? calm : 1
+    if (w >= 1) return t
     const v = t.values.slice()
     m.set(0, 0, 0, 0)
     for (let i = 0; i < v.length; i += 4) { q.fromArray(v, i); if (m.dot(q) < 0) q.set(-q.x, -q.y, -q.z, -q.w); m.set(m.x + q.x, m.y + q.y, m.z + q.z, m.w + q.w) }
     m.normalize()
-    for (let i = 0; i < v.length; i += 4) q.copy(m).slerp(o.fromArray(v, i), k).toArray(v, i)
+    for (let i = 0; i < v.length; i += 4) q.copy(m).slerp(o.fromArray(v, i), w).toArray(v, i)
     return new THREE.QuaternionKeyframeTrack(t.name, t.times, v)
   })))
-  return by.get(k)
+  return by.get(key)
 }
 
 // bones: { bone: [x, y, z] }: scales of its children's bind offsets (own frame); clips keep rotations
@@ -9556,6 +9571,48 @@ function onModelLoaded(M, gltf) {
 // query too, so every measure sees it posed as box_man stands now.
 const FIT_JOINTS = ['head', 'leg_lowerL', 'leg_lowerR', 'knee_IKL']
 const DRIVES = new Map(), driven = new WeakMap()
+// a served body's finger joints at its bind: each one's place and turn in its parent, its scale, the axis (its own) that curls it toward
+// the palm, and for a thumb's first joint the axis that turns it toward the index
+function fingersOf(body) {
+  const S = body.getObjectByProperty('isSkinnedMesh', true)?.skeleton, out = []
+  if (!S) return out
+  const bind = n => { const i = S.bones.findIndex(b => b.name === n); return i < 0 ? null : S.boneInverses[i].clone().invert() }
+  const at = n => { const M = bind(n); return M && new THREE.Vector3().setFromMatrixPosition(M) }
+  for (const s of ['l', 'r']) {
+    const [i1, i2, p1, m1, m2] = [`index_01_${s}`, `index_02_${s}`, `pinky_01_${s}`, `middle_01_${s}`, `middle_02_${s}`].map(at)
+    if (!i1 || !i2 || !p1 || !m1 || !m2) continue
+    const palm = m2.clone().sub(m1).cross(i1.clone().sub(p1)).normalize().multiplyScalar(s === 'r' ? -1 : 1), toIndex = i2.sub(i1).normalize()
+    for (const f of HANDS.fingers) for (let k = 0; k < 3; k++) {
+      const name = `${f}_0${k + 1}_${s}`, bone = S.bones.find(b => b.name === name), J = bind(name), P = bone && bind(bone.parent.name)
+      const next = at(k < 2 ? `${f}_0${k + 2}_${s}` : `${f}_04_leaf_${s}`)
+      if (!J || !P || !next) continue
+      const pos = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), w = new THREE.Quaternion(), jp = new THREE.Vector3()
+      P.invert().multiply(J).decompose(pos, q, sc); J.decompose(jp, w, new THREE.Vector3()); w.invert()
+      const dir = next.sub(jp).normalize()
+      out.push({ name, s, f, k, pos, q, sc, curl: dir.clone().cross(palm).normalize().applyQuaternion(w),
+        turnIn: f === 'thumb' && k === 0 ? dir.clone().cross(toIndex).normalize().applyQuaternion(w) : null })
+    }
+  }
+  return out
+}
+const NO_GRIP = { r: 0, l: 0, gun: 'r' }, fq = [], fq2 = []
+// its fingers, from HANDS by each hand's grip (the avatar's userData.grip), set again only when a grip changes
+function poseFingers(g, D, R) {
+  let o = g
+  while (o && !o.userData.grip) o = o.parent
+  const G = o?.userData.grip || NO_GRIP, key = G.r.toFixed(2) + G.l.toFixed(2) + G.gun
+  if (R.fingers === key) return
+  R.fingers = key
+  R.fb ||= D.fingers.map(f => g.getObjectByName(f.name))
+  const q = fq[0] ||= new THREE.Quaternion(), t = fq2[0] ||= new THREE.Quaternion(), rad = Math.PI / 180
+  D.fingers.forEach((f, i) => {
+    const b = R.fb[i], w = G[f.s] || 0, to = f.f === 'index' && f.s === G.gun ? HANDS.trigger : HANDS.grip[f.f], from = HANDS.rest[f.f]
+    if (!b) return
+    q.copy(f.q).multiply(t.setFromAxisAngle(f.curl, (from[f.k] + (to[f.k] - from[f.k]) * w) * rad))
+    if (f.turnIn) q.multiply(t.setFromAxisAngle(f.turnIn, (from[3] + (to[3] - from[3]) * w) * rad))
+    b.matrix.compose(f.pos, q, f.sc); b.matrixWorldNeedsUpdate = true
+  })
+}
 let ServedBody, dv, dq, dq2, dm
 // made on first use: a realm without three never meets it
 const servedBody = () => ServedBody ||= ((dv = new THREE.Vector3(), dq = new THREE.Quaternion(), dq2 = new THREE.Quaternion(), dm = new THREE.Matrix4()), class ServedBody extends THREE.Group {
@@ -9596,6 +9653,7 @@ function driveBody(g) {
     e.bone.matrix.compose(e.bone.position, dq2, e.bone.scale)
     e.bone.matrixWorldNeedsUpdate = true
   }
+  if (D.fingers?.length) poseFingers(g, D, R)
 }
 const bindAt = (mesh, i, m = new THREE.Matrix4()) => m.copy(mesh.bindMatrix).invert().multiply(mesh.skeleton.boneInverses[i].clone().invert())
 // a served body on the rig of `root` (a fresh clone of a rigged proto, so at its bind): the rig keeps its bones and draws nothing
@@ -9637,6 +9695,7 @@ function wearServed(root, B, key, skin) {
   const body = cloneSkinned(meshDetail ? B.farTemplate : B.template)
   body.traverse(n => { if (n.isMesh) { n.material = n.material.clone(); if (B.tint) tintServed(n.material, B, skin) } })
   body.userData.drive = key
+  DRIVES.get(key).fingers ||= fingersOf(body)
   root.updateMatrixWorld(true)        // at its bind: bone · inverse maps the rig's bind space to the world
   rig.parent.matrixWorld.clone().invert().multiply(rig.skeleton.bones[0].matrixWorld).multiply(rig.skeleton.boneInverses[0]).multiply(T)
     .decompose(body.position, body.quaternion, body.scale)
@@ -10602,7 +10661,7 @@ function streetGround(street, walks = [], into) {
     for (let i = 0; i + 1 < ex.length; i++) for (let j = 0; j + 1 < ez.length; j++) {
       const x0 = ex[i], x1 = ex[i + 1], z0 = ez[j], z1 = ez[j + 1], rx = inside(bx, x0, x1), rz = inside(bz, z0, z1)
       if (rx && rz) for (let t = z0, h = STREET_PLAIN[1] - STREET_PLAIN[0]; t < z1 - 1e-6; t += h)
-        quad(road, x0, t, x1, Math.min(t + h, z1), (x, z) => { const w = (z - z0) % (2 * h); return [x / 8, row('avenue', STREET_PLAIN[0] + (w <= h ? w : 2 * h - w))] })
+        quad(road, x0, t, x1, Math.min(t + h, z1), (x, z) => { const w = (z - z0) % (2 * h); return [x / 32, row('avenue', STREET_PLAIN[0] + (w <= h ? w : 2 * h - w))] })
       else if (!rx && !rz) quad(pave, x0, z0, x1, z1, (x, z) => [x / TILE_M, z / TILE_M])
       else {
         const [, , mid, kind] = rx || rz, a0 = rx ? z0 : x0, a1 = rx ? z1 : x1, meets = c => (rx ? bz : bx).some(r => Math.abs(r[1] - c) < 1e-6 || Math.abs(r[0] - c) < 1e-6)
@@ -11232,7 +11291,7 @@ function bodyStep(B, M, id, cid, key, more) {
   if (!B.todo) {
     const prof = profOf(id, cid), mixer = new THREE.AnimationMixer(B.inst)
     B.todo = [prof[1], prof.sprint].filter(p => p && M.anims.some(c => c.name === p.clip) && !walkLows.has(lowKey(key, p)))
-      .map(p => ({ m: mixer.clipAction(strided(M.anims.find(c => c.name === p.clip), p.stride)), mixer, inst: B.inst, k: lowKey(key, p), i: 0, low: Infinity }))
+      .map(p => ({ m: mixer.clipAction(strided(M.anims.find(c => c.name === p.clip), p.stride, p.calm)), mixer, inst: B.inst, k: lowKey(key, p), i: 0, low: Infinity }))
   }
   while (B.todo.length && measureLows(B.todo[0], more)) B.todo.shift()
   return !B.todo.length
@@ -11408,7 +11467,7 @@ function* avatarSteps(id, cid, cap, body) {
     for (const p of [...prof, prof.sprint, prof.crouch].filter(Boolean)) {
       if (actions[p.clip]) continue
       const clip = M.anims.find(c => c.name === p.clip)
-      if (clip) actions[p.clip] = mixer.clipAction(strided(clip, p.stride))
+      if (clip) actions[p.clip] = mixer.clipAction(strided(clip, p.stride, p.calm))
     }
     const first = actions[prof[0].clip]
     for (const p of [prof[1], prof.sprint]) {
@@ -11417,7 +11476,7 @@ function* avatarSteps(id, cid, cap, body) {
     }
     if (first) { first.play(); mixer.update(0) }
     const S = standOf(C)
-    for (const [bone] of turnsOf(inst, [...C.turns || [], ...S || []])) turned.set(bone, bone.quaternion.clone())
+    for (const [bone] of turnsOf(inst, [...C.turns || [], ...S || [], ...MODELS[C.model || 'man'].upright || []])) turned.set(bone, bone.quaternion.clone())
     turn(inst, C.turns)
     const low = S && (yield* boundsSteps(inst)).minY
     turn(inst, S)
@@ -12286,6 +12345,7 @@ function setAnim(id, want, dt, t, hold, still, ticks, shift) {
       for (const [p, list] of MODELS[a.spec.model || 'man'].sway || []) turn(a.mesh, list, w * Math.sin(a.swayT / p + a.cid * 1.7))
       k.position.y += (w && w * (a.ankle - ankleOf(a.mesh))) - a.drop * (1 - w - v)
     }
+    turn(a.mesh, MODELS[a.spec.model || 'man'].upright, vr)
   }
   if (want === 'crouchRun') { const k = a.mesh.children[0], y = ankleOf(a.mesh); turn(a.mesh, MODELS[a.spec.model || 'man'].crouchRun); k.position.y += y - ankleOf(a.mesh) }
   const F = COSTUMES[a.spec.costume]?.form
@@ -12404,6 +12464,8 @@ function heldGun(id, state, t) {
 function drawHeld(id, state, t, view = null, fade = 1) {
   const a = avatars.get(id)
   if (!a) return
+  const grip = a.mesh.userData.grip ||= { r: 0, l: 0, gun: 'r' }
+  grip.r = grip.l = 0
   if (!state || state.dead > 0) { if (a.held) a.held.visible = false; return }
   const gun = heldGun(id, state, t), age = a.shotAt === undefined ? Infinity : t - a.shotAt
   if (a.chargeAt !== undefined && a.chargeGun !== gun) a.chargeAt = undefined
@@ -12425,6 +12487,8 @@ function drawHeld(id, state, t, view = null, fade = 1) {
     a.heldGun = gun
     avatarGroup.add(a.held)
   }
+  grip.gun = (a.socket ||= handSocket(a)).object.name.endsWith('_l') ? 'l' : 'r'
+  grip[grip.gun] = 1; grip[grip.gun === 'r' ? 'l' : 'r'] = G.pair ? 1 : a.stance?.hands === 2 ? a.seatAim?.k || 0 : 0
   const held = a.held, kick = age >= 0 ? Math.max(0, 1 - age / KICK_MS) ** 2 : 0, power = G.melee || G.tether ? 0.3 : shotPower(G)
   held.visible = true
   if (view) {
