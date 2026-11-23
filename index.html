@@ -745,6 +745,7 @@
       <button id="set-quality"></button>
       <button id="set-distance"></button>
       <button id="set-shadows"></button>
+      <button id="set-gore"></button>
       <button id="set-vhs"></button>
       <button id="set-full" data-text="fullscreen"></button>
     </div>
@@ -891,7 +892,7 @@ const THREE = ENABLE3D.THREE
 // shove: { mass: its capsule's, so Bullet's contacts knock vehicles; sprint: only sprinting; cap: m/s faster than a vehicle moves away that it closes on it }
 // sprintSpd: on-foot sprint m/s (default speed); jet.sprint: flight sprint m/s
 // swing: { range m, pace: m/s it travels }. bones: { box_man bone: [x, y, z] } (y: length). sparks: running-spark colour
-// mesh: a BODIES row, the served body it wears over its costume
+// mesh: a BODIES row, the served body it wears over its costume. blood: its colour (GORE.color if unset), false: it doesn't bleed
 const VITOSCREEN_SKIN = { shell: 0xe1dec7, rim: 0x536651, screen: 0x78d72b,
   phosphor: 0x94dd43, ink: 0x254e24, gold: 0xe8c24a }
 // SIDES (CHARS `side`): color: picker; guns: false = players carry none (clicks fire atk/far); waves: the waves' side;
@@ -925,7 +926,7 @@ const TEXT = {
   bcastNote: "A broadcast plays from its owner's server, which sees your address.",
   voicesTip: 'Characters speak lines made on this machine: about 700 MB, fetched and run in the background. Needs WebGPU.',
   on: 'on', off: 'off', setView: 'View: {v}', viewFirst: 'first', viewThird: 'third', setQuality: 'Quality: {v}',
-  setDistance: 'View distance: {v}', setShadows: 'Shadows: {v}', shadowsQuality: 'off (quality)', setShake: 'Camera shake: {v}',
+  setDistance: 'View distance: {v}', setShadows: 'Shadows: {v}', shadowsQuality: 'off (quality)', setShake: 'Camera shake: {v}', setGore: 'Gore: {v}',
   setPadInvert: 'Pad invert Y: {v}', setPadRumble: 'Pad vibration: {v}', padNoRumble: ' (not in this browser)', setRadio: 'Car radio: {v}',
   setBcast: 'Broadcasts: {v}', setVhs: 'VHS: {v}', setVoices: 'AI voices: {v}', voicesNoGpu: ' (needs WebGPU)', setSound: 'Sound: {v}',
   soundOnLabel: 'Sound on — click or press M to mute', soundOffLabel: 'Sound off — click or press M to unmute',
@@ -971,7 +972,7 @@ const CHARS = [
     gait: 2.85, sprintGait: 4.75, bones: { leg_upper: [1, 1.85, 1], leg_lower: [1, 2.12, 1.25], arm_upper: [1, 1.46, 1], arm_lower: [1, 1.46, 1], head: [0.69, 0.69, 0.69], body_upper: [0.8, 1.09, 1.2], body_lower: [1, 1.15, 1] },
     shape:{ torso:[1.02, 1, 0.94], arm:[1, 1, 1], hand:[0.97, 1, 0.97], leg:[1.1, 1, 1.25], boot:[1.08, 1, 1.02] } },
   { name:'Beck',   side:'killers', atk:'Scatter', r:0.35, h:0.58, lean: 0.3, speed:6.0, jump:7.88, hp:125, color:0x8c86c8,
-    role:'Dropout waitress · knows every hero\'s weakness', manyGuns:true, primary:'Spoiler', costume:'waitress',
+    role:'Dropout waitress · knows every hero\'s weakness', manyGuns:true, primary:'Spoiler', costume:'waitress', mesh:'beck',
     skin:{ head:0x16141e, torso:0x8c86c8, arm:0x8c86c8, hand:0xf2c9ae, leg:0x6f6282, boot:0x1d1b24, white:0xf6f4ec, sheen:0x2f8fa3, lip:0xe0a194, iris:0xa8622a, frame:0x2fb7ad, ink:0x1c1a26 },
     bones:{ leg_upper:[1, 1.18, 1], leg_lower:[1, 1.18, 1], body_lower:[0.4, 0.48, 1], body_upper:[0.36, 1.15, 1], arm_lower:[1, 0.95, 1] },
     turns:[['body_IK', -0.2, 0, 0], ['leg_upper', 0.2, 0, 0], ['head', 0.123, 0, 0]], stand:[['body_IK', -0.072, 0, 0], ['leg_upper', 0.508, 0, 0], ['leg_lower', -0.66, 0, 0]] },
@@ -1095,7 +1096,17 @@ const PARTICLES = {
   puff: { n: 4, life: [0.35, 0.7], speed: [0.3, 1.2], size: [0.18, 0.3], cone: 1.4, fall: -0.6, grow: 3, cell: 0, color: 0x8a8378 },
   dust: { n: 6, life: [0.45, 0.85], speed: [0.6, 1.8], size: [0.22, 0.36], cone: 1.2, fall: -0.4, grow: 2.6, cell: 0, color: 0xc9c0ae },
   claw: { n: 9, life: [0.12, 0.26], speed: [6, 11], size: [0.06, 0.1], cone: 0.35, fall: 6, grow: 0.3, add: true, cell: 0, stretch: 0.12, hot: 0.4 },
+  blood: { n: 10, life: [0.4, 0.9], speed: [2.2, 7.5], size: [0.05, 0.11], cone: 0.6, fall: 16, grow: 0.5, cell: 0, stretch: 0.06 },
+  gib: { n: 10, life: [0.5, 1.1], speed: [3, 9], size: [0.07, 0.16], cone: 0.9, fall: 15, grow: 0.7, cell: 0 },
 }
+// GORE: blood, drawn by each machine from the hits and deaths it sees; Graphics' Gore setting turns it off. color: blood (a CHARS or
+// BOTS row's `blood` is its own, false: none); dry: its shade once dried; stone: cracks; bone: a kill's chips. splat, pool, crack: decals,
+// cap at once, life s, fade s at its end, grow s to full size, delay s before a pool spreads. rays: decal raycasts a frame, queue: at most
+// waiting; perHit: splats a hit casts at most. death: where a body dies, blood amount, pool size, a smear past smear m/s. kill: the
+// biggest burst, an instant kill's: blood amount, streaks, pool size, shake
+const GORE = { color: 0x8e1c1c, dry: 0.4, stone: 0x2a2724, bone: 0xded6c2,
+  splat: { cap: 80, life: 50, fade: 10 }, pool: { cap: 32, life: 120, fade: 16, grow: 2.6, delay: 0.55 }, crack: { cap: 24, life: 150, fade: 20, grow: 0.12 },
+  rays: 3, queue: 48, perHit: 4, death: { blood: 1.6, pool: 1, smear: 2 }, kill: { blood: 3, streaks: 24, pool: 1.5, shake: 0.14 } }
 const GUN_ROW = { ammo: Infinity, drop: false, pellets: 1, spread: 0 }      // what a GUNS row is unless it says otherwise
 const GUNS = [
   { name:'Pistol', drop:true, scar:'hole',  rate:0.34, dmg:18, spread:0.010, range:60, knock:3.0, color:0xffd479 },
@@ -1467,10 +1478,15 @@ const MODELS = {
 }
 // BODIES (CHARS `mesh`): a body served from ASSET_DIR beside the page, on the shared 65-joint skeleton; the row's box_man rig
 //   still runs every clip and pose and drives it. The row's costume draws until it loads, if it fails, or with the page
-//   opened on its own. far: its distant mesh's node. The file's extras: box_man's bind joints (rig) and, per driven joint,
-//   its box_man bones, their blend and its world matrix while box_man stands in its bind (drive)
+//   opened on its own. far: its distant mesh's node. map: an atlas it wears in place of the file's own (rows may share a
+//   file). The file's extras: box_man's bind joints (rig) and, per driven joint, its box_man bones, their blend and its
+//   world matrix while box_man stands in its bind (drive)
 const BODIES = {
-  sam: { file: 'sam.0422f9cf.glb', far: 'sam_lod' },
+  sam: { file: 'sam.cd1890c0.glb', far: 'sam_lod' },
+  samBlood: { file: 'sam.cd1890c0.glb', far: 'sam_lod', map: 'sam_blood.21fc27a9.webp' },
+  beck: { file: 'beck.0a8d1c52.glb', far: 'beck_lod' },
+  beckBikini: { file: 'beck_bikini.8fb35f27.glb', far: 'beck_lod' },
+  beckMagical: { file: 'beck_magical.46ef352a.glb', far: 'beck_lod' },
 }
 const ASSET_SITE = 'https://jsxyz.github.io/superkillers/assets/'
 const BODY_LIBS = [
@@ -1963,15 +1979,15 @@ const PROP_MODELS = {
 // A row's `file` is a recording under assets/; `say` and `seed` describe it to a generative model (sfxMake)
 const SOUNDS = {
   // ---- weapons, as they fire: every weapon needs one, each distinct
-  Pistol: { say: 'a short, punchy pistol shot', seed: 0, file: 'pistol.95a5b801.ogg' },
-  Scatter: { say: 'a booming shotgun blast with a pump-action rack after it', seed: 0, file: 'scatter.cef3d27d.ogg' },
+  Pistol: { say: 'a short, punchy pistol shot', seed: 0, file: 'pistol.e23fb46a.ogg' },
+  Scatter: { say: 'a booming shotgun blast with a pump-action rack after it', seed: 0, file: 'scatter.d99b7300.ogg' },
   Needler: { say: 'a tiny, sharp, high needle-gun tick', seed: 0, file: 'needler.c3e64acf.ogg' },
   Railer: { say: 'a crack and a long descending electric zing, with a low hum left behind', seed: 0, file: 'railer.397ac3e8.ogg' },
   'Bitter Sword': { say: 'a sword swish ending in a thin, ringing steel tone', seed: 0, file: 'bitter-sword.bbc7b95f.ogg' },
   Lance: { say: 'a buzzy energy lance discharge, falling in pitch', seed: 0, file: 'lance.3f0f415e.ogg' },
   'Lance charge': { say: 'an energy lance winding up, rising and wavering, to fit its wind-up', seed: 0, file: 'lance-charge.c16b5fb4.ogg' },
   Sparker: { say: 'a crackling, buzzing electric spark', seed: 0, file: 'sparker.99b6739a.ogg' },
-  Slug: { say: 'a heavy, low, thudding slug cannon', seed: 0, file: 'slug.f9ac4bd9.ogg' },
+  Slug: { say: 'a heavy, low, thudding slug cannon', seed: 0, file: 'slug.4b9b1540.ogg' },
   Hammer: { say: 'a heavy hammer swung through the air and a dull thump', seed: 0, file: 'hammer.a4b54976.ogg' },
   Flurry: { say: 'one light, quick whip of air from a blur of punches, played every 220 ms, so short and quiet', seed: 0, file: 'flurry.26f8cfe4.ogg' },
   Katana: { say: 'two fast blade cuts, one after the other, and a faint steel ring', seed: 0, file: 'katana.cfd943db.ogg' },
@@ -2004,37 +2020,37 @@ const SOUNDS = {
   'Web Shooter': { say: 'a quick sticky thwip of a web line firing', seed: 0, file: 'web-shooter.e97a41d1.ogg' },
 
   // ---- you, never placed
-  hit: { say: 'the hit confirmation: a short, bright tick above the gunfire, the same every time, since players learn it', seed: 0 },
-  kill: { say: 'a kill confirmation: the hit tick and a bright note after it', seed: 0 },
-  hurt: { say: 'being hit: a dull body thud, played as loud as the damage', seed: 0 },
-  die: { say: 'dying: a falling, fading groan of a tone', seed: 0 },
-  spawn: { say: 'respawning: a short, rising shimmer', seed: 0 },
-  jump: { say: 'a jump: a brief upward whoosh of effort', seed: 0 },
-  land: { say: 'landing on your feet, played louder for a longer fall', seed: 0 },
-  pad: { say: 'a jump pad launching you: a springy, rising boing', seed: 0 },
-  gun: { say: 'picking up a new weapon: a clack and a cock', seed: 0 },
-  power: { say: 'picking up a power: a short rising arpeggio', seed: 0 },
-  heal: { say: 'picking up health: two soft rising notes', seed: 0 },
-  powerdown: { say: 'a power running out: two falling notes', seed: 0 },
-  swap: { say: 'changing weapon, or a weapon running dry: a small mechanical click', seed: 0 },
-  shift: { say: 'turning into another character: a warping, rising sweep', seed: 0 },
-  thrust: { say: 'a flyer\'s thrusters: a steady, airy hiss that loops for as long as they fire', seed: 0 },
+  hit: { say: 'the hit confirmation: a short, bright tick above the gunfire, the same every time, since players learn it', seed: 0, file: 'hit.b3b157ce.ogg' },
+  kill: { say: 'a kill confirmation: the hit tick and a bright note after it', seed: 0, file: 'kill.2479940b.ogg' },
+  hurt: { say: 'being hit: a dull body thud, played as loud as the damage', seed: 0, file: 'hurt.e8269702.ogg' },
+  die: { say: 'dying: a falling, fading groan of a tone', seed: 0, file: 'die.b8f1cc33.ogg' },
+  spawn: { say: 'respawning: a short, rising shimmer', seed: 0, file: 'spawn.647eb906.ogg' },
+  jump: { say: 'a jump: a brief upward whoosh of effort', seed: 0, file: 'jump.616db1aa.ogg' },
+  land: { say: 'landing on your feet, played louder for a longer fall', seed: 0, file: 'land.fd14c361.ogg' },
+  pad: { say: 'a jump pad launching you: a springy, rising boing', seed: 0, file: 'pad.554a876b.ogg' },
+  gun: { say: 'picking up a new weapon: a clack and a cock', seed: 0, file: 'gun.16e7db85.ogg' },
+  power: { say: 'picking up a power: a short rising arpeggio', seed: 0, file: 'power.1dc3ea83.ogg' },
+  heal: { say: 'picking up health: two soft rising notes', seed: 0, file: 'heal.1284a66d.ogg' },
+  powerdown: { say: 'a power running out: two falling notes', seed: 0, file: 'powerdown.61230124.ogg' },
+  swap: { say: 'changing weapon, or a weapon running dry: a small mechanical click', seed: 0, file: 'swap.df9c02d3.ogg' },
+  shift: { say: 'turning into another character: a warping, rising sweep', seed: 0, file: 'shift.c17b8b59.ogg' },
+  thrust: { say: 'a flyer\'s thrusters: a steady, airy hiss that loops for as long as they fire', seed: 0, file: 'thrust.e55602c1.ogg' },
 
   // ---- everyone else, where they are
-  down: { say: 'another player dying, heard where they fell', seed: 0 },
-  boom: { say: "a vehicle's fuel tank going up: a deep, rolling boom, then falling metal and glass", seed: 0 },
-  burning: { say: 'a vehicle on fire: a roaring, crackling blaze that builds for three seconds', seed: 0 },
+  down: { say: 'another player dying, heard where they fell', seed: 0, file: 'down.4010aac7.ogg' },
+  boom: { say: "a vehicle's fuel tank going up: a deep, rolling boom, then falling metal and glass", seed: 0, file: 'boom.96281bf0.ogg' },
+  burning: { say: 'a vehicle on fire: a roaring, crackling blaze that builds for three seconds', seed: 0, file: 'burning.a5da0c5f.ogg' },
 
   // ---- carried things, where they are; '<object> pickup' for one's own
-  pickup: { say: 'lifting something off the ground: a scrape and a short grunt of effort', seed: 0 },
-  throw: { say: 'something heavy hurled through the air: a low whoosh', seed: 0 },
+  pickup: { say: 'lifting something off the ground: a scrape and a short grunt of effort', seed: 0, file: 'pickup.ffcf83d0.ogg' },
+  throw: { say: 'something heavy hurled through the air: a low whoosh', seed: 0, file: 'throw.5e4a0f1a.ogg' },
 
   // ---- the match
-  frags: { say: 'the leader is 3, then 1, kills from the limit: two short alert notes', seed: 0 },
-  'frags mine': { say: 'you are 3, then 1, kills from the limit: the same alert, higher', seed: 0 },
-  win: { say: 'the round over and you on top: a rising fanfare', seed: 0 },
-  over: { say: 'the round over and you beaten: a short falling phrase', seed: 0 },
-  ui: { say: 'the volume slider\'s preview: one soft tone at the new level', seed: 0 },
+  frags: { say: 'the leader is 3, then 1, kills from the limit: two short alert notes', seed: 0, file: 'frags.9a2dadf1.ogg' },
+  'frags mine': { say: 'you are 3, then 1, kills from the limit: the same alert, higher', seed: 0, file: 'frags-mine.07c32571.ogg' },
+  win: { say: 'the round over and you on top: a rising fanfare', seed: 0, file: 'win.49f3b621.ogg' },
+  over: { say: 'the round over and you beaten: a short falling phrase', seed: 0, file: 'over.de0f34b2.ogg' },
+  ui: { say: 'the volume slider\'s preview: one soft tone at the new level', seed: 0, file: 'ui.a989bef0.ogg' },
 }
 // Chatterbox speech tokens (13 bits, base64), >= 5 s; SPEECH adds a seed: the voice
 const READINGS = {
@@ -8108,21 +8124,26 @@ function wearServed(root, B, key) {
   rig.parent.add(body)
 }
 // every cache a row's costume body filled is stale once its served body arrives
-function onBodyLoaded(B, gltf) {
+function onBodyLoaded(B, gltf, image) {
   const meshes = gltf.scene.getObjectsByProperty('isSkinnedMesh', true), isFar = m => m.name === B.far || m.parent?.name === B.far
-  for (const m of meshes) {
-    const g = m.geometry
-    g.userData.parts = (g.userData.parts || []).map(([tags, start, count]) => ({ tags, start, count }))
-    g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(1), 3))
-    m.material.vertexColors = true
-    m.userData.part = 'body'
-    m.castShadow = true
+  if (!gltf.userData.served) {          // once a file, whichever rows wear it
+    gltf.userData.served = true
+    for (const m of meshes) {
+      const g = m.geometry
+      g.userData.parts = (g.userData.parts || []).map(([tags, start, count]) => ({ tags, start, count }))
+      g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 3).fill(1), 3))
+      m.material.vertexColors = true
+      m.userData.part = 'body'
+      m.castShadow = true
+    }
+    gltf.scene.traverse(n => { if (n !== gltf.scene) { n.updateMatrix(); n.matrixAutoUpdate = false } })      // the drive sets its joints' matrices
   }
   B.rig = gltf.scene.getObjectByName('body65')
-  gltf.scene.traverse(n => { if (n !== gltf.scene) { n.updateMatrix(); n.matrixAutoUpdate = false } })        // the drive sets its joints' matrices
+  const worn = new Map(), wear = m => worn.get(m) || worn.set(m, Object.assign(m.clone(), { map: Object.assign(m.map.clone(), { image, needsUpdate: true }) })).get(m)
   const template = far => { const g = new (servedBody())(), s = cloneSkinned(gltf.scene)
     s.traverse(n => { if (n.isSkinnedMesh && isFar(n) !== far) n.visible = false })
     for (const n of s.getObjectsByProperty('visible', false)) n.removeFromParent()
+    if (image) s.traverse(n => { if (n.isMesh && n.material.map) n.material = wear(n.material) })
     g.add(...s.children); return g }
   B.template = template(false); B.farTemplate = meshes.some(isFar) ? template(true) : B.template
   builtBounds.clear(); walkLows.clear(); detailCache.clear(); prepKept.clear(); DRIVES.clear(); prepAt = null
@@ -8134,9 +8155,13 @@ async function loadBodies() {
   if (!want.length || location.protocol === 'file:') return
   const env = await (self.THREE = THREE, geoLoad(BODY_LIBS)), D = env.Meshopt.MeshoptDecoder
   try { D.useWorkers(2) } catch (e) {}
-  const loader = new env.GLTF.GLTFLoader().setMeshoptDecoder(D)
-  for (const B of want) for (const url of [ASSET_DIR + B.file, ASSET_SITE + B.file]) {
-    try { onBodyLoaded(B, await loader.loadAsync(url)); break } catch (e) { console.warn('body ' + url + ' failed:', e && e.message) }
+  const loader = new env.GLTF.GLTFLoader().setMeshoptDecoder(D), images = new THREE.ImageLoader().setCrossOrigin('anonymous'), files = new Map()
+  const fetchFirst = async (name, load) => { for (const url of [ASSET_DIR + name, ASSET_SITE + name]) {
+    try { return await load(url) } catch (e) { console.warn('body ' + url + ' failed:', e && e.message) } } }
+  for (const B of want) {
+    const gltf = await (files.get(B.file) || files.set(B.file, fetchFirst(B.file, u => loader.loadAsync(u))).get(B.file))
+    const image = gltf && B.map && await fetchFirst(B.map, u => images.loadAsync(u))
+    if (gltf && (!B.map || image)) onBodyLoaded(B, gltf, image)        // else its code body draws
   }
 }
 
@@ -10808,6 +10833,7 @@ function clearScars() {
   geoLevelChanged()
   scarBusy = true
   scarQueue.length = scarSurfaces.length = 0; groundStale = false
+  goreClear()
   if (scarMesh) { scarMesh.removeFromParent(); scarMesh.geometry.dispose(); scarMesh.material.dispose(); scarMesh = null }
 }
 function scarAt(hit, kind, seed) {
@@ -10883,6 +10909,250 @@ function scarMap() {
   return scarAtlas
 }
 
+// gore: blood each machine draws from what it already sees, hits in its effect records and deaths in `dead` turning on, and never
+// on a server. Splats, pools and cracks are three instanced quads, laid on the level by at most GORE.rays rays a frame; drops and
+// gibs are PARTICLES bursts
+let goreSt = null, goreZ, goreQ, goreQ2, goreM, goreP, goreS, goreC
+const GORE_KINDS = ['splat', 'pool', 'crack'], goreRay = []
+const goreOn = () => settings.gore !== false && !!renderer && !renderHeadless && !serving
+// a row's blood colour, null for a row that doesn't bleed
+const bloodOf = C => C?.blood === false ? null : C?.blood ?? GORE.color
+// the drawn body nearest x, y, z within m
+function goreBody(x, y, z, m) {
+  let best = null
+  for (const [id, a] of avatars) {
+    if (id < 0 || !a.mesh) continue
+    const p = a.mesh.position, d = Math.hypot(p.x - x, p.y - y, p.z - z)
+    if (d < m) { m = d; best = a }
+  }
+  return best
+}
+const goreHexAt = (x, y, z) => { const a = goreBody(x, y, z, 1.5); return a ? bloodOf(a.spec) : GORE.color }
+// the shown body, not skip's, whose capsule (and a hand's width) holds x, y, z: where a shot ended on it
+function goreStruck(x, y, z, skip) {
+  for (const [id, a] of avatars) {
+    if (id < 0 || id === skip || !a.mesh?.visible) continue
+    const p = a.mesh.position, r = (a.spec?.r ?? 0.4) + 0.15
+    if (Math.hypot(p.x - x, p.z - z) <= r && Math.abs(p.y - y) <= (a.spec?.h ?? 0.5) + r) return a
+  }
+  return null
+}
+function goreRng(seed) { let s = (seed | 0) ^ 0x9e3779b9; return () => { s = Math.imul(s ^ s >>> 15, 0x2c1b3c6d); s = Math.imul(s ^ s >>> 12, 0x297a2d39); return ((s ^ s >>> 15) >>> 0) / 4294967296 } }
+// a white mask: a splat (a blot and its flung drops), a pool (a soft rounded spread) or a crack (rays forking from a hole)
+function goreTex(kind) {
+  const pool = kind === 'pool', crack = kind === 'crack'
+  const S = 64, d = new Uint8Array(S * S * 4), R = goreRng(pool ? 7 : crack ? 11 : 3), ph = [R() * 6, R() * 6, R() * 6]
+  const drops = pool ? [] : Array.from({ length: 9 }, () => { const a = R() * 6.283, r = 0.58 + R() * 0.3; return [Math.cos(a) * r, Math.sin(a) * r, 0.035 + R() * 0.07] })
+  const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
+  const rays = !crack ? [] : Array.from({ length: 9 }, (_, i) => ({ a0: i / 9 * 6.283 + (R() - 0.5) * 0.5, len: 0.5 + R() * 0.45, kink: (R() - 0.5) * 0.9,
+    fork: 0.35 + R() * 0.3, fa: (R() < 0.5 ? -1 : 1) * (0.5 + R() * 0.5) }))
+  const seg = (u, v, x0, y0, x1, y1) => { const dx = x1 - x0, dy = y1 - y0, l2 = dx * dx + dy * dy || 1e-9, t = Math.min(1, Math.max(0, ((u - x0) * dx + (v - y0) * dy) / l2)); return Math.hypot(u - x0 - dx * t, v - y0 - dy * t) }
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const u = (x + 0.5) / S * 2 - 1, v = (y + 0.5) / S * 2 - 1, r = Math.hypot(u, v), a = Math.atan2(v, u)
+    const e = pool ? 0.76 + 0.08 * Math.sin(2 * a + ph[0]) + 0.06 * Math.sin(5 * a + ph[1]) + 0.03 * Math.sin(9 * a + ph[2])
+      : 0.36 + 0.07 * Math.sin(3 * a + ph[0]) + 0.05 * Math.sin(7 * a + ph[1]) + 0.2 * Math.pow(Math.max(0, Math.cos(5 * a + ph[2])), 8)
+    let al = sm(e, e - 0.05, r)
+    if (crack) {
+      al = sm(0.1, 0.06, r)
+      for (const q of rays) {
+        const m = [Math.cos(q.a0) * q.len * 0.55, Math.sin(q.a0) * q.len * 0.55], a1 = q.a0 + q.kink, end = [m[0] + Math.cos(a1) * q.len * 0.45, m[1] + Math.sin(a1) * q.len * 0.45]
+        const a2 = a1 + q.fa, f = [m[0] + Math.cos(a2) * q.fork * 0.5, m[1] + Math.sin(a2) * q.fork * 0.5]
+        al = Math.max(al, sm(0.034, 0.012, seg(u, v, 0, 0, m[0], m[1])), sm(0.026, 0.008, seg(u, v, m[0], m[1], end[0], end[1])), sm(0.02, 0.006, seg(u, v, m[0], m[1], f[0], f[1])))
+      }
+    } else for (const [dx, dy, dr] of drops) al = Math.max(al, sm(dr, dr - 0.03, Math.hypot(u - dx, v - dy)))
+    const i = (y * S + x) * 4; d[i] = d[i + 1] = d[i + 2] = 255; d[i + 3] = Math.round(al * 255)
+  }
+  const t = new THREE.DataTexture(d, S, S); t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.generateMipmaps = true; t.needsUpdate = true
+  return t
+}
+function goreHide(g, i) { goreM.compose(goreP.set(0, -999, 0), goreQ.identity(), goreS.set(0, 0, 0)); g.mesh.setMatrixAt(i, goreM) }
+function goreInit() {
+  if (goreSt) return true
+  if (!goreOn() || !scene) return false
+  goreSt = { queue: [], seen: new Map(), t: 0, live: 0, n: { blood: 0, deaths: 0, kills: 0, rays: 0, landed: 0 } }
+  goreZ = new THREE.Vector3(0, 0, 1); goreP = new THREE.Vector3(); goreS = new THREE.Vector3()
+  goreQ = new THREE.Quaternion(); goreQ2 = new THREE.Quaternion(); goreM = new THREE.Matrix4(); goreC = new THREE.Color()
+  GORE_KINDS.forEach((k, j) => {
+    const C = GORE[k], mesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshLambertMaterial({ map: goreTex(k), transparent: true,
+      depthWrite: false, alphaTest: 0.02, polygonOffset: true, polygonOffsetFactor: -2 - j, polygonOffsetUnits: -2 - j }), C.cap)
+    mesh.name = 'gore-' + k; mesh.frustumCulled = false; mesh.renderOrder = [3, 2, 1][j]; mesh.receiveShadow = true; mesh.visible = false
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+    const g = goreSt[k] = { mesh, ent: new Array(C.cap).fill(null), head: 0 }
+    for (let i = 0; i < C.cap; i++) { goreHide(g, i); mesh.setColorAt(i, goreC.setHex(0)) }
+    mesh.instanceColor.setUsage(THREE.DynamicDrawUsage)
+    scene.add(mesh)
+  })
+  return true
+}
+function goreClear() {
+  if (!goreSt) return
+  goreSt.queue.length = 0; goreSt.seen.clear(); goreSt.live = 0
+  for (const k of GORE_KINDS) {
+    const g = goreSt[k]
+    g.ent.fill(null); g.head = 0; g.mesh.visible = false
+    for (let i = 0; i < g.ent.length; i++) goreHide(g, i)
+    g.mesh.instanceMatrix.needsUpdate = true
+  }
+}
+function goreQueue(q) { if (goreSt.queue.length < GORE.queue) goreSt.queue.push(q) }
+function goreAdd(kind, p, n, q, t) {
+  const g = goreSt[kind], i = g.head, o = q.o
+  g.head = (i + 1) % g.ent.length
+  g.ent[i] = { p: [p[0], p[1], p[2]], n, size: q.r / (kind === 'pool' ? 0.78 : kind === 'crack' ? 0.9 : 0.45) * 2, sx: o.sx ?? 1, sy: o.sy ?? 1, rot: o.rot ?? 0,
+    grow: o.grow ?? 0, born: t + (o.delay ?? 0) * 1000, hex: q.hex, k: -1, dl: -1 }
+  goreSt.live = 1
+}
+const goreEase = u => u < 0 ? 0 : u >= 1 ? 1 : 1 - (1 - u) * (1 - u)
+// drops flung from x, y, z along n, and up to GORE.perHit splats cast at the walls and floor round it
+function goreBlood(x, y, z, nx, ny, nz, amount, hex, seed) {
+  if (!goreInit() || hex === null) return
+  goreSt.n.blood++
+  const R = goreRng(seed ?? (x * 131 + y * 17 + z * 71) | 0), len = Math.hypot(nx, ny, nz) || 1, a = Math.min(amount, 3)
+  nx /= len; ny /= len; nz /= len
+  burst('blood', x, y, z, nx, ny + 0.15, nz, hex, 1)
+  if (a > 0.7) burst('blood', x, y, z, nx, ny + 0.1, nz, hex, 0.6 + a * 0.3)
+  const k = Math.min(GORE.perHit, 1 + Math.round(a * 1.6)), reach = 1.5 + a * 1.2
+  for (let i = 0; i < k; i++) {
+    const r = (0.12 + 0.2 * R()) * Math.min(1.6, 0.6 + a * 0.6), o = { rot: R() * 6.283 }
+    if (R() < 0.45) goreQueue({ g: 'splat', x, y, z, dx: nx + (R() - 0.5) * 0.9, dy: ny * 0.6 + (R() - 0.55) * 0.8, dz: nz + (R() - 0.5) * 0.9, range: reach, r, o, hex })
+    else {
+      const d = (0.3 + R() * reach) * 0.8
+      goreQueue({ g: 'splat', x: x + nx * d + (R() - 0.5) * 0.5, y, z: z + nz * d + (R() - 0.5) * 0.5, dx: 0, dy: -1, dz: 0, range: Math.max(4, y + 3), r, o, hex })
+    }
+  }
+}
+function gorePool(x, y, z, size, hex) {
+  if (!goreInit() || hex === null) return
+  goreQueue({ g: 'pool', x, y, z, dx: 0, dy: -1, dz: 0, range: 6, r: 0.55 * size, o: { rot: (x * 7 + z * 13) % 6.283, grow: GORE.pool.grow, delay: GORE.pool.delay }, hex })
+}
+// a pool drawn out len m along dx, dz from x, y, z
+function goreSmear(x, y, z, dx, dz, len, width, hex) {
+  if (!goreInit() || hex === null) return
+  const l = Math.hypot(dx, dz) || 1
+  goreQueue({ g: 'pool', x: x + dx / l * len * 0.5, y, z: z + dz / l * len * 0.5, dx: 0, dy: -1, dz: 0, range: 6, r: 0.5,
+    o: { rot: Math.atan2(-dz, dx), sx: len, sy: width, grow: GORE.pool.grow * 0.5, delay: GORE.pool.delay * 0.6 }, hex })
+}
+// cracks in the surface below x, y, z, r m across
+function goreCrack(x, y, z, r) {
+  if (!goreInit()) return
+  goreQueue({ g: 'crack', x, y: y + 0.5, z, dx: 0, dy: -1, dz: 0, range: 1.2, r, o: { rot: (x * 5 + z * 11) % 6.283, grow: GORE.crack.grow }, hex: GORE.stone })
+}
+// gib streaks flung from a body of radius r, half-height h, centred at x, y, z: all round, or within a radian of dx, dz when they lean
+function goreStreaks(x, y, z, h, r, hex, count, far, t, dx = 0, dz = 0) {
+  const lean = Math.hypot(dx, dz) > 0.3, aim = Math.atan2(dz, dx), y0 = y - h * 0.1
+  for (let i = 0; i < count; i++) {
+    const a = lean ? aim + (Math.random() - 0.5) * 2 : Math.random() * Math.PI * 2, f = (r * far + 0.35) * (0.8 + Math.random() * 1.7), up = Math.random() * 1.1 - 0.15
+    liveTracers.push({ f: [x, y0, z, x + Math.cos(a) * f, y0 + up * f, z + Math.sin(a) * f, -1, 4], born: t, hex })
+  }
+  const over = liveTracers.length - FX_LIVE
+  if (over > 0) liveTracers.splice(0, over)
+}
+// the biggest burst, an instant kill's: a body bursting at x, y, z, flung along dx, dy, dz
+function goreKill(x, y, z, dx = 0, dy = 1, dz = 0, size = 1) {
+  if (!goreInit() || ![x, y, z, dx, dy, dz, size].every(Number.isFinite)) return
+  const hex = goreHexAt(x, y, z), K = GORE.kill, n = Math.hypot(dx, dy, dz) || 1
+  if (hex === null) return
+  goreSt.n.kills++
+  dx /= n; dy /= n; dz /= n
+  goreBlood(x, y, z, dx, dy + 0.5, dz, K.blood * size, hex)
+  goreBlood(x, y, z, -dx, 0.3, -dz, K.blood * size * 0.5, hex)
+  burst('gib', x, y, z, dx, dy, dz, hex, 1.3 * size)
+  burst('gib', x, y, z, dx, dy + 0.3, dz, GORE.bone, 0.8 * size)
+  burst('blood', x, y, z, 0, 1, 0, hex, 1.6 * size)
+  goreStreaks(x, y, z, 0.5, 0.4, hex, K.streaks, 1.6 * size, goreSt.t, dx, dz)
+  gorePool(x, y, z, K.pool * size, hex)
+  kick(K.shake * size, x, y, z, 10, 260)
+}
+// the beat where a body dies: gib streaks and a burst, a spray, and a pool, smeared along its slide if it was knocked away
+function goreDeath(id, b, t) {
+  const C = GAME.participant(id, b.cid), hex = bloodOf(C), D = GORE.death
+  if (hex === null || ![b.x, b.y, b.z].every(Number.isFinite)) return
+  goreSt.n.deaths++
+  const r = C.r ?? 0.4, h = C.h ?? 0.5, sz = clamp(r / 0.4, 0.6, 2), vx = b.vx || 0, vz = b.vz || 0, sp = Math.hypot(vx, vz)
+  goreStreaks(b.x, b.y, b.z, h, r, hex, 16, 1, t, sp > D.smear ? vx / sp : 0, sp > D.smear ? vz / sp : 0)
+  burst('gib', b.x, b.y, b.z, 0, 1, 0, hex, sz)
+  goreBlood(b.x, b.y, b.z, vx / (sp || 1), 0.6, vz / (sp || 1), D.blood * sz, hex)
+  gorePool(b.x, b.y, b.z, D.pool * sz, hex)
+  if (sp > D.smear) goreSmear(b.x, b.y, b.z, vx, vz, Math.min(sp * 0.25, 4), 0.45 * sz, hex)
+}
+// blood where a record shows a body struck: a shot that ended on one, or the spray round one; cracks where a slam lands
+function goreTake(list) {
+  if (!goreOn()) return
+  let seen = null
+  for (const f of list) {
+    if (f[7] === 7 && [0, 1, 2, 3].every(i => Number.isFinite(f[i]))) { goreCrack(f[0], f[1], f[2], clamp(f[3] * 0.25, 0.5, 1.4)); continue }
+    if (!(f[7] === 1 || f[7] === 3) || f[9] === 1 || ![0, 1, 2, 3, 4, 5].every(i => Number.isFinite(f[i]))) continue
+    const G = GUNS[f[6]]
+    if (G?.look === 'blizzard') continue
+    const a = f[7] === 3 ? goreBody(f[0], f[1], f[2], 1.2) : goreStruck(f[3], f[4], f[5], f[8])
+    if (!a || (seen ||= new Set()).has(a) || seen.size >= 6) continue
+    seen.add(a)
+    const s = avatars.get(f[8])?.mesh?.position, p = a.mesh.position, at = f[7] === 3 ? f : f.slice(3)
+    const dx = s ? p.x - s.x : f[3] - f[0], dz = s ? p.z - s.z : f[5] - f[2], l = Math.hypot(dx, dz) || 1
+    goreBlood(at[0], at[1], at[2], dx / l, 0.25, dz / l, clamp((G?.dmg ?? 12) / 18, 0.5, 2.2), bloodOf(a.spec))
+  }
+}
+function goreFrame(t, me, others) {
+  if (!goreOn()) { if (goreSt?.live) goreClear(); return }
+  if (!goreInit()) return
+  const st = goreSt
+  st.t = t
+  if (me) {
+    const stamp = st.stamp = (st.stamp | 0) + 1
+    for (const b of [me, ...others || []]) {
+      const id = b === me ? myId : b.id, down = b.dead > 0, was = st.seen.get(id)
+      if (down && was && !was.down) goreDeath(id, b, t)
+      if (was) { was.down = down; was.stamp = stamp } else st.seen.set(id, { down, stamp })
+    }
+    for (const [id, s] of st.seen) if (s.stamp !== stamp) st.seen.delete(id)
+  }
+  for (let n = 0; n < GORE.rays && st.queue.length && world; n++) {
+    const q = st.queue.shift(), down = q.dy < -0.9, l = Math.hypot(q.dx, q.dy, q.dz) || 1
+    st.n.rays++
+    staticRay(q.x, q.y + (down ? 0.4 : 0), q.z, q.dx / l, q.dy / l, q.dz / l, q.range, goreRay)
+    if (goreRay.length < 6) continue
+    let nx = goreRay[3], ny = goreRay[4], nz = goreRay[5]
+    if (nx * q.dx + ny * q.dy + nz * q.dz > 0) { nx = -nx; ny = -ny; nz = -nz }
+    if (down && ny < 0.6) continue
+    st.n.landed++
+    goreAdd(q.g, goreRay, [nx, ny, nz], q, t)
+  }
+  if (!st.live) return
+  let live = 0
+  for (const kind of GORE_KINDS) {
+    const g = st[kind], C = GORE[kind]
+    let md = false, cd = false, shown = 0
+    for (let i = 0; i < g.ent.length; i++) {
+      const e = g.ent[i]
+      if (!e) continue
+      const age = (t - e.born) / 1000
+      if (age > C.life) { g.ent[i] = null; goreHide(g, i); md = true; continue }
+      shown++
+      const grown = C.grow && e.grow ? goreEase(age / e.grow) : age < 0 ? 0 : 1, fade = age > C.life - C.fade ? (C.life - age) / C.fade : 1
+      const k = Math.round(grown * fade * 48) / 48
+      if (k !== e.k) {
+        e.k = k
+        goreQ.setFromUnitVectors(goreZ, goreP.set(e.n[0], e.n[1], e.n[2])); goreQ2.setFromAxisAngle(goreZ, e.rot); goreQ.multiply(goreQ2)
+        goreM.compose(goreP.set(e.p[0] + e.n[0] * 0.012, e.p[1] + e.n[1] * 0.012, e.p[2] + e.n[2] * 0.012), goreQ, goreS.set(e.size * e.sx * k, e.size * e.sy * k, 1))
+        g.mesh.setMatrixAt(i, goreM); md = true
+      }
+      const dl = kind === 'crack' ? 0 : Math.min(8, Math.max(0, Math.floor(age / C.life * 9)))
+      if (dl !== e.dl) { e.dl = dl; g.mesh.setColorAt(i, goreC.setHex(e.hex).multiplyScalar(1 - (1 - GORE.dry) * dl / 8)); cd = true }
+    }
+    if (md) g.mesh.instanceMatrix.needsUpdate = true
+    if (cd) g.mesh.instanceColor.needsUpdate = true
+    g.mesh.visible = shown > 0
+    live += shown
+  }
+  st.live = live || st.queue.length ? 1 : 0
+}
+GAME.gore = {
+  blood: (x, y, z, nx = 0, ny = 1, nz = 0, amount = 1) => goreBlood(x, y, z, nx, ny, nz, amount, goreHexAt(x, y, z)),
+  pool: (x, y, z, size = 1) => gorePool(x, y, z, size, goreHexAt(x, y, z)),
+  crack: goreCrack, kill: goreKill, clear: goreClear,
+  stats: () => goreSt && { ...goreSt.n, queued: goreSt.queue.length, ...Object.fromEntries(GORE_KINDS.map(k => [k, goreSt[k].ent.filter(Boolean).length])) },
+}
+
 // a stride thins decoration only; attacks, tracers and one-record effects (6, 7) always draw
 function fxDecor(f) {
   return f[7] === 3 || f[7] === 4 || f[7] === 5
@@ -10891,6 +11161,7 @@ let fxStride = 1
 function addTracers(list, t) {
   if (list.some(f => f[7] === 6 || f[7] === 7)) list = boomTake(list, liveTracers)
   queueScars(list)
+  goreTake(list)
   for (const f of list) if (f[7] === 6 && [0, 2, 4].every(i => Number.isFinite(f[i]))) scarAt([f[0], f[4], f[2], 0, 1, 0], 'blast', f[11] | 0)
     else if (f[7] === 7 && [0, 1, 2].every(i => Number.isFinite(f[i]))) scarAt([f[0], f[1], f[2], 0, 1, 0], 'dent', f[4] | 0)
 
@@ -11779,6 +12050,7 @@ function drawTracers(t, me, others, viewId) {
   if (fxQ) { fxQ.R.update(fxQ.t === null ? 0 : Math.min(0.1, Math.max(0, t - fxQ.t) / 1000)); fxQ.t = t }
   else if (renderer && !renderHeadless && typeof self !== 'undefined') fxQLoad ||= (self.THREE = THREE, geoLoad(FX_LIBS)).then(env => { fxQ = particlesOf(env.Q); renderer.compileAsync(fxQ.R, camera, scene).catch(() => {}) }, () => {})
   drawScars()
+  goreFrame(t, me, others)
   drawTornado(t)
   for (const pool of fxPools) for (const m of pool) { m.visible = false; m.fxActive = false }
   let kept = 0
@@ -11818,12 +12090,14 @@ function drawTracers(t, me, others, viewId) {
       continue
     }
     if (f[7] === 4) {
+      if (o.hex === undefined) o.hex = goreHexAt(f[0], f[1], f[2])
+      if (o.hex === null || settings.gore === false) continue
       const dx = f[3] - f[0], dy = f[4] - f[1], dz = f[5] - f[2]
       const travel = 0.25 + age * 1.8, fall = 1.5 * age * age
       const w = Math.min(0.14, Math.max(0.035, Math.hypot(dx, dy, dz) * 0.12))
       fxBox(f[0] + dx * travel, f[1] + dy * travel - fall, f[2] + dz * travel,
         f[0] + dx * (travel + 0.18), f[1] + dy * (travel + 0.18) - fall, f[2] + dz * (travel + 0.18),
-        w, 0x8e1c1c, 1 - age * age)
+        w, o.hex, 1 - age * age)
       continue
     }
     const actor = G && G.charge === 'palms' && avatars.get(f[8])
@@ -12704,6 +12978,7 @@ function loadSettings() {
   settings.fov = clamp(+settings.fov || 72, 60, FOV_MAX)
   settings.shadows = !!settings.shadows
   settings.shake = settings.shake !== false
+  settings.gore = settings.gore !== false
   settings.padSens = clamp(Number.isFinite(+settings.padSens) ? +settings.padSens : 1, 0.2, 3)
   settings.padInvert = settings.padInvert === true
   settings.padRumble = settings.padRumble !== false
@@ -12779,6 +13054,7 @@ const SET_BUTTONS = {
   'set-distance': [() => gameText('setDistance', { v: settings.distance }), () => { settings.distance = nextOf(Object.keys(VIEW), settings.distance) }],
   'set-shadows': [Q => gameText('setShadows', { v: Q.shadows ? onOff(settings.shadows) : TEXT.shadowsQuality }), () => { settings.shadows = !settings.shadows }],
   'set-shake': [() => gameText('setShake', { v: onOff(settings.shake) }), () => { settings.shake = !settings.shake }],
+  'set-gore': [() => gameText('setGore', { v: onOff(settings.gore) }), () => { settings.gore = !settings.gore }],
   'set-padinvert': [() => gameText('setPadInvert', { v: onOff(settings.padInvert) }), () => { settings.padInvert = !settings.padInvert }],
   'set-padrumble': [() => gameText('setPadRumble', { v: onOff(settings.padRumble) }) + (padNoRumble() ? TEXT.padNoRumble : ''),
     () => { settings.padRumble = !settings.padRumble }],
@@ -13607,6 +13883,7 @@ const playing = i => { const c = !joinPick() && selfChar(); return !!c && pickEn
 function paintPicker() {
   const wrap = el('#pick-cards'), live = selfChar(), joining = joinPick(), now = live ? live.cid : myCid
   if (pickAt < 0) pickAt = joining && GAME.rows.refusal(now) ? pickAll().find(i => !GAME.rows.refusal(i)) ?? pickEntry(now) : pickEntry(now)
+  else if (GAME.rows.refusal(pickAt)) pickAt = pickAll().find(i => !GAME.rows.refusal(i)) ?? pickEntry(now)   // the pick went refused in the meantime: the highlight goes to a row the room still takes
   pickAt ??= pickAll()[0]
   el('#pick-title').textContent = joining ? TEXT.pickTitleJoin : TEXT.character
   el('#pick-back').textContent = joining ? TEXT.pickLeave : TEXT.back
@@ -13636,6 +13913,7 @@ function paintPicker() {
 const pickCards = () => [...el('#pick-cards').children].filter(d => d.dataset.i !== undefined)
 const PICK_STATS = [[TEXT.statSpeed, 'speed'], [TEXT.statHealth, 'hp'], [TEXT.statJump, 'jump']]
 function pickSel(i) {
+  if (GAME.rows.refusal(i)) return   // a refused row takes no highlight; the pick stays where it was
   if (pickAt !== i) pickAtT = now()
   pickAt = i
   for (const d of pickCards()) d.classList.toggle('sel', +d.dataset.i === i)
