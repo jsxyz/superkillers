@@ -1119,7 +1119,6 @@ const TEXT = {
   ampersandNote: '§8Write §f&&&7 twice for a literal ampersand.',
   usageNick: '§cUsage: §f/nick <name>',
   serverNoCharacter: '§cA server plays no character.',
-  stillChanging: '§7Not yet — still changing.',
   capBackToWhateverIt: '§7Cap back to whatever it feels like.',
   onlyHostKick: '§cOnly the host can kick.',
   usageKick: '§cUsage: §f/kick <name>',
@@ -1137,6 +1136,9 @@ const TEXT = {
   // the character pick
   character: 'Character', copyLink: 'Copy link', copyTip: 'Copy the join link', copied: 'Copied', copyFailed: 'Copy failed', pickTitleJoin: 'Choose your character', pickLeave: 'Leave', pickRoomTip: 'Show or hide the room code',
   pickWait: 'Changing again in a moment.', pickKeep: 'You keep the damage you have taken; this is not a respawn.',
+  // a refused character change, told to the one who asked: the cooldown says how long is left
+  switchWait: '§7Not yet — wait {n} s', stillDown: '§7Not while you are down.', sideBalanced: '§7Balanced: {mine} v {theirs}',
+  rowTaken: '§7Taken', eventOnly: '§7{event} only', alreadyYou: '§7Already you.',
   outfitWave: 'Wave {n}', outfitUnlocked: '§eOutfit unlocked: §f{card}', outfitBloody: 'Sam · Bloodied', outfitSuit: 'Vito · Tight suit',
   outfitBikini: 'Beck · Bikini', outfitMagical: 'Beck · Magical girl',
   pickKeys: 'Arrow keys choose · Enter picks · Esc: {back}', pickOthers: 'Others', statSpeed: 'Speed', statHealth: 'Health', statJump: 'Jump',
@@ -16781,7 +16783,7 @@ function requestChar(idx) {
   const me = selfChar(), swap = !!me && !!CHARS[idx].team && CHARS[idx].team === CHARS[me.cid]?.team
   if (isHost) {
     const c = players.get(0)
-    if (c && !GAME.rows.switch(c, idx)) return swap ? GAME.rows.refuse(c, idx) : sysMsg(TEXT.stillChanging)
+    if (c && !GAME.rows.switch(c, idx)) return swap ? GAME.rows.refuse(c, idx) : undefined
     if (!swap) roster.set(0, { cid: idx, name: myName }), pushRoster()
   } else {
     sendHost({ k: 'char', cid: idx })
@@ -19517,8 +19519,9 @@ function rebalance(c) {
 }
 const moveTo = (c, cid) => { becomeChar(c, cid); const p = roster.get(c.id); if (p) p.cid = cid }
 
+// a refused change says why, to the one who asked
 function switchChar(c, cid) {
-  const C = CHARS[cid]
+  const C = CHARS[cid], say = raw => { if (!c.bot) tell(c.id, raw) }
   // team deathmatch: a pick is the row the next round plays, if the room has a place for it there
   if (gameMode === 'tdm' && !c.bot && C && !C.hidden && !offEvent(C)) {
     const why = tdmRefusal(c.id, cid)
@@ -19526,13 +19529,20 @@ function switchChar(c, cid) {
     if (cid !== (roster.get(c.id)?.cid ?? c.cid)) tell(c.id, gameText('playNextRound', { name: C.name }))
     return true
   }
-  if (!C || C.hidden || offEvent(C) || cid === c.cid || c.dead > 0 || c.shiftCool > 0) return false
-  if (!sideOffered(C.side) || !c.bot && sideLocked(C.side, c.id).locked) return false
+  if (!C) return false
+  if (C.hidden) return say(gameText('shiftInto', { name: C.name })), false
+  if (offEvent(C)) return say(gameText('eventOnly', { event: C.event })), false
+  if (cid === c.cid) return say(gameText('alreadyYou')), false
+  if (c.dead > 0) return say(gameText('stillDown')), false
+  if (c.shiftCool > 0) return say(gameText('switchWait', { n: (Math.round(c.shiftCool * 10) / 10).toFixed(1) })), false
+  if (!sideOffered(C.side)) return say(gameText('roomPlays', { mode: gameMode, sides: Object.keys(SIDES).filter(sideOffered).map(k => SIDES[k].name).join(', ') })), false
+  const L = sideLocked(C.side, c.id)
+  if (!c.bot && L.locked) return say(gameText('sideBalanced', { mine: L.mine, theirs: L.theirs })), false
   if (!c.bot && C.team && C.team === CHARS[c.cid].team) {
     const m = onTeam(c).find(m => m.cid === cid && m.dead <= 0)
     return !!m && free(c) && free(m) && (swapTo(c, m), true)
   }
-  if (!c.bot && taken(C.team, c.id)) return false
+  if (!c.bot && taken(C.team, c.id)) return say(gameText('rowTaken')), false
   return becomeChar(c, cid)
 }
 
