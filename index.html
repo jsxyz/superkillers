@@ -938,13 +938,23 @@ const TEXT = {
   // the character pick
   character: 'Character', copyLink: 'Copy link', copyTip: 'Copy the join link', copied: 'Copied', copyFailed: 'Copy failed', pickTitleJoin: 'Choose your character', pickLeave: 'Leave', pickRoomTip: 'Show or hide the room code',
   pickWait: 'Changing again in a moment.', pickKeep: 'You keep the damage you have taken; this is not a respawn.',
+  outfitWave: 'Wave {n}', outfitUnlocked: '§eOutfit unlocked: §f{card}', outfitBloody: 'Sam · Bloodied', outfitSuit: 'Vito · Tight suit',
+  outfitBikini: 'Beck · Bikini', outfitMagical: 'Beck · Magical girl',
   pickKeys: 'Arrow keys choose · Enter picks · Esc: {back}', pickOthers: 'Others', statSpeed: 'Speed', statHealth: 'Health', statJump: 'Jump',
   pickClick: 'Click', pickFire: 'FIRE', pickRightClick: 'Right-click', pickAtk: 'ATK', pickWpn: 'WPN', pickSwitch: 'switch',
   playingAs: 'Playing as {name}', playAs: 'Play as {name}', changeTo: 'Change to {name}', pickRoom: 'Room {code}',
   // team deathmatch: how a round ends, and its bar
   tdmSquadWins: 'The squad §7wins', tdmHeroesWin: 'The heroes §7win', tdmHeroWins: '{name} §7wins', tdmEnd: '§e{why} §f{who}',
   matchEnd: '§e{why} §f{who} §7wins with §f{kills}', newRound: '§7New round.', roundSquad: 'SQUAD {up}/{all}',
-  endWhy: { 'Time.': 'Time.', 'Frag limit.': 'Frag limit.', 'The hero is down.': 'The hero is down.', 'The squad is down.': 'The squad is down.' },
+  endWhy: { 'Time.': 'Time.', 'Frag limit.': 'Frag limit.', 'The hero is down.': 'The hero is down.', 'The squad is down.': 'The squad is down.',
+    'The heroes are down.': 'The heroes are down.' },
+  // team deathmatch: why a row is refused, a player moved to another, and the pick screen's note on the heroes a round
+  tdmTaken: 'Taken', tdmHeroesTaken: 'Taken: {heroes} a round', oneHero: 'one hero', manyHeroes: '{n} heroes',
+  tdmMoved: '§e{why}. You play §f{name}§e.', tdmPickNote: ' · {heroes}, one of each Superkiller; a pick plays from the next round',
+  // waves: a run's end, and a revive out at a spawn spot, hidden, and a player back
+  runEnd: '§e{why} §7The run reached §f{wave}', reviveOut: '§eA revive is out.', reviveHidden: '§eA revive is hidden {where}.',
+  hideWhere: { roof: 'on a roof', sewer: 'in the sewers', inside: 'inside a building' },
+  reviveBack: '§f{name} §7is back.',
   // kills: the feed's line between killer and victim, the callouts (what the screen shows, what the announcer says) and a spree's end
   feedMid: ' › {weapon} › ', spreeEnded: 'Spree ended by {who}', unnamed: '?',
   // the HUD's word for a use at a manhole
@@ -1067,6 +1077,19 @@ const CHARS = [
     bones: { leg_upper: [0.9, 1.95, 0.9], leg_lower: [0.9, 2.2, 1.05], arm_upper: [0.85, 1.4, 0.85], arm_lower: [0.85, 1.4, 0.85], head: [0.74, 0.74, 0.74], body_upper: [0.72, 1.12, 0.95], body_lower: [0.85, 1.12, 0.9] },
     shape: { torso: [0.95, 1, 0.95], arm: [0.85, 1, 0.85], leg: [0.9, 1, 0.9] } },
 ]
+// OUTFITS: a character's other look, one CHARS row each after the characters: the base row's name, stats and abilities, with the look
+// fields given here. card: the TEXT key of its name on the pick screen; wave: the wave (counted over a match, from 1) whose alive players unlock it;
+// bloody: the damage stains its code-built body always wears, 0-3; mesh: a BODIES row, its served body (the costume draws until it loads)
+const OUTFITS = [
+  { id: 'bloody', of: 'Sam', card: 'outfitBloody', wave: 5, mesh: 'samBlood', bloody: 3 },
+  { id: 'suit', of: 'Vito', card: 'outfitSuit', wave: 8, model: 'vito_suit', skin: { jacket: 0xe8a33d, shirt: 0xd8933a, denim: 0x3b2a55 } },
+  { id: 'bikini', of: 'Beck', card: 'outfitBikini', wave: 10, mesh: 'beckBikini', costume: 'bikini' },
+  { id: 'magical', of: 'Beck', card: 'outfitMagical', wave: 12, mesh: 'beckMagical', costume: 'magical', skin: { boot: 0xf6f4ec } },
+]
+for (const { id, of, ...look } of OUTFITS) {
+  const base = CHARS.find(C => C.name === of)
+  CHARS.push({ ...base, ...look, skin: { ...base.skin, ...look.skin }, outfit: id })
+}
 // rate: s/shot, spread: rad, range: m. Gun 0 never runs dry. look: line|beam|slash|blast; held: glow, heldScale, tether
 // kind: ray|pierce|chain|radius. dive: speed m/s, pull m/s²; dmg, knock × clamp(impact/ref, 1, cap), range × its root
 // kind dash: held, runs along the aim at speed m/s through people and objects; each it passes takes dmg and knock once a hold
@@ -1248,6 +1271,11 @@ const POWERS = [
 const HEALS = [
   { name:'Medkit',  amount: 40, color:0x3fb950 },
   { name:'Big Med', amount: 90, color:0x56d364, drop:false, pickupScale:1.22 },
+  // revive (waves): brings back the superkiller down longest, beside the one who takes it. after: the deaths in a wave
+  // before one is out, at a spawn spot; perDeath: where `hide` finds spots, one hidden for each death instead, on one of
+  // the three free spots nearest it within `near` m. hide: roof (a City roof a pad reaches), sewer (a tunnel's ledge or a
+  // chamber's corner), inside (a building's floor). radar: its mark's colour on the superkillers' radar
+  { name:'Revive', revive: { after: 2, perDeath: true, hide: ['roof', 'sewer', 'inside'], near: 400 }, amount: 0, color:0xffd23f, radar: 0x5cf2b0, drop:false, pickupScale:1.3 },
 ]
 // A bot: the CHARS row it plays (char), the body older copies draw it with and the wire carries (cid), and how it fights.
 // alt: [CHARS name, n]: once a spawn, 1 in n, it plays that character instead. squad: the killers' free-for-all bots,
@@ -1262,7 +1290,7 @@ const BOTS = [
   { char: 'Pink', cid: 'Artie', range: 13, fireRange: 28, aimErr: 0.065, jumpy: 1.4 },
   { char: 'Black', cid: 'Vito', range:  7, fireRange: 22, aimErr: 0.050, jumpy: 0.3 },
   // turn: own turn rate (rad/s)
-  { char: 'Flash', cid: 'Artie', range: 3, fireRange: 5, aimErr: 0.075, jumpy: 1.6, turn: 40, rare: true, visits: true, hitRun: [0.3, 0.8] },
+  { char: 'Flash', cid: 'Artie', range: 3, fireRange: 5, aimErr: 0.075, jumpy: 1.6, turn: 40, rare: true, hitRun: [0.3, 0.8] },
   { char: 'Ryu', cid: 'Sam', range: 9, fireRange: 40, aimErr: 0.055, jumpy: 0.25, turn: 5, farAt: 8, rare: true },
   { char: 'Leonardo', cid: 'Artie', range: 2.6, fireRange: 6, aimErr: 0.055, jumpy: 0.9, rare: true, crew: 1 },
   { char: 'Raphael', cid: 'Artie', range: 2.2, fireRange: 5, aimErr: 0.075, jumpy: 1.5, rare: true, crew: 1 },
@@ -1288,7 +1316,7 @@ const BOTS = [
 // pick: every BOTS row whose fields match (a list: any of it; absent = false)
 const WAVES = [
   { name: 'GO GO POWER RANGERS', pick: { rare: false } },
-  { name: 'FLASH',               pick: { visits: true } },
+  { name: 'FLASH',               pick: { name: 'Flash' } },
   { name: 'RYU',                 pick: { name: 'Ryu' } },
   { name: 'TURTLE POWER',        pick: { crew: 1 } },
   { name: 'GREEN LANTERN',       pick: { name: 'Green Lantern' } },
@@ -1647,6 +1675,7 @@ const MODELS = {
   },
   artie: {
     kind: 'built',
+    served: 'artie.a8b3efd3.glb',     // its parts' geometry, a node each, from ASSET_DIR; the code-built parts are the fallback
     joints: ['ear', 'jet'],
     gripReach: 0.5,
     body: 0.81,           // m, plume below
@@ -1658,6 +1687,7 @@ const MODELS = {
   },
   vito: {
     kind: 'built',
+    served: 'vito.4c6ce60f.glb',     // its parts' geometry, a node each, from ASSET_DIR; the code-built parts are the fallback
     joints: ['wheel'],
     gripReach: 0.85,
     sit: { hide: ['scooter'], fold: [{ tags: ['knee', 'shoe'], at: [0.14, 0.31, -0.13], deg: 35 }] },
@@ -1669,6 +1699,7 @@ const MODELS = {
   },
   vitoscreen: {
     kind: 'built',
+    served: 'vitoscreen.5e915864.glb',     // its parts' geometry, a node each, from ASSET_DIR; the code-built parts are the fallback
     live: ['screen'],
     gripReach: 1.25,
     sitLift: 0.163, sitIn: 0.07,    // m
@@ -1698,6 +1729,8 @@ const BODY_LIBS = [
   { name: 'meshopt', url: 'https://cdn.jsdelivr.net/npm/three@0.171.0/examples/jsm/libs/meshopt_decoder.module.js',
     sri: 'sha384-zhZjnxc+3j2IeX2itXt+5CnnC0YleVRvu5EOaj733tRp38E9hBPnZjweEWX2kN7y', expose: 'Meshopt' },
 ]
+// Vito in a suit a size too small: his model with the jacket short and narrow, the belly out under it
+MODELS.vito_suit = { ...MODELS.vito, build: (H, skin) => drain(vitoSteps(H, skin, true)), steps: (H, skin) => vitoSteps(H, skin, true) }
 const TORSO_PROFILE = [[0, -0.54], [0.46, -0.54], [0.49, -0.38], [0.44, -0.20],
   [0.455, -0.10], [0.485, 0], [0.50, 0.06], [0.58, 0.28], [0.51, 0.39], [0.29, 0.49], [0.20, 0.52], [0, 0.52]]
 // COSTUMES body: sleeves' torso tag; blend: colours cuffs; bare/band: dress bare joints; plain: no trim
@@ -1816,10 +1849,34 @@ const BECK_BODY = { at: [318.75, 80], parts: [
     // last: hair strokes overrun the thumb region
     { const [x0, y0, x1, y1] = region('thumb'); ctx.fillStyle = hex(skin.hand); ctx.fillRect(x0, y0, x1 - x0, y1 - y0) }
   } }
+// Beck as an outfit draws her: every part of BECK_BODY stays (her painter paints each by name); a part not worn has no girth
+const BECK_TORSO = BECK_BODY.parts.find(p => p.name === 'torso'), BECK_HIPS = ['body_lower', 262, 330, 'leg_upper~']
+const bareOf = p => ({ ...p, rows: p.rows.map(r => r.map((v, i) => i === 1 || i === 2 ? 0.05 : v)) })
+// bare skin, a bikini's top and bottom lofted over it
+const BECK_BIKINI = { ...BECK_BODY,
+  parts: [...BECK_BODY.parts.map(p => p.name === 'skirt' || p.name === 'sleeve' ? bareOf(p) : p.name === 'torso' || p.name === 'leg' ? { ...p, paint: 'hand' } : p),
+    { name: 'hips', paint: 'hand', n: 24, uv: [.5, 0, .75, .25], chain: BECK_HIPS, rows: [[252, 27, 13, -1], [266, 32, 15.5, -1.5], [280, 38, 19, -2.5], [294, 43.5, 22, -3], [312, 45, 23, -3]] },
+    { name: 'top', paint: 'torso', n: 20, uv: [.75, 0, 1, .25], chain: BECK_TORSO.chain, rows: [[162, 43.5, 25.5, 2], [172, 45, 27, 2.5], [185, 45.8, 28.5, 3], [198, 43.5, 26, 2.6], [206, 41.5, 24.5, 2]] },
+    { name: 'bottom', paint: 'torso', n: 24, uv: [.75, 0, 1, .25], chain: BECK_HIPS, rows: [[278, 38.5, 19.5, -2.5], [292, 45, 23, -3.2], [306, 46.2, 24, -3.2]] }],
+  paint(ctx, T, skin, hex) { BECK_BODY.paint(ctx, T, skin, hex); ctx.fillStyle = hex(skin.hand); T.band('torso', 100, 256); T.band('leg', 300, 570) } }
+// a sailor-style uniform: her white collar tabs, a wide collar of the second colour, a bow, a short pleated skirt
+const BECK_MAGICAL = { ...BECK_BODY,
+  parts: [...BECK_BODY.parts.map(p => p.name === 'skirt' ? { ...p, paint: 'sheen', rows: p.rows.slice(0, 6) } : p),
+    { name: 'collar', paint: 'sheen', n: 24, uv: [.75, 0, 1, .25], chain: BECK_TORSO.chain, rows: [[128, 24, 13, 0], [136, 33, 16, .5], [146, 44, 20, .5], [156, 46, 22, .5], [164, 46, 24, 1]] }],
+  paint(ctx, T, skin, hex) {
+    BECK_BODY.paint(ctx, T, skin, hex)
+    ctx.fillStyle = hex(skin.sheen); T.band('skirt', 252, 330)
+    ctx.fillStyle = hex(0x1f6f80); for (let x = -66; x <= 66; x += 11) T.poly('skirt', [[x - .9, 252], [x + .9, 252], [x + .9, 330], [x - .9, 330]])
+    ctx.fillStyle = hex(skin.lip)
+    for (const s of [-1, 1]) { T.poly('torso', [[0, 158], [s * 20, 148], [s * 20, 168]]); T.poly('torso', [[s * 3, 163], [s * 9, 185], [s, 183]]) }
+    T.poly('torso', [[-4, 153], [4, 153], [4, 163], [-4, 163]])
+  } }
 const UNIFORM_BODY = { make: humanBody, paint: uniformPaint, trim: true, join: true }
 const COSTUMES = {
   agent: { part: uniformSteps, loft: { make: humanBody, paint: agentPaint, trim: ['head', 'boot'], join: true }, body: 'jacket', blend: true, blood: true },
   waitress: { loft: BECK_BODY },
+  bikini: { loft: BECK_BIKINI },
+  magical: { loft: BECK_MAGICAL },
   ranger: { part: uniformPart, legs: 1.2 },
   speedster: { part: speedsterPart, loft: UNIFORM_BODY, legs: 1.2, plain: true, neck: 'head', shoulder: true },
   fighter: { part: fighterPart, loft: UNIFORM_BODY, bare: true, neck: 'head', collar: .5, glove: false },
@@ -2440,10 +2497,20 @@ const CAP_TEXT = [
 const primaryName = c => { const C = c.bot || CHARS[c.cid]; return C && (c.bot ? C.primary ?? (GUNS[gunNamed(C.far)]?.kind === 'dash' ? C.far : undefined) : C.primary ?? C.far ?? [].concat(C.atk ?? [])[1]) }
 const primaryOf = c => { const n = primaryName(c); return n ? GUNS[gunNamed(n)] : null }
 const primaryId = c => { const n = primaryName(c); return n ? gunNamed(n) : 0 }
-const PICKABLE = CHARS.map((C, i) => i).filter(i => !CHARS[i].hidden)
+const PICKABLE = CHARS.map((C, i) => i).filter(i => !CHARS[i].hidden && !CHARS[i].outfit)
 
 const healOf = pk => (pk && pk.heal > 0 ? HEALS[pk.heal - 1] : null)
 const healNamed = n => HEALS.findIndex(H => H.name === n) + 1
+const reviveId = () => HEALS.findIndex(H => H.revive) + 1, reviveRow = () => HEALS[reviveId() - 1]
+// a pickup on the wire: [x y z gun pow heal], a revive sent as the first heal with a 7th field 1, so an older copy draws a
+// Medkit there
+const pkWire = p => healOf(p)?.revive ? [p.x, p.y, p.z, 0, 0, 1, 1] : [p.x, p.y, p.z, p.gun, p.pow, p.heal]
+// a host's pickup as this copy draws it, or none: a kind it has no row for is dropped, never drawn
+const pkTake = p => {
+  if (!Array.isArray(p) || ![p[0], p[1], p[2]].every(Number.isFinite)) return []
+  const heal = p[6] === 1 ? reviveId() : p[5] | 0, pow = p[4] | 0, gun = p[3] | 0
+  return heal >= 0 && heal <= HEALS.length && pow >= 0 && pow <= POWERS.length && GUNS[gun] ? [[p[0], p[1], p[2], gun, pow, heal]] : []
+}
 
 // pow: 1 + POWERS index, 0 = none
 const powerOf = c => (c && c.pow > 0 ? POWERS[c.pow - 1] : null)
@@ -3155,12 +3222,11 @@ const picked = pick => BOTS.flatMap((B, i) =>
   !B.squad && !offEvent(B) && Object.entries(pick).every(([k, v]) => [v].flat().includes(B[k] || false)) ? [i] : [])
 // [id, cid] for a bot row and its alt
 const botPairs = list => list.flatMap(i => [[BOT_ID0 + i, BOTS[i].cid], ...BOTS[i].altRow ? [[BOT_ID0 + i, BOTS[i].altRow.cid]] : []])
-let waveAt = -1, waveGap = 0
+let waveAt = -1, waveGap = 0, waveNo = 0
 // a break holds while the next wave's rows (or any other queued look) still prepare, WAVE_HOLD_S longer at most
 const WAVE_GAP_S = 4, WAVE_HOLD_S = 10
 
-const RARE_ONE_IN = 20
-// rare: out of free-for-all; visits: in anyway, on its own roll
+// rare: out of free-for-all
 const regulars = () => BOTS.filter(b => !b.rare && !offEvent(b)).length
 const ENTITY_MAX = MAX_PLAYERS + BOTS.length + CHARS.filter(C => C.team).length - Object.keys(TEAMS).length
 let BOT_COUNT = 3
@@ -3956,8 +4022,8 @@ function leaveRare(c) {
 const gunsOf = c => !gunless(CHARS[c.cid])
 const atksOf = c => [].concat(CHARS[c.cid].atk ?? [])
 function armRow(c) { c.gun = handsOf(CHARS[c.cid]); c.ammo = Infinity }
-function respawn(c) {
-  const s = pickSpawn(c)
+function respawn(c, at) {
+  const s = at || pickSpawn(c)
   if (LV.grow) growNear([[s[0], s[2]]], true)       // before anyone stands there
   c.prot = SPAWN_PROT
   setCharPos(c, s[0], s[1], s[2])
@@ -3996,16 +4062,19 @@ const isHero = (id, cid) => gameMode === 'tdm' && rowFor(id, cid).side === TDM.h
 const fullHp = (id, cid) => isHero(id, cid) && (heroScale ? Math.min(HERO_MAX, Math.round(rowFor(id, cid).hp * heroScale)) : heroMax) || rowFor(id, cid).hp
 // team deathmatch: the rows the humans but `skip` play (a pick made mid-round counts), the Superkiller rows a human can
 // pick, and the heroes a round for n humans: one for every four, and enough that no two humans share a Superkiller
-const humanRows = skip => [...roster].flatMap(([i, p]) => i < BOT_ID0 && i !== skip && CHARS[p.cid] ? [p.cid] : [])
+// an outfit is a look of its base row: it takes that row's place
+const baseOf = cid => CHARS[cid]?.outfit ? CHARS.findIndex(C => C.name === CHARS[cid].name && !C.outfit) : cid
+const humanRows = skip => [...roster].flatMap(([i, p]) => i < BOT_ID0 && i !== skip && CHARS[p.cid] ? [baseOf(p.cid)] : [])
 const squadRows = () => PICKABLE.filter(i => CHARS[i].side === TDM.squad && !offEvent(CHARS[i]))
 const heroesFor = n => Math.max(1, Math.ceil(n / 4), n - squadRows().length)
-const heroWord = n => n === 1 ? 'one hero' : n + ' heroes'
+const heroWord = n => n === 1 ? TEXT.oneHero : gameText('manyHeroes', { n })
 // why team deathmatch refuses row cid to human id, counted in the room whether it is in yet or not; '' if it doesn't
 function tdmRefusal(id, cid) {
   const C = CHARS[cid], rows = humanRows(id), n = heroesFor(rows.length + 1)
   if (gameMode !== 'tdm' || !C) return ''
-  if (C.side === TDM.squad) return rows.includes(cid) ? 'Taken' : ''
-  return C.side === TDM.hero && rows.filter(k => CHARS[k].side === TDM.hero).length >= n ? 'Taken: ' + heroWord(n) + ' a round' : ''
+  if (taken(C.team, id)) return TEXT.tdmTaken
+  if (C.side === TDM.squad) return rows.includes(baseOf(cid)) ? TEXT.tdmTaken : ''
+  return C.side === TDM.hero && rows.filter(k => CHARS[k].side === TDM.hero).length >= n ? gameText('tdmHeroesTaken', { heroes: heroWord(n) }) : ''
 }
 const sideOffered = k => gameMode !== 'waves' || !SIDES[k] || !!SIDES[k].waves
 let balanceOn = true
@@ -4995,10 +5064,11 @@ function camEase(o, t, v, p, u) {
   return t - d
 }
 let heldF = 1
-// team deathmatch: the dead watch a living body, humans first; FIRE the next, ALT the one before
+// team deathmatch: the dead watch a living body, humans first; waves: a superkiller still up; FIRE the next, ALT the one before
 let watchId = null, watchName = '', watchBody = null, watchFire = false, watchAlt = false
 function watching(me, others, fire, alt) {
-  const live = gameMode === 'tdm' && me.dead > 0 ? others.filter(o => !(o.dead > 0)).sort((a, b) => (a.id >= BOT_ID0) - (b.id >= BOT_ID0) || a.id - b.id) : []
+  const live = (gameMode === 'tdm' || gameMode === 'waves') && me.dead > 0 ? others.filter(o => !(o.dead > 0) &&
+    (gameMode === 'tdm' || GAME.participant(o.id, o.cid).side === TDM.squad)).sort((a, b) => (a.id >= BOT_ID0) - (b.id >= BOT_ID0) || a.id - b.id) : []
   if (!live.length) { watchId = null; watchName = ''; watchBody = null; return }
   let i = Math.max(0, live.findIndex(o => o.id === watchId))
   if (watchId !== null && fire && !watchFire) i = (i + 1) % live.length
@@ -6282,6 +6352,10 @@ function endMatch(why) {
     announce(gameText('tdmEnd', { why: TEXT.endWhy[why] ?? why, who: !won ? TEXT.tdmSquadWins : many ? TEXT.tdmHeroesWin : gameText('tdmHeroWins', { name: nameOf(hero) }) }))
     return hookMatchEnd(why === 'Time.' ? 'time' : 'elimination', best, won ? TDM.hero : TDM.squad)
   }
+  if (gameMode === 'waves' && why !== 'Time.') {
+    announce(gameText('runEnd', { why: TEXT.endWhy[why] ?? why, wave: (WAVES[waveAt] || WAVES[0]).name }))
+    return hookMatchEnd('elimination', best)
+  }
   announce(gameText('matchEnd', { why: TEXT.endWhy[why] ?? why, who, kills: best ? best.kills : 0 }))
   hookMatchEnd(why === 'Time.' ? 'time' : 'frags', best)
 }
@@ -6291,6 +6365,7 @@ function resetMatch() {
   resultsLeft = 0
   matchLeft = timeLimit
   if (gameMode === 'tdm') roundBots()
+  if (gameMode === 'waves') newRun(), spawnList([])
   spawnObjects()
   for (const c of players.values()) { c.kills = 0; respawn(c) }
   if (gameMode === 'tdm') roundHero()
@@ -6396,7 +6471,10 @@ function stepPickups(dt, list) {
         if (!pk.heal && !(pk.pow > 0) && !gunsOf(c)) continue
         let got
         const H = healOf(pk)
-        if (H) {
+        if (H?.revive) {
+          if (!reviveFor(c)) continue
+          got = H.name
+        } else if (H) {
           const max = fullHp(c.id, c.cid)
           if (c.hp >= max) continue
           c.hp = Math.min(max, c.hp + H.amount)
@@ -6791,6 +6869,8 @@ function kitGeometry(spec) {
       }
       g.computeVertexNormals()
     }
+  } else if (kind === 'served') {
+    g = SERVED.get(MODELS[a[0]].served + ':' + a[1]).clone()
   } else if (PRIMS[kind]) {
     const [type, ...args] = PRIMS[kind]
     for (const [i, d, cap] of args) a[i] = lod(a[i], d, cap)
@@ -8338,6 +8418,48 @@ function screenCracks(skin, level) {
   return geometry
 }
 
+// ---- served parts: a MODELS row's `served` file holds a node per part (geometry only), read into SERVED as geometries. A built model
+// draws one in place of its code-built shape (servedPart) once it is there; until then, on failure, or opened from a file, the code's.
+const SERVED = new Map()
+const servedHas = (model, node) => SERVED.has(MODELS[model]?.served + ':' + node)
+const servedPart = (model, node, spec) => servedHas(model, node) ? ['served', model, node] : spec
+function servedTake(file, gltf) {
+  gltf.scene.updateMatrixWorld(true)
+  gltf.scene.traverse(n => {
+    if (!n.isMesh) return
+    const a = n.geometry.attributes, c = a.position.count, nm = new THREE.Matrix3().getNormalMatrix(n.matrixWorld), v = new THREE.Vector3()
+    const p = new Float32Array(c * 3), nr = new Float32Array(c * 3), uv = new Float32Array(c * 2)
+    for (let i = 0; i < c; i++) {
+      v.fromBufferAttribute(a.position, i).applyMatrix4(n.matrixWorld).toArray(p, i * 3)
+      v.fromBufferAttribute(a.normal, i).applyMatrix3(nm).normalize().toArray(nr, i * 3)
+      uv[i * 2] = a.uv.getX(i); uv[i * 2 + 1] = a.uv.getY(i)
+    }
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(p, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nr, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
+    if (a.color) g.setAttribute('color', new THREE.BufferAttribute(Float32Array.from({ length: c * a.color.itemSize }, (_, i) => a.color.array[i]), a.color.itemSize))
+    g.setIndex(Array.from(n.geometry.index.array)); g.computeBoundingSphere(); g.userData.shared = true
+    SERVED.set(file + ':' + n.name, g)
+  })
+}
+// every built body made so far is made again from the file's parts
+function servedDone() {
+  BUILT_CACHE.clear(); builtBounds.clear(); walkLows.clear(); detailCache.clear(); prepKept.clear(); prepAt = null
+  if (MODELS.man.proto) rebuildAvatars()
+}
+// from ASSET_DIR beside the page, else the published site; none opened from a file
+async function loadServed() {
+  const want = [...new Set(Object.values(MODELS).map(M => M.served).filter(Boolean))]
+  if (!want.length || location.protocol === 'file:') return
+  const env = await (self.THREE = THREE, geoLoad(BODY_LIBS)), D = env.Meshopt.MeshoptDecoder
+  try { D.useWorkers(2) } catch (e) {}
+  const loader = new env.GLTF.GLTFLoader().setMeshoptDecoder(D)
+  let got = false
+  for (const file of want) for (const url of [ASSET_DIR + file, ASSET_SITE + file]) {
+    try { servedTake(file, await loader.loadAsync(url)); got = true; break } catch (e) { console.warn('served ' + url + ' failed:', e && e.message) }
+  }
+  if (got) servedDone()
+}
+
 // ---- Artie ----------------------------------------------------------------
 const ARTIE_FACES = []
 function artieFaceTexture(state) {
@@ -8366,33 +8488,35 @@ function artieFaceTexture(state) {
   return texture
 }
 function buildArtie(H, skin) {
-  const map = artieFaceTexture(0)
+  const map = artieFaceTexture(0), S = (node, spec) => servedPart('artie', node, spec), sv = node => servedHas('artie', node)
   const K = meshKit({ ...skin, eye: { color: skin.eye, emissive: skin.eye, emissiveIntensity: 0.9,
     map, emissiveMap: map, side: THREE.DoubleSide }, jet: skin.eye })
   const add = K.add
-  add({ g: ['lathe', [[0, 0.01], [0.055, 0.02], [0.10, 0.10], [0.115, 0.20], [0.08, 0.29], [0, 0.30]], 16], m: 'shell', tag: 'pod' })
-  add({ g: ['box', 0.10, 0.12, 0.03, 0.008], m: 'trim', p: [0, 0.17, -0.095] })
-  add({ g: ['cylinder', 0.018, 0.018, 0.02, 12], m: 'shell', p: [0, 0.15, -0.115], r: [Math.PI / 2, 0, 0] })
-  add({ mirror: true, g: ['capsule', 0.018, 0.10, 4, 8], m: 'trim', p: [0.115, 0.13, 0], r: [0, 0, 0.28], tag: 'hand' })
+  add({ g: S('pod', ['lathe', [[0, 0.01], [0.055, 0.02], [0.10, 0.10], [0.115, 0.20], [0.08, 0.29], [0, 0.30]], 16]), m: 'shell', tag: 'pod' })
+  if (sv('collar')) add({ g: ['served', 'artie', 'collar'], m: 'trim' })
+  add({ g: S('chest', ['box', 0.10, 0.12, 0.03, 0.008]), m: 'trim', p: [0, 0.17, -0.095] })
+  add(sv('button') ? { g: ['served', 'artie', 'button'], m: 'shell', p: [0, 0.15, -0.11], r: [-Math.PI / 2, 0, 0] }
+    : { g: ['cylinder', 0.018, 0.018, 0.02, 12], m: 'shell', p: [0, 0.15, -0.115], r: [Math.PI / 2, 0, 0] })
+  add({ mirror: true, g: S('hand', ['capsule', 0.018, 0.10, 4, 8]), m: 'trim', p: [0.115, 0.13, 0], r: [0, 0, 0.28], tag: 'hand' })
   add({ g: ['sphere', 0.165, 10, 8], m: 'face', p: [0, 0.44, 0], tag: 'core' })
-  add({ g: ['sphere', 0.205, 24, 18], m: 'shell', p: [0, 0.44, 0], tag: 'head' })
+  add({ g: S('head', ['sphere', 0.205, 24, 18]), m: 'shell', p: [0, 0.44, 0], tag: 'head' })
   // lens past the sphere pole or it renders as a ring
   const lens = add({ p: [0, 0.44, -0.175], tag: 'lens', children: [
-    { g: ['cylinder', 0.150, 0.150, 0.08, 28], m: 'face', r: [Math.PI / 2, 0, 0] },
+    { g: S('bezel', ['cylinder', 0.150, 0.150, 0.08, 28]), m: 'face', r: [Math.PI / 2, 0, 0] },
     { g: ['disc', 0.148, 32], m: 'eye', p: [0, 0, -0.041], r: [0, Math.PI, 0], tag: 'display' },
   ] })
   lens.children[1].castShadow = false
-  add({ mirror: true, g: ['cylinder', 0.055, 0.055, 0.04, 14], m: 'trim', p: [0.195, 0.45, 0], r: [0, 0, Math.PI / 2] })
+  add({ mirror: true, g: S('cheek', ['cylinder', 0.055, 0.055, 0.04, 14]), m: 'trim', p: [0.195, 0.45, 0], r: [0, 0, sv('cheek') ? -Math.PI / 2 : Math.PI / 2] })
   add({ mirror: true, p: [0.085, 0.55, 0], r: [0, 0, -0.13], tag: 'ear', children: [
-    { g: ['loft', [0, 0.14, 0.23, 0.42].map(y => {
+    { g: S('earShell', ['loft', [0, 0.14, 0.23, 0.42].map(y => {
       const w = 0.0375 * (1 - 0.45 * y / 0.42), b = 0.006
       return [[-w + b, y, -0.0225], [w - b, y, -0.0225], [w, y, -0.0165], [w, y, 0.0165],
         [w - b, y, 0.0225], [-w + b, y, 0.0225], [-w, y, 0.0165], [-w, y, -0.0165]]
-    })], m: 'trim', tag: 'earShell' },
-    { g: ['loft', [0.085, 0.14, 0.23, 0.375].map(y => {
+    })]), m: 'trim', tag: 'earShell' },
+    { g: S('earPanel', ['loft', [0.085, 0.14, 0.23, 0.375].map(y => {
       const w = 0.016 * (1 - 0.5 * (y - 0.085) / 0.29)
       return [[-w, y, -0.0275], [w, y, -0.0275], [w, y, -0.0185], [-w, y, -0.0185]]
-    })], m: 'shell', tag: 'earPanel' },
+    })]), m: 'shell', tag: 'earPanel' },
   ] })
   const drop = (new THREE.Box3().setFromObject(K.root).max.y - 0.01) * Math.max(0, H / MODELS.artie.body - 1)
   add({ g: ['cylinder', 0.06, 0, drop + 0.01, 12], m: 'jet', p: [0, 0.015 - drop / 2, 0], tag: 'jet' }).castShadow = false
@@ -8536,22 +8660,23 @@ function capFabric(material) {
 }
 
 function buildVito(H, skin) { return drain(vitoSteps(H, skin)) }
-function* vitoSteps(H, skin) {
+function* vitoSteps(H, skin, suit) {
   const K = meshKit({ ...skin, ivory: 0xf1efda, ink: 0x24272f,
     hair: { color: new THREE.Color(skin.beard).multiplyScalar(1.35), vertexColors: true }, dark: skin.tyre, steel: skin.frame,
     fold: { color: new THREE.Color(skin.jacket).multiplyScalar(0.55) },
     seam: { color: new THREE.Color(skin.shirt).multiplyScalar(0.65) } }), add = K.add
-  const box = (m, s, p, b = 0.01, tag) => add({ g: ['box', ...s, b], m, p, tag })
+  const S = node => servedPart('vito', node), sv = node => servedHas('vito', node)
+  const box = (m, s, p, b = 0.01, tag, node) => add({ g: node && sv(node) ? S(node) : ['box', ...s, b], m, p, tag })
   const orb = (m, r, p, s = [1, 1, 1], tag) => add({ g: ['sphere', r, 20, 14], m, p, s, tag })
   const tube = (m, pts, r, tag) => add({ g: ['tube', pts, r], m, tag })
   const scooter = from => { const g = new THREE.Group(); g.userData.part = 'scooter'; g.add(...K.root.children.slice(from)); K.root.add(g) }
   const deck = K.root.children.length
   for (const [r, z] of [[0.115, -0.33], [0.095, 0.17]]) vehicleWheels(K, { r, at: [[0, r, z]] })
-  box('frame', [0.15, 0.045, 0.54], [0, 0.145, -0.07])
+  box('frame', [0.15, 0.045, 0.54], [0, 0.145, -0.07], 0.01, undefined, 'deck')
   tube('frame', [[0, 0.10, -0.33], [0, 0.24, -0.32], [0, 0.48, -0.29]], 0.022)
   tube('frame', [[-0.18, 0.48, -0.28], [-0.1, 0.485, -0.30], [0.1, 0.485, -0.30], [0.18, 0.48, -0.28]], 0.017)
   add({ mirror: true, g: ['cylinder', 0.024, 0.024, 0.06, 10], m: 'tyre', p: [0.15, 0.48, -0.28], r: [0, 0, Math.PI / 2] })
-  box('tyre', [0.24, 0.042, 0.20], [0, 0.295, 0.11], 0.018, 'seat')
+  box('tyre', [0.24, 0.042, 0.20], [0, 0.295, 0.11], 0.018, 'seat', 'seat')
   scooter(deck)
   yield
   const shorts = [[0.397, 0.073, 0.105, -0.025], [0.354, 0.09, 0.114, -0.05],
@@ -8566,10 +8691,12 @@ function* vitoSteps(H, skin) {
   yield
   for (const side of [-1, 1]) {
     orb('skin', 0.066, [side * 0.14, 0.245, -0.13], [1, 1.32, 0.92], 'knee')
-    box('tyre', [0.085, 0.045, 0.13], [side * 0.14, 0.14, -0.18], 0.012, 'shoe')
+    box('tyre', [0.085, 0.045, 0.13], [side * 0.14, 0.14, -0.18], 0.012, 'shoe', 'shoe')
+    if (sv('sole')) add({ g: S('sole'), m: 'ivory', p: [side * 0.14, 0.14, -0.18], tag: 'shoe' })
   }
-  orb('jacket', 0.24, [0, 0.515, 0.02], [1.23, 1.0, 0.87], 'jacket')
-  orb('shirt', 0.202, [0, 0.49, -0.08], [1.06, 1.04, 0.81], 'shirt')
+  orb('jacket', 0.24, [0, suit ? 0.545 : 0.515, 0.02], suit ? [1.04, 0.8, 0.8] : [1.23, 1.0, 0.87], 'jacket')
+  orb('shirt', suit ? 0.224 : 0.202, suit ? [0, 0.455, -0.1] : [0, 0.49, -0.08], suit ? [1.16, 1.12, 0.95] : [1.06, 1.04, 0.81], 'shirt')
+  if (suit) for (const y of [0.41, 0.455, 0.5]) tube('fold', [-0.19, -0.095, 0, 0.095, 0.19].map(x => [x, y, -0.1 - 0.213 * Math.sqrt(Math.max(0, 1 - (x / 0.26) ** 2 - ((y - 0.455) / 0.251) ** 2)) - 0.004]), 0.005)
   yield
   const fronts = [[0.715, 0.09, 0.19, -0.12, -0.08], [0.655, 0.12, 0.227, -0.193, -0.10],
     [0.555, 0.15, 0.255, -0.225, -0.088], [0.46, 0.16, 0.246, -0.237, -0.07],
@@ -8593,13 +8720,21 @@ function* vitoSteps(H, skin) {
   tube('seam', [[-0.11, 0.393, -0.194], [0, 0.377, -0.218], [0.10, 0.388, -0.196]], 0.004, 'hem')
   yield
   for (const side of [-1, 1]) {
-    add({ g: ['tube', [[side * 0.15, 0.595, -0.02], [side * 0.26, 0.523, -0.059], [side * 0.252, 0.501, -0.103]], [0.068, 0.048], 12, 12], m: 'jacket', tag: 'sleeve' })
-    tube('skin', [[side * 0.255, 0.51, -0.085], [side * 0.235, 0.457, -0.19], [side * 0.16, 0.476, -0.29]], 0.044, 'forearm')
-    orb('skin', 0.043, [side * 0.155, 0.477, -0.29], [1, 0.85, 1], 'hand')
+    add({ g: ['tube', [[side * 0.15, 0.595, -0.02], [side * 0.26, 0.523, -0.059], [side * 0.252, 0.501, -0.103]], suit ? [0.056, 0.039] : [0.068, 0.048], 12, 12], m: 'jacket', tag: 'sleeve' })
+    if (sv('handR')) add({ g: S(side > 0 ? 'handR' : 'handL'), m: 'skin', tag: 'hand' })       // the forearm and the hand round the grip
+    else {
+      tube('skin', [[side * 0.255, 0.51, -0.085], [side * 0.235, 0.457, -0.19], [side * 0.16, 0.476, -0.29]], 0.044, 'forearm')
+      orb('skin', 0.043, [side * 0.155, 0.477, -0.29], [1, 0.85, 1], 'hand')
+    }
   }
   yield
-  orb('skin', 0.117, [0, 0.803, -0.035], [1.08, 1.07, 0.96], 'face')
-  add({ mirror: true, g: ['sphere', 0.027], m: 'skin', p: [0.12, 0.817, -0.035], s: [0.62, 1, 0.8], tag: 'ear' })
+  if (sv('face')) {                                  // the head, ears and all; behind it the code's head, its back half, where the beard wraps round
+    add({ g: S('face'), m: 'skin', tag: 'face' })
+    add({ g: ['sphere', 0.117, 16, 12, 0, Math.PI], m: 'skin', p: [0, 0.803, -0.035], s: [1.04, 1.03, 0.96], tag: 'face' })
+  } else {
+    orb('skin', 0.117, [0, 0.803, -0.035], [1.08, 1.07, 0.96], 'face')
+    add({ mirror: true, g: ['sphere', 0.027], m: 'skin', p: [0.12, 0.817, -0.035], s: [0.62, 1, 0.8], tag: 'ear' })
+  }
   const jaw = (angle, u, inset = 0) => {
     const side = Math.abs(Math.sin(angle)), swell = Math.sin(u * Math.PI)
     const top = 0.742 + 0.082 * side ** 0.7, bottom = 0.670 + 0.064 * side ** 1.6 + 0.002 * Math.cos(angle * 30)
@@ -8693,7 +8828,7 @@ function* vitoSteps(H, skin) {
   K.add({ g: ['tube', edge, 0.004, 64, 6, true], m: 'brim', tag: 'billEdge' }, peak)
   yield
   const front = K.root.children.length
-  box('basket', [0.23, 0.14, 0.14], [0, 0.371, -0.386], 0.015, 'basket')
+  box('basket', [0.23, 0.14, 0.14], [0, 0.371, -0.386], 0.015, 'basket', 'basket')
   box('tyre', [0.21, 0.012, 0.12], [0, 0.444, -0.386], 0.01)
   for (const x of [-0.06, 0, 0.06]) box('ivory', [0.018, 0.074, 0.007], [x, 0.38, -0.46], 0.002)
   add({ g: ['box', 0.09, 0.10, 0.045, 0.007, 0.84], m: 'denim', p: [-0.043, 0.468, -0.38], r: [0, 0, -0.2], tag: 'snackBag' })
@@ -8747,7 +8882,7 @@ function buildVitoScreen(H, skin) {
   const line = (points, radius = 0.007, m = 'ink') =>
     add({ g: ['tube', points.map(p => [p[0], p[1], -0.244]), radius, 16, 6], m })
   const panel = (m, pts, z, tag) => add({ g: ['outline', pts, 0.004], m, p: [0, 0, z], tag })
-  add({ g: ['round', 0.66, 0.80, 0.33, 0.095], m: 'shell', p: [0, 0.44, 0], tag: 'casing' })
+  add({ g: servedPart('vitoscreen', 'casing', ['round', 0.66, 0.80, 0.33, 0.095]), m: 'shell', p: [0, 0.44, 0], tag: 'casing' })
   add({ g: ['round', 0.61, 0.75, 0.065, 0.09], m: 'rim', p: [0, 0.44, -0.167], tag: 'bezel' })
   add({ g: ['round', 0.55, 0.69, 0.035, 0.07], m: 'screen', p: [0, 0.44, -0.207], tag: 'screen' })
   add({ g: ['outline', [[-0.045, 0], [0.04, 0], [0.032, 0.10], [0.01, 0.16], [-0.018, 0.17], [-0.036, 0.14], [-0.003, 0.08], [-0.01, 0.025], [-0.048, 0.02]], 0.045], m: 'gold', p: [0, 0.82, 0], tag: 'fin' })
@@ -9054,6 +9189,7 @@ function wearServed(root, B, key) {
   let rig
   root.traverse(n => { if (n.isSkinnedMesh && !rig) rig = n })
   rig.geometry = builtGeo.get(key + ':rig') || shareGeo(key + ':rig', rig.geometry.clone().setIndex([]))
+  rig.visible = false
   rig.material = rig.material.clone()
   const at = n => bindAt(rig, rig.skeleton.bones.findIndex(b => b.name === n))
   const X = B.rig.userData, cols = ps => new THREE.Matrix4().set(...[0, 1, 2].flatMap(k => ps.map(p => p[k])), 1, 1, 1, 1)
@@ -9137,6 +9273,7 @@ function loadModels() {
     }
   }
   loadBodies().catch(e => console.warn('bodies unavailable:', e && e.message))
+  loadServed().catch(e => console.warn('served parts unavailable:', e && e.message))
   loadCars().catch(e => console.warn('cars unavailable:', e && e.message))
 }
 
@@ -10539,7 +10676,7 @@ function prepareStep() {
 
 function clearPrepared(keepRoster = false) {
   for (const [key, { a }] of prepReady) {
-    if (keepRoster && (GAME.rows.visitors().some(p => GAME.looks.key(...p) === key) || [...roster].some(([id, p]) => !avatars.has(id) && GAME.looks.key(id, p.cid) === key))) continue
+    if (keepRoster && [...roster].some(([id, p]) => !avatars.has(id) && GAME.looks.key(id, p.cid) === key)) continue
     a.mixer?.stopAllAction(); freeMaterials(a.mesh); prepReady.delete(key)
   }
 }
@@ -10986,7 +11123,7 @@ function drawHealth(id, hp) {
   if (!a) return
   a.healthHp = hp
   const fraction = Number.isFinite(hp) ? Math.max(0, Math.min(1, hp / (a.spec.hp || CHARS[a.cid].hp))) : 1
-  const level = fraction > 0.8 ? 0 : fraction > 0.5 ? 1 : fraction > 0.25 ? 2 : 3
+  const level = Math.max(a.spec.bloody | 0, fraction > 0.8 ? 0 : fraction > 0.5 ? 1 : fraction > 0.25 ? 2 : 3)
   const artie = a.animate === animateArtie, screen = a.animate === animateVitoScreen, sam = costumeOf(GAME.looks.key(id, a.cid)).blood
   if (artie || sam) {
     a.damageParts ||= damagePartsOf(a, id)
@@ -13575,6 +13712,7 @@ function pickShoot(id, cid, cv, x0, x1, head, yaw, t) {
   const R = renderer, pr = R.getPixelRatio(), rt = R.getRenderTarget(), auto = R.autoClear, test = R.getScissorTest()
   R.getViewport(S.vp); R.getScissor(S.sc)
   S.scene.add(mesh)
+  if (C.bloody) drawHealth(id, C.hp)
   try {
     mesh.position.set(0, 0, 0); mesh.rotation.set(0, yaw, 0)
     setAnim(id, 0, 1 / 60, t)
@@ -15195,7 +15333,7 @@ const pickSides = () => [...Object.keys(SIDES), ''], sideColor = C => (SIDES[C.s
 // a hidden form (a shift) stands for the row it shifts from
 const pickAll = () => pickSides().flatMap(pickEntries), pickBase = c => CHARS[c]?.hidden ? CHARS.findIndex(C => !C.hidden && C.shift === c) : c
 const pickEntry = c => (c = pickBase(c), pickAll().find(k => k === c || teamOf(c) && teamOf(k) === teamOf(c)))
-const pickName = i => teamOf(i) ? TEAMS[teamOf(i)].name : CHARS[i].card || CHARS[i].name
+const pickName = i => teamOf(i) ? TEAMS[teamOf(i)].name : CHARS[i].outfit ? gameText(CHARS[i].card) : CHARS[i].card || CHARS[i].name
 const playing = i => { const c = !joinPick() && selfChar(); return !!c && pickEntry(c.cid) === i }
 function paintPicker() {
   const wrap = el('#pick-cards'), live = selfChar(), joining = joinPick(), now = live ? live.cid : myCid
@@ -17472,6 +17610,7 @@ const GUEST_MSGS = {
   lag: { apply: d => { onLag(d.n) } },
   say: { apply: d => { GAME.audio.say(String(d.w), d.i | 0) } },
   sys: { apply: d => { sysMsg(String(d.m || '').slice(0, 200)) }, validate: d => hostLine() ? d : null },
+  outfit: { apply: d => { GAME.rows.outfit(d.o) }, validate: d => typeof d.o === 'string' && d.o.length <= 16 ? d : null },
   kf: { validate: d => {
     const id = n => Number.isInteger(n) && n >= 0 && n < 1e6, num = n => Number.isInteger(n) && n >= 0 && n <= 999 ? n : 0
     return hostLine() && id(d.a) && id(d.v) ? { a: d.a, v: d.v, w: String(d.w ?? '').slice(0, 24), m: num(d.m), s: num(d.s), x: num(d.x) } : null
@@ -18121,7 +18260,7 @@ function roundBots() {
   // a row the room has no place for now (a Superkiller doubled, a hero past this round's count): the latest in gives way
   for (const c of [...humans].reverse()) {
     const why = tdmRefusal(c.id, c.cid)
-    if (why) { moveTo(c, fallbackRow(c.id)); tell(c.id, '§e' + why + '. You play §f' + rowOf(c).name + '§e.') }
+    if (why) { moveTo(c, fallbackRow(c.id)); tell(c.id, gameText('tdmMoved', { why, name: rowOf(c).name })) }
   }
   const played = new Set(humans.map(c => rowOf(c).name)), heroes = humans.filter(c => sideOf(c) === TDM.hero).length
   spawnList(heroWant(BOTS.length).filter(i => !played.has(BOTS[i].name)).slice(0, Math.max(0, heroesFor(humans.length) - heroes)))
@@ -18144,7 +18283,7 @@ function roundCheck() {
   if (![...players.values()].some(c => !c.bot)) { matchLeft = timeLimit; return }
   if (!roundOn) return
   const hero = heroBody()
-  if (!hero || hero.dead > 0) return endMatch('The hero is down.')
+  if (!hero || hero.dead > 0) return endMatch([...players.values()].filter(c => sideOf(c) === TDM.hero).length > 1 ? 'The heroes are down.' : 'The hero is down.')
   if (roundSize && ![...players.values()].some(c => sideOf(c) === TDM.squad && !(c.dead > 0))) endMatch('The squad is down.')
 }
 
@@ -18163,7 +18302,7 @@ function setMode(m) {
   gameMode = m
   for (const c of players.values()) if (!c.bot && !sideOffered(sideOf(c))) moveTo(c, START)
   pushRoster()
-  waveAt = -1; waveGap = 0
+  waveAt = -1; waveGap = 0; newRun()
   timeLimit = minutesOf() * 60; matchLeft = timeLimit; heroMax = heroScale = 0
   if (m === 'ffa') spawnBots(BOT_COUNT)
   else if (m === 'tdm') resetMatch()
@@ -18172,12 +18311,13 @@ function setMode(m) {
 }
 
 function startWave(i) {
-  waveAt = i
+  waveAt = i; waveNo++
   const w = WAVES[i]
   if (hooked.wave) hookEmit('wave', { name: w.name, number: i + 1 })
   spawnList(picked(w.pick))
   for (const c of players.values())
     if (!c.bot) { c.spLeft = {}; restoreSpecial(c) }
+  grantOutfits()
   waveGap = WAVE_GAP_S
   announce('§e' + w.name)
   speak('announcer', i)
@@ -18193,6 +18333,93 @@ function stepWaves(dt) {
   if (waveGap > 0) { if (waveGap === WAVE_GAP_S) prepareRows(botPairs(picked(WAVES[(waveAt + 1) % WAVES.length].pick))); waveGap -= dt; return }
   if (waveGap > -WAVE_HOLD_S && prepQueue.some(q => !Array.isArray(q) || botPairs(picked(WAVES[(waveAt + 1) % WAVES.length].pick)).some(p => skinKey(...p) === skinKey(...q)))) { waveGap -= dt; return }
   startWave((waveAt + 1) % WAVES.length)
+}
+
+// waves: the run's clock, the wave's superkiller deaths, when each one down went down, and whether a wave is being fought
+let runT = 0, waveDeaths = 0, waveOn = false
+const downAt = new Map()
+// a wave's end: its revives gone, its count anew, and with `up` every superkiller down back
+function newWave(up) {
+  waveDeaths = 0; downAt.clear()
+  pickups = pickups.filter(p => !healOf(p)?.revive)
+  if (up) for (const c of players.values()) if (sideOf(c) === TDM.squad && c.dead > 0) { respawn(c); if (hooked.spawn) hookEmit('spawn', { who: hookWho(c) }) }
+}
+// a new run: everyone down back up, from its first wave
+function newRun() {
+  newWave(true); runT = 0; waveOn = false
+  waveAt = -1; waveGap = 0; waveNo = 0; outfitSent.clear()
+}
+// the City's roofs a pad reaches, in the chunks within R of (x, z): [x, roof y, z]
+const cityRoofs = new WeakMap()
+function roofsAround(x, z, R) {
+  const G = LV.grow, out = []
+  if (!G) return out
+  const cache = cityRoofs.get(G) || cityRoofs.set(G, new Map()).get(G), lo = v => Math.max(0, Math.floor((v - R + ARENA) / 96)), hi = v => Math.min(G.S - 1, Math.floor((v + R + ARENA) / 96))
+  for (let ci = lo(x); ci <= hi(x); ci++) for (let cj = lo(z); cj <= hi(z); cj++) {
+    let at = cache.get(ci * G.S + cj)
+    if (!at) cache.set(ci * G.S + cj, at = cityChunk(G.seed, G.S, ci, cj, undefined, undefined, undefined, G).spot[2])
+    out.push(...at)
+  }
+  return out
+}
+// the City's hiding spots of the given kinds within R of (x, z): [x, floor y, z, kind]
+const citySewerSpots = new WeakMap()
+function hidesAround(x, z, R, kinds) {
+  const near = s => Math.hypot(s[0] - x, s[2] - z) <= R, out = []
+  if (kinds.includes('roof')) out.push(...roofsAround(x, z, R).filter(near).map(s => [s[0], s[1], s[2], 'roof']))
+  if (kinds.includes('sewer') && LV.sewer) {
+    const all = citySewerSpots.get(LV) || citySewerSpots.set(LV, GAME.sewers.spots(LV.sewer.seed, LV.sewer.S)).get(LV)
+    out.push(...all.filter(near).map(s => [s[0], s[1], s[2], 'sewer']))
+  }
+  if (kinds.includes('inside')) out.push(...GAME.interiors.spots().map(p => [p.x, p.y, p.z, 'inside']).filter(near))
+  return out
+}
+// a revive on the map: hidden near where c fell (the row's `hide` kinds), else on the ground at a spawn spot
+function dropRevive(c) {
+  const H = reviveRow(), free = s => !pickups.some(p => Math.hypot(p.x - s[0], p.z - s[2]) < 2), any = a => a[Math.random() * a.length | 0]
+  const off = s => Math.hypot(s[0] - c.x, s[2] - c.z)
+  const spot = c && any(hidesAround(c.x, c.z, H.revive.near, H.revive.hide).filter(free).sort((a, b) => off(a) - off(b)).slice(0, 3))
+  let at
+  if (spot) at = [spot[0], spot[1] + 0.75, spot[2]]
+  else { const s = any(SPAWNS.filter(free).length ? SPAWNS.filter(free) : SPAWNS); at = [s[0], s[1] - staticRay(s[0], s[1], s[2], 0, -1, 0, 30) + 0.75, s[2]] }
+  pickups.push({ x: at[0], y: at[1], z: at[2], gun: 0, pow: 0, heal: reviveId(), respawn: 0, dropped: true })
+  announce(spot ? gameText('reviveHidden', { where: TEXT.hideWhere[spot[3]] }) : TEXT.reviveOut)
+}
+// c takes a revive: the superkiller down longest stands up beside it, whole; false if none is down
+function reviveFor(c) {
+  const m = [...downAt].sort((a, b) => a[1] - b[1]).map(([id]) => players.get(id)).find(m => m && m.dead > 0)
+  if (!m) return false
+  const d = c.r + m.r + 0.4, a = [1, 3, 2, 0].map(k => c.yaw + k * Math.PI / 2).find(a => staticRay(c.x, c.y, c.z, Math.cos(a), 0, Math.sin(a), d + m.r) >= d + m.r)
+  const r = a === undefined ? 0 : d, foot = c.y - c.h - c.r
+  respawn(m, [c.x + Math.cos(a || 0) * r, foot + m.h + m.r + 0.05, c.z + Math.sin(a || 0) * r])
+  downAt.delete(m.id)
+  if (hooked.spawn) hookEmit('spawn', { who: hookWho(m) })
+  announce(gameText('reviveBack', { name: nameOf(m) }))
+  return true
+}
+// a superkiller joining while others fight a wave comes in down, as the downed do, and up with them when it ends
+function joinWave(c) {
+  if (gameMode !== 'waves' || !waveOn || sideOf(c) !== TDM.squad || ![...players.values()].some(o => o !== c && !o.bot && sideOf(o) === TDM.squad)) return
+  c.dead = RESPAWN_S; downAt.set(c.id, runT)
+}
+// each host tick in waves: a wave cleared brings the downed back; a superkiller newly down is counted (where revives hide, one
+// hidden for it); elsewhere, once `after` have died in the wave, a revive while one is down and none is out; the squad all
+// down ends the run
+function stepRun(dt) {
+  if (gameMode !== 'waves' || resultsLeft > 0) return
+  const R = reviveRow()?.revive, hiding = !!R?.perDeath && !!LV.grow
+  runT += dt
+  const on = [...players.values()].some(c => c.bot && !c.bot.squad)
+  if (waveOn && !on) newWave(true)
+  waveOn = on
+  const squad = [...players.values()].filter(c => sideOf(c) === TDM.squad)
+  for (const id of [...downAt.keys()]) if (!(players.get(id)?.dead > 0)) downAt.delete(id)
+  for (const c of squad) if (c.dead > 0 && !downAt.has(c.id)) {
+    downAt.set(c.id, runT); waveDeaths++
+    if (hiding) dropRevive(c)
+  }
+  if (squad.length && squad.every(c => c.dead > 0)) return endMatch('The squad is down.')
+  if (R && !hiding && waveDeaths >= R.after && downAt.size && !pickups.some(p => healOf(p)?.revive)) dropRevive()
 }
 
 const smashRow = () => [...BOTS, ...CHARS].find(R => R.smash)
@@ -18437,6 +18664,7 @@ const HOST_PHASES = {
   }
 
   stepWaves(dt)
+  stepRun(dt)
   stepSquad()
   present(all)
   stepPickups(dt, all)
@@ -18512,7 +18740,7 @@ GAME.lifecycle = {
   empty() { resetMatch() },
   // a snapshot's match fields, in their wire order, and a guest taking them
   snapshot: () => ({
-    pk: pickups.filter(p => p.respawn <= 0).map(p => [p.x, p.y, p.z, p.gun, p.pow, p.heal]),
+    pk: pickups.filter(p => p.respawn <= 0).map(pkWire),
     mo: resultsLeft > 0 ? r2(resultsLeft) : 0,
     ml: timeLimit ? r2(matchLeft) : 0,
     fl: gameMode === 'ffa' ? fragLimit : 0, md: gameMode, bl: settings.balance !== false ? 1 : 0, ...gameMode === 'tdm' && { hm: heroMax, hf: heroScale },
@@ -18521,6 +18749,7 @@ GAME.lifecycle = {
   takeItems(d) {
     // pk absent = unchanged, not none; unordered, so versioned by packet time
     if (Array.isArray(d.pk) && d.t > pkAt) { snapPk = d.pk; pkAt = d.t }
+    if (snapPk === d.pk) snapPk = d.pk.flatMap(pkTake)
     // whole triples within the host's max, else dropped entire; absent = none, so versioned by packet time too
     if (d.t > twAt) {
       twAt = d.t
@@ -18539,18 +18768,8 @@ GAME.lifecycle = {
     heroScale = gameMode === 'tdm' ? clamp(+d.hf || 0, 0, HERO_MAX) : 0
     if (d.bl !== undefined) balanceOn = !!d.bl
     setEvent(typeof d.ev === 'string' && EVENTS.find(E => E.name === d.ev) || null)
-    if (joinPick() && !pickOpen && phase === 'playing') { openCharPick(); prepareRows(gameMode === 'waves' ? botPairs(waveOrder()) : GAME.rows.visitors()) }
+    if (joinPick() && !pickOpen && phase === 'playing') { openCharPick(); prepareRows(gameMode === 'waves' ? botPairs(waveOrder()) : []) }
   },
-}
-
-function rollRare(c) {
-  if (!isHost || gameMode !== 'ffa') return
-  BOTS.forEach((B, i) => {
-    if (!B.visits || players.has(BOT_ID0 + i) || Math.floor(Math.random() * RARE_ONE_IN)) return
-    addBot(i)
-    if (conns.size) pushRoster()
-    announce('§f' + B.name + ' §7turned up.')
-  })
 }
 
 // not predicted on the guest (rebuilds the body)
@@ -18604,6 +18823,7 @@ function switchChar(c, cid) {
 // a downed player's team: those still up hold its respawn, and after TEAM_BEAT it swaps into the nearest free one
 function teamDown(c, dt) {
   if (gameMode === 'tdm') c.dead = RESPAWN_S      // team deathmatch: down until the round ends
+  if (gameMode === 'waves' && sideOf(c) === TDM.squad) c.dead = RESPAWN_S      // waves: a superkiller has one life a wave
   const team = isHost ? onTeam(c) : [], up = team.filter(m => m.dead <= 0)
   if (up.length) {
     c.dead = RESPAWN_S
@@ -18611,12 +18831,11 @@ function teamDown(c, dt) {
   }
   return team
 }
-// back up: a visitor leaves, else its team respawns together (the player last), rebalanced, and a rare bot may turn up
+// back up: a rare or waves bot leaves, else its team respawns together (the player last), rebalanced
 function teamUp(c, team) {
   if (c.bot && c.owner === undefined && !c.bot.squad && (c.bot.rare || gameMode === 'waves')) leaveRare(c)
   else {      // player last
     for (const m of team.length ? team.filter(m => m.dead > 0 || m === c).sort((a, b) => !a.bot - !b.bot) : [c]) { m.downT = 0; if (isHost && !m.bot) rebalance(m); respawn(m); if (hooked.spawn) hookEmit('spawn', { who: hookWho(m) }) }
-    rollRare(c)
   }
 }
 GAME.death = { down: teamDown, up: teamUp }
@@ -18695,17 +18914,49 @@ GAME.commands = {
               sysMsg('§7Enemies: §f' + BOT_COUNT) } },
 }
 // why the room refuses character i to this player now, '' if it doesn't
+// the outfits this device has, by id: unlocked by the host's word, kept in localStorage. A player can edit its own storage to
+// unlock one here (cosmetic only: nothing is gained that another player could not see anyway)
+const OUTFIT_KEY = 'arena.outfits.v1'
+let outfitHave = null
+function outfitLoad() {
+  if (outfitHave) return outfitHave
+  outfitHave = {}
+  try { const o = JSON.parse(localStorage.getItem(OUTFIT_KEY) || '{}'); if (o && typeof o === 'object') for (const k in o) if (OUTFITS.some(O => O.id === k)) outfitHave[k] = +o[k] || 1 } catch (e) {}
+  return outfitHave
+}
+const outfitOwned = C => !C.outfit || !!outfitLoad()[C.outfit]
+function outfitReceive(id) {
+  const O = OUTFITS.find(O => O.id === id), have = outfitLoad()
+  if (!O || have[id]) return
+  have[id] = Date.now()
+  try { localStorage.setItem(OUTFIT_KEY, JSON.stringify(have)) } catch (e) {}
+  sysMsg(gameText('outfitUnlocked', { card: gameText(O.card) }))
+  if (pickOpen) paintPicker()
+}
+// host: each wave started tells the alive players its outfits, once a match
+const outfitSent = new Map()
+function grantOutfits() {
+  for (const c of players.values()) {
+    if (c.bot || c.dead > 0) continue
+    const sent = outfitSent.get(c.id) || outfitSent.set(c.id, new Set()).get(c.id)
+    for (const O of OUTFITS) {
+      if (O.wave > waveNo || sent.has(O.id)) continue
+      sent.add(O.id)
+      if (c.id === myId) outfitReceive(O.id)
+      else { const p = conns.get(c.id); if (p && p.open) try { p.send(JSON.stringify({ k: 'outfit', o: O.id })) } catch (e) {} }
+    }
+  }
+}
 function refusal(i) {
   const C = CHARS[i], L = sideLocked(C.side, pickSelf())
+  if (!outfitOwned(C)) return gameText('outfitWave', { n: C.wave })
   const why = offEvent(C) ? '' : tdmRefusal(pickSelf(), i)
   if (why) return why
   return offEvent(C) ? C.event + ' only' : !sideOffered(C.side) ? roomName() + ': ' + Object.keys(SIDES).filter(sideOffered).map(k => SIDES[k].name).join(', ') + ' only'
     : L.locked ? 'Balanced: ' + L.mine + ' v ' + L.theirs : taken(C.team, pickSelf()) ? 'Taken' : ''
 }
 // a joining player's row: the one it asked for, unless this room cannot take it (told why), and its team fielded once it stands
-const visitors = () => gameMode === 'ffa' ? picked({ visits: true }) : []
 GAME.rows = {
-  visitors: () => botPairs(visitors()),
   admit(id, asked) {
     let cid = clamp(asked | 0, 0, CHARS.length - 1)
     if (CHARS[cid].hidden) cid = START
@@ -18720,18 +18971,20 @@ GAME.rows = {
     const why = tdmRefusal(id, cid)
     if (why) {
       cid = fallbackRow(id)
-      tell(id, '§e' + why + '. You play §f' + CHARS[cid].name + '§e.')
+      tell(id, gameText('tdmMoved', { why, name: CHARS[cid].name }))
     }
     return cid
   },
-  joined(c, cid) { if (CHARS[cid].team && gameMode !== 'tdm') fieldTeam(c), teamsChanged() },
+  joined(c, cid) { if (CHARS[cid].team && gameMode !== 'tdm') fieldTeam(c), teamsChanged(); joinWave(c) },
   switch: switchChar,
   refuse: noSwap,
   refusal,
+  outfit: outfitReceive,
+  owned: outfitOwned,
   // what the pick screen's room note adds
-  pickNote: () => gameMode === 'tdm' ? ' · ' + heroWord(heroesFor(humanRows(pickSelf()).length + 1)) + ', one of each Superkiller; a pick plays from the next round' : balanced() ? ' · sides balanced' : '',
+  pickNote: () => gameMode === 'tdm' ? gameText('tdmPickNote', { heroes: heroWord(heroesFor(humanRows(pickSelf()).length + 1)) }) : balanced() ? ' · sides balanced' : '',
   // the bots whose looks the menu prepares for a player on this row
-  menuBots: cid => gameMode === 'ffa' || !sideOffered(CHARS[cid].side) ? [...heroWant(), ...SQUAD, ...visitors()] : waveOrder(),
+  menuBots: cid => gameMode === 'ffa' || !sideOffered(CHARS[cid].side) ? [...heroWant(), ...SQUAD] : waveOrder(),
   cid: v => clamp(v | 0, 0, CHARS.length - 1),
   of: cid => CHARS[cid],
 }
@@ -19687,14 +19940,14 @@ function drawHud(me, others, t) {
   const clock = matchLeft > 0
     ? '  ·  ' + mmss(matchLeft)
     : ''
-  // team deathmatch: the squad still up of its size, and the hero's health
+  // team deathmatch: the squad still up of its size, and each hero's health
   hud('tdm', document.body, '.tdm', gameMode === 'tdm')
   if (gameMode === 'tdm') {
     const all = [{ id: myId, cid: me.cid, dead: me.dead, hp: me.hp }, ...others], squad = all.filter(o => rowFor(o.id, o.cid).side === TDM.squad)
-    const heroes = all.filter(o => isHero(o.id, o.cid)), hero = heroes.find(o => !(o.dead > 0)) || heroes[0]
+    const bar = o => '  ·  ' + esc(roster.get(o.id)?.name || rowFor(o.id, o.cid).name) + ' <span class="bar"><span style="width:' +
+      (o.dead > 0 ? 0 : clamp(o.hp / fullHp(o.id, o.cid), 0, 1) * 100).toFixed(1) + '%"></span></span>'
     hud('round', el('#round'), 'innerHTML', gameText('roundSquad', { up: squad.filter(o => !(o.dead > 0)).length, all: squad.length }) +
-      (hero ? '  ·  ' + esc(roster.get(hero.id)?.name || rowFor(hero.id, hero.cid).name) + ' <span class="bar"><span style="width:' +
-        (hero.dead > 0 ? 0 : clamp(hero.hp / fullHp(hero.id, hero.cid), 0, 1) * 100).toFixed(1) + '%"></span></span>' : ''))
+      all.filter(o => isHero(o.id, o.cid)).map(bar).join(''))
   }
   const use = liftOf(me) > 0 ? 'lift' : objs.some(p => takeable(me, p)) ? 'use' : sewerHint(me)
   const K = padLast ? padHints() : HINT_KEYS
@@ -19768,6 +20021,14 @@ function drawBlip(g, o, x, y, R, mine) {
   if (lead && !rim) { g.strokeStyle = LEAD_GOLD; g.lineWidth = 2; g.beginPath(); g.arc(0, 0, 6.5, 0, 2 * Math.PI); g.stroke() }
   g.restore()
 }
+// a place's mark: a ringed dot, or past the rim an arrow on it pointing its way
+function drawMark(g, x, y, R, color) {
+  const d = Math.hypot(x, y), rim = d > R - 5, k = rim ? (R - 5) / d : 1
+  g.save(); g.translate(R + x * k, R + y * k); g.fillStyle = g.strokeStyle = color; g.beginPath()
+  if (rim) { g.rotate(Math.atan2(x, -y)); g.moveTo(0, -6); g.lineTo(5, 4.5); g.lineTo(0, 2); g.lineTo(-5, 4.5); g.closePath(); g.fill() }
+  else { g.arc(0, 0, 2.5, 0, 2 * Math.PI); g.fill(); g.lineWidth = 1.5; g.beginPath(); g.arc(0, 0, 5.5, 0, 2 * Math.PI); g.stroke() }
+  g.restore()
+}
 function drawRadar(me, others, t) {
   const on = phase === 'playing' && !menuUp() && !(me.dead > 0) && (bigLevel() || !!(seatOf(me) || me.ride)) &&
     SIDES[GAME.participantOf?.(me)?.side]?.radar !== false
@@ -19790,6 +20051,8 @@ function drawRadar(me, others, t) {
   g.setTransform(1, 0, 0, 1, 0, 0)
   const mine = sideOf(me)
   for (const o of others) if (!(o.dead > 0)) drawBlip(g, o, ...turn((o.x - me.x) * s, (o.z - me.z) * s), R, mine)
+  const RV = reviveRow()
+  if (RV && gameMode === 'waves' && mine === TDM.squad) for (const p of isHost ? hostPickups() : snapPk) if (p[5] === reviveId()) drawMark(g, ...turn((p[0] - me.x) * s, (p[2] - me.z) * s), R, css(RV.radar))
   g.restore()
   g.strokeStyle = '#8b949e'; g.lineWidth = 2; g.beginPath(); g.arc(R, R, R - 1, 0, 2 * Math.PI); g.stroke()
   const [fx, fy] = turn(-Math.sin(me.yaw), -Math.cos(me.yaw)), [nx, ny] = turn(0, -1)
@@ -19915,6 +20178,7 @@ class Arena extends ENABLE3D.Scene3D {
 const pickCard = (wrap, d) => { for (const c of wrap.children) c.classList.remove('sel'); d.classList.add('sel') }
 // a team shows as its first member
 const pickEntries = side => PICKABLE.filter(i => !offEvent(CHARS[i]) && (SIDES[CHARS[i].side] ? CHARS[i].side : '') === side && (!CHARS[i].team || CHARS.findIndex(C => C.team === CHARS[i].team) === i))
+  .flatMap(i => [i, ...CHARS.flatMap((C, k) => C.outfit && C.name === CHARS[i].name ? [k] : [])])
 const teamOf = i => CHARS[i].team, members = t => CHARS.flatMap((C, i) => C.team === t ? [i] : [])
 let pickedLevel = 0
 // what a Host draws first: the pick and its team, the first wave or the free-for-all's bots
@@ -19952,7 +20216,7 @@ el('#host-btn').disabled = true
 el('#serve-btn').disabled = true
 el('#join-btn').disabled = true
 loadSettings()
-if (PICKABLE.includes(settings.cid)) myCid = settings.cid
+if (PICKABLE.includes(settings.cid) || CHARS[settings.cid]?.outfit && GAME.rows.owned(CHARS[settings.cid])) myCid = settings.cid
 buildLevelCards()
 const nameIn = el('#name-in')
 const NAME_1 = ('Quick Lucky Grim Brave Sly Iron Wild Calm Neon Dusty Rusty Jade ' +
