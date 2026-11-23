@@ -552,50 +552,50 @@
     </div>
   </div>
   <div id="stage-host" style="display:none">
-    <div class="sub">Your room is open. Click below to copy or reveal the code:</div>
-    <div id="code">•••••• &nbsp;<span style="font-size:13px;letter-spacing:0;color:#7d8590">click</span></div>
+    <div class="sub" data-text="hostOpen"></div>
+    <div id="code">•••••• &nbsp;<span style="font-size:13px;letter-spacing:0;color:#7d8590" data-text="clickWord"></span></div>
   </div>
   <div id="stage-server" style="display:none">
     <div class="sub" id="srv-head"></div>
     <table id="srv-players"></table>
     <div id="srv-stats"></div>
     <div class="row" id="srv-match">
-      <span class="l">Level</span>
-      <button id="srv-level" title="Switch level: the round restarts in the new one"></button>
-      <span class="l">Frags</span>
-      <button id="srv-frags-less" aria-label="Lower the frag limit">−</button>
+      <span class="l" data-text="srvLevelLabel"></span>
+      <button id="srv-level" data-title="switchLevelTip"></button>
+      <span class="l" data-text="srvFragsLabel"></span>
+      <button id="srv-frags-less" data-label="lowerFrags">−</button>
       <span id="srv-frags"></span>
-      <button id="srv-frags-more" aria-label="Raise the frag limit">+</button>
-      <span class="l">Minutes</span>
-      <button id="srv-time-less" aria-label="Shorter matches">−</button>
+      <button id="srv-frags-more" data-label="raiseFrags">+</button>
+      <span class="l" data-text="srvMinutes"></span>
+      <button id="srv-time-less" data-label="shorterMatches">−</button>
       <span id="srv-time"></span>
-      <button id="srv-time-more" aria-label="Longer matches">+</button>
+      <button id="srv-time-more" data-label="longerMatches">+</button>
     </div>
     <div class="row" id="srv-ctl">
-      <span class="l">Enemies</span>
-      <button id="srv-less" aria-label="Fewer enemies">−</button>
+      <span class="l" data-text="srvEnemies"></span>
+      <button id="srv-less" data-label="fewerEnemies">−</button>
       <span id="srv-bots"></span>
-      <button id="srv-more" aria-label="More enemies">+</button>
-      <button id="srv-stop" class="danger">Stop server</button>
+      <button id="srv-more" data-label="moreEnemies">+</button>
+      <button id="srv-stop" class="danger" data-text="stopServer"></button>
     </div>
   </div>
-  <div id="status">Loading physics…</div>
-  <div id="graphics-notice" role="status" aria-live="polite" hidden><span id="graphics-message"></span><button id="graphics-reload" hidden>Reload game</button></div>
-  <div id="linkinfo" hidden><button id="linkinfo-show" aria-expanded="false" aria-controls="linkinfo-text">Details</button> <button id="linkinfo-copy">Copy</button><pre id="linkinfo-text" hidden></pre></div>
+  <div id="status" data-text="loadingPhysics"></div>
+  <div id="graphics-notice" role="status" aria-live="polite" hidden><span id="graphics-message"></span><button id="graphics-reload" hidden data-text="reloadGame"></button></div>
+  <div id="linkinfo" hidden><button id="linkinfo-show" aria-expanded="false" aria-controls="linkinfo-text" data-text="details"></button> <button id="linkinfo-copy" data-text="copy"></button><pre id="linkinfo-text" hidden></pre></div>
   <div id="jittip" style="display:none"><span id="jittip-t">Edge's 'Enhance your security' is slowing this game down. To fix it: Settings → Privacy, search, and services → Enhance your security on the web → Exceptions → Add a site → paste this page's address.</span><button id="jittip-copy" title="Copy this page's address">copy</button><button id="jittip-x" aria-label="Dismiss">×</button></div>
 </div></div>
 
 <div id="hud"></div>
 <div id="round"></div>
-<div id="vote"><div id="vote-text"></div><div class="help">Y/N to vote · no vote = no objection</div>
-  <button id="vote-yes" class="b">Yes</button><button id="vote-no" class="b">No</button><button id="vote-cancel">Cancel</button></div>
+<div id="vote"><div id="vote-text"></div><div class="help" data-text="voteHelp"></div>
+  <button id="vote-yes" class="b" data-text="yes"></button><button id="vote-no" class="b" data-text="no"></button><button id="vote-cancel" data-text="cancel"></button></div>
 <div id="reticle"></div>
 <div id="hitmark"></div>
 <canvas id="hurt"></canvas>
 <div id="killmark"></div>
 <div id="feed"></div>
 <div id="callout"></div>
-<div id="hp"><canvas id="radar" width="150" height="150"></canvas><div id="teamstrip"></div><div id="hpbar"><div id="hpfill" style="width:100%"></div></div><div id="fuelbar"><div id="fuelfill"></div></div><div id="sprinting">SPRINT</div></div>
+<div id="hp"><canvas id="radar" width="150" height="150"></canvas><div id="teamstrip"></div><div id="hpbar"><div id="hpfill" style="width:100%"></div></div><div id="fuelbar"><div id="fuelfill"></div></div><div id="sprinting" data-text="btnSprint"></div></div>
 <div id="veh"><span id="vspd">0</span> <span class="u"></span><div id="vname"></div>
   <div id="vhpbar"><div id="vhpfill"></div></div><div id="radio"></div></div>
 <div id="gun">
@@ -604,10 +604,10 @@
   <div class="g"></div><div class="a"></div>
   <div id="bag"></div>
 </div>
-<div id="tab"><div class="tabinner"><h3 id="tabhead">STANDINGS</h3><table id="tabrows"></table>
+<div id="tab"><div class="tabinner"><h3 id="tabhead" data-text="standings"></h3><table id="tabrows"></table>
   <div id="prof"></div></div></div>
 <div id="results"><div class="tabinner">
-  <h3 id="restitle">MATCH OVER</h3><table id="resrows"></table>
+  <h3 id="restitle" data-text="matchOver"></h3><table id="resrows"></table>
   <div id="resnext"></div>
   <div id="reslevels" class="cards"></div>
 </div></div>
@@ -615,21 +615,21 @@
 
 <div id="touch">
   <div id="stick"><div id="knob"></div></div>
-  <div class="tbtn" id="btn-fire">FIRE</div>
-  <div class="tbtn" id="btn-jump">JUMP</div>
-  <div class="tbtn" id="btn-descend">DOWN</div>
-  <div class="tbtn" id="btn-alt">ATK</div>
-  <div class="tbtn" id="btn-swap">WPN</div>
-  <div class="tbtn" id="btn-team">TEAM</div>
-  <div class="tbtn" id="btn-shift">FORM</div>
-  <div class="tbtn" id="btn-use">USE</div>
-  <div class="tbtn" id="btn-sprint">SPRINT</div>
-  <div class="tbtn" id="btn-radio">RADIO</div>
+  <div class="tbtn" id="btn-fire" data-text="btnFire"></div>
+  <div class="tbtn" id="btn-jump" data-text="btnJump"></div>
+  <div class="tbtn" id="btn-descend" data-text="btnDown"></div>
+  <div class="tbtn" id="btn-alt" data-text="btnAtk"></div>
+  <div class="tbtn" id="btn-swap" data-text="btnWpn"></div>
+  <div class="tbtn" id="btn-team" data-text="btnTeam"></div>
+  <div class="tbtn" id="btn-shift" data-text="btnForm"></div>
+  <div class="tbtn" id="btn-use" data-text="btnUse"></div>
+  <div class="tbtn" id="btn-sprint" data-text="btnSprint"></div>
+  <div class="tbtn" id="btn-radio" data-text="btnRadio"></div>
   <div id="trow">
-    <button id="btn-chat">chat</button>
-    <button id="btn-tab">scores</button>
-    <button id="btn-code">room</button>
-    <button id="btn-view">view</button>
+    <button id="btn-chat" data-text="btnChat"></button>
+    <button id="btn-tab" data-text="btnScores"></button>
+    <button id="btn-code" data-text="btnRoom"></button>
+    <button id="btn-view" data-text="btnView"></button>
     <button id="btn-full">⛶</button>
     <button id="btn-menu">≡</button>
   </div>
@@ -777,31 +777,31 @@
 </div></div>
 
 <div id="endmodal" class="ovl"><div class="mbox">
-  <h2 id="end-title">Disconnected</h2>
+  <h2 id="end-title" data-text="disconnected"></h2>
   <p id="end-msg"></p>
   <div class="mrow">
-    <button id="end-rejoin">Rejoin</button>
-    <button id="end-menu">Back to menu</button>
+    <button id="end-rejoin" data-text="rejoin"></button>
+    <button id="end-menu" data-text="backToMenu"></button>
   </div>
 </div></div>
 
 <div id="scanmodal" class="ovl"><div class="mbox">
-  <h2>Scan a room code</h2>
-  <p id="scannote">Point the camera at the QR code on the other screen.</p>
+  <h2 data-text="scanTitle"></h2>
+  <p id="scannote" data-text="scanNote"></p>
   <div id="scanview"><video id="scanvid" playsinline muted></video></div>
-  <div class="mrow"><button id="scan-close">Cancel</button></div>
+  <div class="mrow"><button id="scan-close" data-text="cancel"></button></div>
 </div></div>
 <div id="codemodal" class="ovl"><div class="mbox">
-  <h2>Room code</h2>
-  <p>Copy it, read it out, or show the QR to scan.</p>
+  <h2 data-text="roomCode"></h2>
+  <p data-text="codeNote"></p>
   <div id="codereveal" class="masked">••••••••</div>
   <div id="codeqr"></div>
   <div class="mrow">
-    <button id="code-copy">Copy to clipboard</button>
-    <button id="code-view">Show code</button>
-    <button id="code-pin">Show in corner</button>
-    <button id="code-qr" class="icon" title="Show QR code" aria-label="Show QR code"></button>
-    <button id="code-close">Close</button>
+    <button id="code-copy" data-text="copyClipboard"></button>
+    <button id="code-view" data-text="showCode"></button>
+    <button id="code-pin" data-text="showInCorner"></button>
+    <button id="code-qr" class="icon" data-title="showQr" data-label="showQr"></button>
+    <button id="code-close" data-text="close"></button>
   </div>
   <div id="codenote"></div>
 </div></div>
@@ -935,6 +935,205 @@ const TEXT = {
   setPadInvert: 'Pad invert Y: {v}', setPadRumble: 'Pad vibration: {v}', padNoRumble: ' (not in this browser)', setRadio: 'Car radio: {v}',
   setBcast: 'Broadcasts: {v}', setVhs: 'VHS: {v}', setVoices: 'AI voices: {v}', voicesNoGpu: ' (needs WebGPU)', setSound: 'Sound: {v}',
   soundOnLabel: 'Sound on — click or press M to mute', soundOffLabel: 'Sound off — click or press M to unmute',
+  // chat commands, joins and the system lines
+  enemyGone: '§f{name} §7is gone.',
+  somebody: 'Something',
+  tornado: '§e{who} §7kicked up a tornado.',
+  noFit: '§7{name} doesn\'t fit',
+  death: '§f{victim} §7{how}',
+  runOver: 'was run over by a {vehicle}',
+  caughtInBlast: 'was caught in a {vehicle}\'s blast',
+  pickedUp: '§ePicked up §f{item}',
+  levelIs: '§e{level}§7 it is.',
+  debugOn: '§aon',
+  debugOff: '§coff',
+  debug: '§7Debug {state}',
+  alreadyOn: '§7Already on §f{level}',
+  notGenerated: '§c{level} is not generated.',
+  seedInfo: '§7Seed §f{seed} §7size §f{size} §7(to keep it, put both in the row\'s gen)',
+  none: 'none',
+  fragLimitIs: '§7Frag limit: §f{n}',
+  unlimited: 'unlimited',
+  matchLength: '§7Match length: §f{n}',
+  nickNow: '§7You are now §f{name}',
+  usageChar: '§cUsage: §f/char <{names}>',
+  noCharacter: '§cNo character called §f{name}',
+  shiftInto: '§cYou shift into §f{name}§c, you do not pick it',
+  nowPlaying: '§7Now playing §f{name}',
+  capReads: '§7Your cap now reads §f{cap}',
+  connectedOne: '§7{n} player connected:',
+  connectedMany: '§7{n} players connected:',
+  listHost: ' §8[host]',
+  listYou: ' §8(you)',
+  listRow: '§8· §f{name} §7{char}{host}{you}',
+  noPlayer: '§cNo player called §f{name}',
+  kickedAnnounce: '§e{name} was kicked',
+  unknownCommand: '§cUnknown command §f/{name}§c — try §f/help',
+  joinFailed: '§7A player couldn\'t connect: {why}',
+  levelList: '§cLevels: §f{list}',
+  voteEnded: '§7The vote for §f{level}§7 {end}.',
+  serving: 'Serving. Join from another machine with the room code.',
+  connecting: 'Connecting… {stage}',
+  stageSignaling: 'to the signaling server',
+  stageAsking: 'asking the host',
+  couldNotConnect: 'Could not connect. {why}',
+  qualityAuto: '§7Quality §f{quality}§7 — chosen for this machine. Settings can change it.',
+  bcastCannot: '§7The broadcast from {origin} cannot show here: {why}.',
+  wavesTakes: '§cWaves takes {max} players; {n} are here.',
+  aPlayer: 'A player',
+  balance: '§e{name} §7moves to the §f{side}§7 to balance the teams.',
+  playNextRound: '§7You play §f{name}§7 from the next round.',
+  eventIs: '§7Event: §f{event} §7({picks})',
+  eventAnnounce: '§7Event: §f{event}',
+  enemiesList: '§cEnemies: §f{names} §7or §frangers tmnt all',
+  spawned: '§7Spawned §f{names}',
+  alreadyOut: '§7Already out.',
+  voicesStart: '§7Voices start in a game with the sound on.',
+  voicesOff: '§7AI voices are off: Settings turns them on.',
+  voiceStatus: '§7{ready}. Chatterbox {stage}.',
+  voiceList: '§cVoices: §f{names}',
+  voiceNotMade: '§7Not made yet. {ready}.',
+  voiceSoundOff: ' §c(sound is off)',
+  voiceLine: '§7{name} {n}, voice §f{voice}{off}',
+  waveList: '§cWaves: §f{list}',
+  usageBots: '§cUsage: §f/bots <0-{max}>',
+  enemiesNow: '§7Enemies: §f{n}',
+  roomPlays: '§eThis room plays {mode}: {sides} only',
+  roomChanged: '§eThe room changed while you picked: you play §f{name}§e. Pause → Character to change.',
+  brokeStatus: 'Something broke: {why}',
+  startupFailed: 'Startup failed: {why}',
+  physicsFailed: 'Physics failed to load: {why}',
+  radioUnavailable: ' — unavailable',
+  radioOff: 'Radio off',
+  pauseNoteHost: 'The game keeps running for everyone else — you are standing still, not safe.',
+  pauseNoteGuest: 'The game keeps running on the host — you are standing still, not safe.',
+  nameWord: 'Name',
+  hideFromCorner: 'Hide from corner',
+  selectBelow: 'Select it below',
+  voteText: '{by} wants {level}: {yes} yes / {no} no ({s} s)',
+  joinAnyway: 'Join anyway',
+  reconnecting: 'Reconnecting…',
+  firstTo: 'first to {n}',
+  titleWins: '{name} WINS',
+  squadWins: 'THE SQUAD WINS',
+  youWin: 'YOU WIN',
+  nextRoundIn: 'Next round in {n}',
+  nextOn: ' on {level}',
+  tapLevel: ' (tap a level to change it)',
+  pressLevel: ' (press 1-{max} to change it)',
+  nextRoundSecs: 'next round in {n}s',
+  timeLeft: '{t} left',
+  playerOne: '{n} player',
+  playerMany: '{n} players',
+  srvHead: '{level} · {players} · {enemies} enemies · {match}',
+  linkNone: '-',
+  linkLost: 'lost, retrying',
+  linkUp: 'connected',
+  linkOpening: 'connecting',
+  btnExit: 'EXIT',
+  btnHBrake: 'H-BRAKE',
+  btnZip: 'ZIP',
+  hintSep: '  ·  ',
+  spectating: 'SPECTATING {name}  ·  {next} next  ·  {prev} previous',
+  hintTouchFire: 'FIRE {gun}',
+  hintTouchWpn: 'WPN next',
+  hintTouchAtk: 'ATK {attack}',
+  hintTouchUse: 'USE {use}',
+  hintMove: '{key} move',
+  hintSprint: '{key} sprint',
+  hintFly: '{key} fly/rise',
+  hintDown: '{key} down',
+  hintJump: '{key} jump',
+  hintZip: '{key} zip',
+  hintFire: '{key} {gun}',
+  hintNext: '{key} next',
+  hintAlt: '{key} {attack}',
+  hintUse: '{key} {use}',
+  hintShift: '{key} shift form',
+  hintChat: '{key} chat',
+  hintScores: '{key} scores',
+  hintCapture: 'click to capture mouse',
+  controlsKeys: 'WASD move · Shift sprint · Space jump/rise · Q descend (flier) · click fire · right-click your attack · E use or lift<br>R next weapon · F shift form · T chat · Tab scores · V view · M sound · F3 debug<br>',
+  controlsPad: 'Left stick move · {L3} sprint (toggle) · right stick look · {A} jump/rise · {B} descend (flier) · {RT} fire · {LT} your attack · {X} use or lift<br>{Y} next weapon · {LB} shift form · {Back} scores · {R3} view · {Start} menu · d-pad: ↓ sound, ← radio (in a vehicle), → chat<br>',
+  padNote: 'Controllers: most Xbox, PlayStation and Switch Pro pads work in Chrome, Edge and Safari (Firefox on Linux misses some). Vibration where the browser has it.',
+  hostOpen: 'Your room is open. Click below to copy or reveal the code:',
+  clickWord: 'click',
+  srvLevelLabel: 'Level',
+  switchLevelTip: 'Switch level: the round restarts in the new one',
+  srvFragsLabel: 'Frags',
+  lowerFrags: 'Lower the frag limit',
+  raiseFrags: 'Raise the frag limit',
+  srvMinutes: 'Minutes',
+  shorterMatches: 'Shorter matches',
+  longerMatches: 'Longer matches',
+  srvEnemies: 'Enemies',
+  fewerEnemies: 'Fewer enemies',
+  moreEnemies: 'More enemies',
+  stopServer: 'Stop server',
+  loadingPhysics: 'Loading physics…',
+  reloadGame: 'Reload game',
+  details: 'Details',
+  copy: 'Copy',
+  voteHelp: 'Y/N to vote · no vote = no objection',
+  yes: 'Yes',
+  no: 'No',
+  cancel: 'Cancel',
+  btnSprint: 'SPRINT',
+  standings: 'STANDINGS',
+  matchOver: 'MATCH OVER',
+  btnFire: 'FIRE',
+  btnJump: 'JUMP',
+  btnDown: 'DOWN',
+  btnAtk: 'ATK',
+  btnWpn: 'WPN',
+  btnTeam: 'TEAM',
+  btnForm: 'FORM',
+  btnUse: 'USE',
+  btnRadio: 'RADIO',
+  btnChat: 'chat',
+  btnScores: 'scores',
+  btnRoom: 'room',
+  btnView: 'view',
+  disconnected: 'Disconnected',
+  rejoin: 'Rejoin',
+  backToMenu: 'Back to menu',
+  scanTitle: 'Scan a room code',
+  scanNote: 'Point the camera at the QR code on the other screen.',
+  codeNote: 'Copy it, read it out, or show the QR to scan.',
+  copyClipboard: 'Copy to clipboard',
+  showCode: 'Show code',
+  showInCorner: 'Show in corner',
+  showQr: 'Show QR code',
+  close: 'Close',
+  cratersRefused: '§cRefused the host\'s craters.',
+  noFullscreen: '§7Fullscreen is not available in this browser.',
+  iosHomeScreen: '§8Use Share → Add to Home Screen to lose the URL bar.',
+  noRoomCode: '§cNo room code yet.',
+  usageMe: '§cUsage: §f/me <action>',
+  onlyHostLevel: '§cOnly the host picks the level.',
+  onlyHostLimits: '§cOnly the host sets the limits.',
+  usageFrags: '§cUsage: §f/frags <0-200>',
+  usageTime: '§cUsage: §f/time <0-60>',
+  commands: '§8— §7commands §8—',
+  formatting: '§8— §7formatting §8—',
+  ampersandNote: '§8Write §f&&&7 twice for a literal ampersand.',
+  usageNick: '§cUsage: §f/nick <name>',
+  serverNoCharacter: '§cA server plays no character.',
+  stillChanging: '§7Not yet — still changing.',
+  capBackToWhateverIt: '§7Cap back to whatever it feels like.',
+  onlyHostKick: '§cOnly the host can kick.',
+  usageKick: '§cUsage: §f/kick <name>',
+  waitingForPlayers: 'Waiting for players…',
+  signalingBack: '§7Signaling is back.',
+  hostLevelMissing: '§cThe host is playing a level this copy of the game does not have.',
+  copyDiffers: '§cYour copy of the game differs from the host\'s: download the latest',
+  connected: '§7Connected. §8T to chat · /help for codes · /code for the room code',
+  softGraphics: '§eThis browser draws without graphics acceleration, so the game may not keep up here.',
+  onlyHostEvent: '§cOnly the host picks the event.',
+  onlyHostEnemies: '§cOnly the host controls the enemies.',
+  cleared: '§7Cleared.',
+  notInWaves: '§cNot in waves — the host panel sets the mode',
+  voteEnd: { passed: 'passed', failed: 'failed', cancelled: 'was called off' },
   // the character pick
   character: 'Character', copyLink: 'Copy link', copyTip: 'Copy the join link', copied: 'Copied', copyFailed: 'Copy failed', pickTitleJoin: 'Choose your character', pickLeave: 'Leave', pickRoomTip: 'Show or hide the room code',
   pickWait: 'Changing again in a moment.', pickKeep: 'You keep the damage you have taken; this is not a respawn.',
@@ -1283,9 +1482,10 @@ const HEALS = [
   { name:'Medkit',  amount: 40, color:0x3fb950 },
   { name:'Big Med', amount: 90, color:0x56d364, drop:false, pickupScale:1.22 },
   // revive (waves): brings back the superkiller down longest, beside the one who takes it. after: the deaths in a wave
-  // before one is out, at a spawn spot; perDeath: where `hide` finds spots, one hidden for each death instead, on one of
-  // the three free spots nearest it within `near` m. hide: roof (a City roof a pad reaches), sewer (a tunnel's ledge or a
-  // chamber's corner), inside (a building's floor). radar: its mark's colour on the superkillers' radar
+  // before one is out, at a spawn spot; perDeath: where `hide` finds spots, one hidden for each death instead: a kind at
+  // random among those with a free spot within `near` m (a kind listed twice comes twice as often), then one of its three
+  // spots nearest the death. hide: roof (a City roof a pad reaches), sewer (a tunnel's ledge or a chamber's corner), inside
+  // (a building's floor). radar: its mark's colour on the superkillers' radar
   { name:'Revive', revive: { after: 2, perDeath: true, hide: ['roof', 'sewer', 'inside'], near: 400 }, amount: 0, color:0xffd23f, radar: 0x5cf2b0, drop:false, pickupScale:1.3 },
 ]
 // A bot: the CHARS row it plays (char), the body older copies draw it with and the wire carries (cid), and how it fights.
@@ -1559,11 +1759,12 @@ const LEVELS = [
 //   boxes draw in with no file). layers run in order over each block's four kerbs (`at` overrides the item's), `clear` m from its corners:
 //   pick: [[item, weight]], every: mean spacing m, p: the share of spots kept, roads: only where the road is an 'avenue' or a 'street'.
 //   mode 'corner' puts one at each of a block's corners, 'park' walks a park's edges facing in. door: m kept from a building's door;
+//   districts: [downtown, mid, outer] × p by the block's distance from the City's middle (a list of three);
 //   range: m from the middle of a quarter of a chunk past which its items that cast no shadow are not drawn; lampRange: the same for a chunk's lamps
 //   lamps (an item's lights, lit as drawn): at [x, y, z] in the item, color (a list: one by the row's seed), halo [half-width m, strength]
 //   about the head, pool [radius m, strength] on the ground under it; a chunk's lamps are one additive mesh
 const STREET_KIT = {
-  file: 'streetkit.c73993e4.glb', at: 0.5, clear: 3, door: 2.8, range: 70, lampRange: 120,
+  file: 'streetkit.6132bc35.glb', at: 0.5, clear: 3, door: 2.8, range: 70, lampRange: 120,
   items: {
     light: { at: 0.4, node: 'streetlight', far: 'streetlight_far', deco: true, boxes: [[0.16, 3.5, 0.16, 0, 3.5, 0]], r: 0.35, shadow: true, fall: 0x3b4147,
       lamps: [{ at: [0, 6.9, 1.9], color: 0xffd9a0, halo: [1.2, 0.9], pool: [5.5, 0.5] }] },
@@ -1583,6 +1784,18 @@ const STREET_KIT = {
     planter_round: { at: 0.47, node: 'planter_round', deco: true, boxes: [[0.47, 0.3, 0.47, 0, 0.3, 0]], r: 0.55, fall: 0x84402f },
     bollard: { at: 0.15, node: 'bollard', deco: true, boxes: [[0.1, 0.45, 0.1, 0, 0.45, 0]], r: 0.25, fall: 0xa7afb4 },
     barrier: { at: 0.3, node: 'barrier', deco: true, boxes: [[1, 0.4, 0.28, 0, 0.4, 0]], r: 1.1, fall: 0xb7b3a9 },
+    dumpster: { at: 0.5, node: 'dumpster', boxes: [[0.95, 0.45, 0.5, 0, 0.45, 0]], r: 1.2, shadow: true, fall: 0x35604a },
+    phone_booth: { at: 0.5, node: 'phone_booth', boxes: [[0.45, 1.25, 0.45, 0, 1.25, 0]], r: 0.7, shadow: true, fall: 0xc9281f },
+    kiosk: { at: 0.5, node: 'kiosk', boxes: [[1.0, 1.25, 0.5, 0, 1.25, 0]], r: 1.5, shadow: true, fall: 0x84402f },
+    bike_rack: { at: 0.4, node: 'bike_rack', deco: true, boxes: [[0.55, 0.45, 0.35, 0.1, 0.45, 0.1]], r: 0.9, fall: 0xa7afb4 },
+    cones: { at: 0.45, node: 'cones', deco: true, boxes: [[0.5, 0.35, 0.4, 0, 0.35, 0]], r: 0.7, fall: 0xe0702b },
+    barrel: { at: 0.4, node: 'barrel', deco: true, boxes: [[0.7, 0.45, 0.35, 0.25, 0.45, 0.1]], r: 0.8, fall: 0x2159a8 },
+    pallets: { at: 0.5, node: 'pallets', deco: true, boxes: [[0.6, 0.3, 0.5, 0, 0.3, 0]], r: 0.9, fall: 0x8c5b36 },
+    cart: { at: 0.5, node: 'cart', deco: true, boxes: [[0.9, 0.55, 0.45, -0.1, 0.55, 0]], r: 1.1, shadow: true, fall: 0xc9281f },
+    bags: { at: 0.45, node: 'bags', deco: true, boxes: [[0.5, 0.35, 0.4, 0.1, 0.3, 0]], r: 0.7, fall: 0x16181b },
+    utility_pole: { at: 0.25, node: 'utility_pole', deco: true, boxes: [[0.15, 3.7, 0.15, 0, 3.7, 0]], r: 0.35, shadow: true, fall: 0x8c5b36 },
+    picnic_table: { at: 1.5, node: 'picnic_table', deco: true, boxes: [[0.9, 0.4, 0.7, 0, 0.4, 0]], r: 1.1, fall: 0x8c5b36 },
+    fountain: { at: 3.2, node: 'fountain', boxes: [[1.0, 0.5, 1.0, 0, 0.5, 0]], r: 1.5, shadow: true, fall: 0xb7b3a9 },
   },
   layers: [
     { pick: [['signal', 1]], mode: 'corner', roads: 'avenue', p: 0.7 },
@@ -1591,9 +1804,15 @@ const STREET_KIT = {
     { pick: [['light', 1]], every: 54 },
     { pick: [['busstop', 1]], every: 150, clear: 8, roads: 'avenue', p: 0.8 },
     { pick: [['sign_bus', 1]], every: 120, clear: 6, roads: 'avenue', p: 0.5 },
+    { pick: [['kiosk', 1]], mode: 'corner', roads: 'avenue', p: 0.22, districts: [1, 0.6, 0.2] },
+    { pick: [['phone_booth', 1]], mode: 'corner', p: 0.18, districts: [1, 0.8, 0.3] },
+    { pick: [['dumpster', 3], ['bags', 3], ['pallets', 2], ['barrel', 2], ['cones', 1]], every: 44, p: 0.4, districts: [0.4, 1, 1.4] },
+    { pick: [['cart', 1], ['bike_rack', 2]], every: 70, p: 0.4, districts: [1.3, 1, 0.4] },
+    { pick: [['utility_pole', 1]], every: 66, roads: 'street', districts: [0, 0.6, 1.3] },
     { pick: [['bench', 4], ['bin', 4], ['newsbox', 1], ['mailbox', 1], ['meter', 3], ['planter', 2], ['bollard', 2], ['barrier', 1], ['sign_street', 1]], every: 16, p: 0.55 },
     { pick: [['hydrant', 1]], every: 110, clear: 4, p: 0.8 },
-    { pick: [['bench', 3], ['bin', 2], ['planter', 1], ['planter_round', 1]], mode: 'park', every: 12, at: 1.5, p: 0.5 },
+    { pick: [['bench', 3], ['bin', 2], ['planter', 1], ['planter_round', 1], ['picnic_table', 2]], mode: 'park', every: 12, at: 1.5, p: 0.5 },
+    { pick: [['fountain', 1]], mode: 'park', every: 40, p: 0.15 },
   ],
 }
 // OBJECTS: r: ball radius, or half: box half-extents (m); mass (player 1); hit: × shot knock; roll: rolling friction
@@ -2887,9 +3106,9 @@ function cityChunk(seed, S, ci, cj, B = [], scenery = [], spot = [[], [], [], []
     }
     // after its lots, so a lawn on the same plane keeps its own top
     scenery.push({ kind: 'walk', box: box((x0 + x1) / 2, KERB / 2, (z0 + z1) / 2, (x1 - x0) / 2, KERB / 2, (z1 - z0) / 2, ' paint') })
-    blocks.push({ x0, x1, z0, z1, roads: [a ? 'street' : 'avenue', a + 2 < xs.length ? 'street' : 'avenue', b ? 'street' : 'avenue', b + 2 < zs.length ? 'street' : 'avenue'] })
+    blocks.push({ x0, x1, z0, z1, dist: (d => d < 0.35 ? 0 : d < 0.7 ? 1 : 2)(Math.hypot(x0 + x1, z0 + z1) / 2 / A), roads: [a ? 'street' : 'avenue', a + 2 < xs.length ? 'street' : 'avenue', b ? 'street' : 'avenue', b + 2 < zs.length ? 'street' : 'avenue'] })
   }
-  const avoid = scenery.flatMap(s => s.interior?.door ? [[...s.interior.door, STREET_KIT.door]] : s.kind === 'tree' ? [[s.x, s.z, 0.6]] : [])
+  const avoid = scenery.flatMap(s => s.interior?.door ? [[...s.interior.door, STREET_KIT.door]] : s.kind === 'tree' ? [[s.x, s.z, 0.6]] : []).concat(spot[0].map(q => [q[0], q[2], 3]))
   for (const p of furnish(seed, S, ci, cj, blocks, parks, avoid)) {
     const I = STREET_KIT.items[p.item], c = Math.round(Math.cos(p.yaw)), s = Math.round(Math.sin(p.yaw))
     scenery.push({ kind: 'prop', ...p, deco: !!I.deco, boxes: I.boxes.map(([hx, hy, hz, ox, oy, oz]) =>
@@ -3110,7 +3329,7 @@ function furnish(seed, S, ci, cj, blocks, parks, avoid) {
     const frames = park ? parks.map(([cx, cz, ex, ez]) => ({ x0: cx - ex, x1: cx + ex, z0: cz - ez, z1: cz + ez })) : blocks
     frames.forEach((f, fi) => {
       const rng = genRng(Math.imul(cityHash(seed ^ Math.imul(ci + 1, 73856093) ^ Math.imul(cj + 1, 19349663)) ^ Math.imul(li + 1, 83492791), 2654435761) ^ Math.imul(fi + 1, 40503))
-      const spot = () => { let t = rng() * total; const name = (L.pick.find(p => (t -= p[1]) < 0) || L.pick.at(-1))[0]; return { name, keep: rng() < (L.p ?? 1), seed: rng() * 2 ** 32 >>> 0 } }
+      const spot = () => { let t = rng() * total; const name = (L.pick.find(p => (t -= p[1]) < 0) || L.pick.at(-1))[0]; return { name, keep: rng() < (L.p ?? 1) * (L.districts?.[f.dist ?? 1] ?? 1), seed: rng() * 2 ** 32 >>> 0 } }
       const at = name => L.at ?? K.items[name].at ?? K.at, put = ({ name, keep, seed }, x, z, yaw) => { if (keep && free(x, z, K.items[name].r)) { out.push({ item: name, x, z, yaw, seed }); taken.push([x, z, K.items[name].r]) } }
       if (L.mode === 'corner') {
         for (const [cx, cz, sa, sb] of [[f.x0, f.z0, 0, 2], [f.x1, f.z0, 1, 2], [f.x0, f.z1, 0, 3], [f.x1, f.z1, 1, 3]]) {
@@ -3515,7 +3734,10 @@ function syncFromBody(c) {
 }
 
 // sets both transforms: the motion state's is the one drawn
+// a move of over a metre drops the body's cached contacts (made where it stood) by taking it out of the world and in again
 function teleportBody(body, x, y, z, q, v, w) {
+  const bh = body.getBroadphaseHandle(), from = body.getWorldTransform().getOrigin(), moved = A.getPointer(bh) && Math.hypot(from.x() - x, from.y() - y, from.z() - z) > 1
+  const group = moved && bh.get_m_collisionFilterGroup(), mask = moved && bh.get_m_collisionFilterMask()
   posVec.setValue(x, y, z)
   const tr = body.getWorldTransform()
   tr.setOrigin(posVec)
@@ -3525,6 +3747,7 @@ function teleportBody(body, x, y, z, q, v, w) {
   body.updateInertiaTensor()        // Bullet's own update waits for the next step
   if (v) { velVec.setValue(...v); body.setLinearVelocity(velVec) }
   if (w) { velVec.setValue(...w); body.setAngularVelocity(velVec) }
+  if (moved) { world.removeRigidBody(body); world.addRigidBody(body, group, mask) }
 }
 
 function setCharPos(c, x, y, z) {
@@ -4135,7 +4358,7 @@ function leaveRare(c) {
   players.delete(c.id); inputs.delete(c.id); roster.delete(c.id)
   removeChar(c)
   if (conns.size) pushRoster()
-  announce('§f' + (c.bot ? c.bot.name : '?') + ' §7is gone.')
+  announce(gameText('enemyGone', { name: c.bot ? c.bot.name : TEXT.unnamed }))
 }
 
 const gunsOf = c => !gunless(CHARS[c.cid])
@@ -4883,7 +5106,7 @@ function windTornado(b, tgt) {
   if (!t && TORS.length < TOR_MAX) {
     t = { on: 0, x: tgt.x, z: tgt.z, by: b.id, k: rowOf(b).spins, turn: Math.random() * 6.28, pull: 0, life: 0 }
     TORS.push(t)
-    announce('§e' + ((roster.get(b.id) || {}).name || 'Something') + ' §7kicked up a tornado.')
+    announce(gameText('tornado', { who: (roster.get(b.id) || {}).name || TEXT.somebody }))
   }
   if (!t) t = TORS.reduce((a, c) =>
     Math.hypot(tgt.x - c.x, tgt.z - c.z) < Math.hypot(tgt.x - a.x, tgt.z - a.z) ? c : a)
@@ -5625,7 +5848,7 @@ const craterHeld = cr => craters.every((e, i) => Array.isArray(cr[i]) && e.every
 function takeCraters(cr, cv) {
   if (cr !== undefined && (cv | 0) !== craterV && GAME.crater.spec()) {
     if (craterOk(cr)) { const n = craters.length; craters = cr.map(e => e.slice()); craterV = cv | 0; if (cr.length > n) buildCrater(n) }
-    else if (!craterBehind && hostLine()) sysMsg('§cRefused the host\'s craters.')
+    else if (!craterBehind && hostLine()) sysMsg(TEXT.cratersRefused)
   }
   craterBehind = cv !== undefined && (cv | 0) !== craterV
 }
@@ -5855,7 +6078,7 @@ function carryStep(c, inp, dt) {
   for (const p of objs) if (takeable(c, p) && (!best || objGap(c, p) < objGap(c, best))) best = p
   if (best) { c.useT = USE_S; best.V && !canLift(c, best) ? sit(c, best, best.riders.findIndex((r, i) => r === undefined && fits(c, best, i))) : liftUp(best, c) }
   else if (isHost && objs.some(p => p.V && p.riders.includes(undefined) && objGap(c, p) <= 1.5)) {
-    c.useT = USE_S; tell(c.id, '§7' + GAME.participant(c.id, c.cid).name + " doesn't fit") }
+    c.useT = USE_S; tell(c.id, gameText('noFit', { name: GAME.participant(c.id, c.cid).name })) }
 }
 // Bullet resolves any overlap
 function release(c, o, speed) {
@@ -6028,7 +6251,7 @@ function dropCar(o) {
   o.car = null
 }
 const fell = (c, how, what) => {
-  announce('§f' + ((roster.get(c.id) || {}).name || '?') + ' §7' + how)
+  announce(gameText('death', { victim: (roster.get(c.id) || {}).name || TEXT.unnamed, how }))
   if (hooked.death) hookEmit('death', { victim: hookWho(c), weapon: what })
 }
 function sit(c, o, i) {
@@ -6633,7 +6856,7 @@ function stepPickups(dt, list) {
         if (hooked.pickup) hookEmit('pickup', { player: hookWho(c), item: got, kind: H ? 'heal' : pk.pow > 0 ? 'power' : 'gun' })
         if (pk.dropped) { pickups.splice(pickups.indexOf(pk), 1) }
         else { pk.respawn = 9 + Math.random() * 6; rollPad(pk) }
-        if (c === selfChar()) sysMsg('§ePicked up §f' + got)
+        if (c === selfChar()) sysMsg(gameText('pickedUp', { item: got }))
         break
       }
     }
@@ -9597,7 +9820,7 @@ const SUN_FILLED = (() => {
   const from = begin.indexOf('directionalLight = directionalLights[ i ];'), at = from < 0 ? -1 : begin.indexOf('RE_Direct(', from), end = at < 0 ? -1 : begin.indexOf(';', at) + 1
   if (end <= 0 || begin.indexOf('#pragma unroll_loop_end', from) < end) return false
   C.lights_fragment_begin = begin.slice(0, end) + `
-#if UNROLLED_LOOP_INDEX == 0 && defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0 && NUM_HEMI_LIGHTS > 0
+#if UNROLLED_LOOP_INDEX == 0 && NUM_HEMI_LIGHTS > 0
 	reflectedLight.indirectDiffuse += ${SUN_FILL.toFixed(2)} * hemisphereLights[ 0 ].skyColor * BRDF_Lambert( material.diffuseColor )
 		* ( 1.0 - clamp( directLight.color.g / max( directionalLights[ 0 ].color.g, 0.0001 ), 0.0, 1.0 ) * smoothstep( 0.0, 0.3, dot( geometryNormal, directLight.direction ) ) );
 #endif` + begin.slice(end)
@@ -14951,13 +15174,14 @@ let sfxMake = null
 
 // a row's recording, fetched and decoded the first time it is wanted (that use is missed); null while it loads and for good if it failed
 const sfxBufs = new Map()
+const sfxLoads = new Map()
 function sfxBuffer(name, R) {
   if (!R.file) return null
   const b = sfxBufs.get(name)
   if (b !== undefined) return b
   sfxBufs.set(name, null)
-  fetch(ASSET_DIR + R.file).then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status))
-    .then(a => actx.decodeAudioData(a)).then(d => sfxBufs.set(name, d)).catch(() => {})
+  sfxLoads.set(name, fetch(ASSET_DIR + R.file).then(r => r.ok ? r.arrayBuffer() : Promise.reject(r.status))
+    .then(a => actx.decodeAudioData(a)).then(d => sfxBufs.set(name, d)).catch(() => {}))
   return null
 }
 // a charge row plays through its wind-up; span Infinity loops
@@ -14967,6 +15191,23 @@ function sfxWarm(me) {
   if (!actx || sfxSeen.warm === key) return
   sfxSeen.warm = key
   for (const n of [G && G.name, G && G.name + ' charge', 'hit', 'kill', 'hurt', 'die', 'spawn', 'jump', 'land']) if (SOUNDS[n]) sfxBuffer(n, SOUNDS[n])
+}
+// every recording, a few at a time, once the sound is wanted, so the first use of each is heard
+let sfxWarmed = false
+function sfxWarmAll() {
+  if (!actx || sfxWarmed) return
+  sfxWarmed = true
+  const q = []
+  for (const n in SOUNDS) if (SOUNDS[n].file) q.push(n)
+  let i = 0
+  const take = () => {
+    if (i >= q.length) return
+    const n = q[i++]
+    sfxBuffer(n, SOUNDS[n])
+    const p = sfxLoads.get(n)
+    if (p) p.then(take); else take()
+  }
+  for (let k = 0; k < 4; k++) take()
 }
 function sfxFile(buf, out, t, span) {
   const s = actx.createBufferSource()
@@ -15216,7 +15457,7 @@ function sfxFrame(me, others, t, objects = []) {
     // a gap (hidden tab) is a new baseline
     const fresh = s.me !== me || !(t - s.t < 400) || !sfxLive()
     const C = CHARS[me.cid] || CHARS[START], who = C.name
-    if (sfxWanted()) sfxWarm(me)
+    if (sfxWanted()) { sfxWarmAll(); sfxWarm(me) }
     const you = (name, as, lvl = 1) => sfxPlay(name, null, 'you', lvl, 0, 0, as)
     const alive = !(me.dead > 0), was = !(s.dead > 0), same = me.cid === s.cid
     // none in waves (guests are sent 0)
@@ -15349,7 +15590,7 @@ function radioTick() {
   radio.car = d && d[1] ? d[0] : undefined
   const s = settings.radio && radioSeat(), want = s && sfxWanted() ? s[2] : -1
   hud('invehicle', document.body, '.invehicle', !!s && phase === 'playing')
-  hud('radio', el('#radio'), 'textContent', !s ? '' : RADIO[s[2]] ? RADIO[s[2]].name + (radio.fail && radio.on === s[2] ? ' — unavailable' : '') : 'Radio off')
+  hud('radio', el('#radio'), 'textContent', !s ? '' : RADIO[s[2]] ? RADIO[s[2]].name + (radio.fail && radio.on === s[2] ? TEXT.radioUnavailable : '') : TEXT.radioOff)
   if (want !== radio.on) { radio.on = want; radio.k = radioAt.get(want) ?? 0; radio.tried = 0; radioPlay() }
   if (radio.a) radio.a.volume = settings.volume ** 2 * SFX_HEAD
 }
@@ -15581,9 +15822,9 @@ function openPause() {
   pauseOpen = true
   letGo()
   el('#pause-note').textContent = isHost
-    ? 'The game keeps running for everyone else — you are standing still, not safe.'
-    : 'The game keeps running on the host — you are standing still, not safe.'
-  el('#pause-host').textContent = isHost ? 'Host' : 'Vote level'
+    ? TEXT.pauseNoteHost
+    : TEXT.pauseNoteGuest
+  el('#pause-host').textContent = isHost ? TEXT.host : TEXT.voteTitle
   pauseHint()
   show('pause', 1)
 }
@@ -15595,15 +15836,11 @@ function pauseHint() {
 }
 function controlsHint() {
   if (!padLast) return IS_TOUCH ? '' :
-    'WASD move · Shift sprint · Space jump/rise · Q descend (flier) · click fire · right-click your attack · E use or lift<br>' +
-    'R next weapon · F shift form · T chat · Tab scores · V view · M sound · F3 debug<br>' + PAD_NOTE
+    TEXT.controlsKeys + PAD_NOTE
   const F = padHints().F
-  return 'Left stick move · ' + F.L3 + ' sprint (toggle) · right stick look · ' + F.A + ' jump/rise · ' + F.B + ' descend (flier) · ' +
-    F.RT + ' fire · ' + F.LT + ' your attack · ' + F.X + ' use or lift<br>' + F.Y + ' next weapon · ' + F.LB + ' shift form · ' +
-    F.Back + ' scores · ' + F.R3 + ' view · ' + F.Start + ' menu · d-pad: ↓ sound, ← radio (in a vehicle), → chat<br>' + PAD_NOTE
+  return gameText('controlsPad', F) + PAD_NOTE
 }
-const PAD_NOTE = 'Controllers: most Xbox, PlayStation and Switch Pro pads work in Chrome, Edge and Safari (Firefox on Linux misses some). ' +
-  'Vibration where the browser has it.'
+const PAD_NOTE = TEXT.padNote
 // the hint line's name for each control: a key, or the pad's button while the pad was the last input
 const HINT_KEYS = { move: 'WASD', sprint: 'Shift', jump: 'Space', down: 'Q', fire: 'click', next: 'R', alt: 'right-click', use: 'E', shift: 'F', chat: 'T', scores: 'Tab' }
 // the standard mapping's buttons by their Xbox names, as each family prints them: Nintendo's face letters sit swapped
@@ -15696,6 +15933,8 @@ function paintPicker() {
   pickSel(pickAt)
 }
 const pickCards = () => [...el('#pick-cards').children].filter(d => d.dataset.i !== undefined)
+// the cards a pick can land on: a refused card takes no highlight, so the arrows and the pad step over it
+const pickLive = () => pickCards().filter(d => !d.classList.contains('taken'))
 const PICK_STATS = [[TEXT.statSpeed, 'speed'], [TEXT.statHealth, 'hp'], [TEXT.statJump, 'jump']]
 function pickSel(i) {
   if (GAME.rows.refusal(i)) return   // a refused row takes no highlight; the pick stays where it was
@@ -15726,7 +15965,7 @@ function pickGo() {
 function pickKey(e) {
   if (e.key === 'Escape') return pickBack()
   if (e.key === 'Enter') { e.preventDefault(); return pickGo() }
-  const cards = pickCards(), k = cards.findIndex(d => +d.dataset.i === pickAt), step = { ArrowLeft: -1, ArrowRight: 1 }[e.key], v = { ArrowUp: -1, ArrowDown: 1 }[e.key]
+  const cards = pickLive(), k = cards.findIndex(d => +d.dataset.i === pickAt), step = { ArrowLeft: -1, ArrowRight: 1 }[e.key], v = { ArrowUp: -1, ArrowDown: 1 }[e.key]
   if (!step && !v || k < 0) return
   e.preventDefault()
   const at = d => d.getBoundingClientRect(), me = at(cards[k]), cost = d => { const r = at(d), dy = v * (r.top - me.top); return dy > 1 ? dy * 1e3 + Math.abs(r.left - me.left) : Infinity }
@@ -15777,7 +16016,7 @@ const padShowing = e => !!e && !e.disabled && e.getClientRects().length > 0 && g
 const padScreen = () => PAD_SCREENS.find(([id]) => { const s = el('#' + id)
   return id === 'ui' ? s.style.display !== 'none' : id === 'results' ? s.style.display === 'grid' && s.classList.contains('host') : s.classList.contains('open') })
 // a level poll's buttons are the pause's
-const padTargets = s => [...el('#' + s).querySelectorAll('button, input, .card, #code'), ...s === 'pause' ? el('#vote').querySelectorAll('button') : []].filter(padShowing)
+const padTargets = s => [...el('#' + s).querySelectorAll('button, input, .card, #code'), ...s === 'pause' ? el('#vote').querySelectorAll('button') : []].filter(e => padShowing(e) && !e.matches('#pick-cards .taken'))
 function padRing(e) {
   if (padOn && padOn !== e) padOn.classList.remove('padon')
   padOn = e
@@ -15828,7 +16067,7 @@ padMenu = f => {
     at.oninput?.(); at.onchange?.()
   } else if (f.nav.x || f.nav.y) {
     // across the character grid, left and right run along it as the arrow keys do
-    const cards = pickCards(), k = id === 'charpick' && f.nav.x ? cards.indexOf(at) : -1
+    const cards = pickLive(), k = id === 'charpick' && f.nav.x ? cards.indexOf(at) : -1
     const to = k >= 0 ? cards[(k + f.nav.x + cards.length) % cards.length] : padStep(list, at, f.nav.y ? 0 : f.nav.x, f.nav.y)
     if (to) { padAt.set(id, to); padFocus(to) }
   }
@@ -15844,7 +16083,7 @@ function padEntryOpen(input) {
   const now = [...(code ? input.value.toUpperCase() : input.value)].filter(ch => chars.includes(ch))
   const text = code ? Array.from({ length: 6 }, (_, k) => now[k] || chars[0]) : now.length ? now.slice(0, 16) : [chars[0]]
   padEntry = { input, chars, text, at: code ? Math.min(now.length, 5) : text.length - 1, fixed: code, max: code ? 6 : 16 }
-  el('#pe-title').textContent = code ? 'Room code' : 'Name'
+  el('#pe-title').textContent = code ? TEXT.roomCode : TEXT.nameWord
   el('#pe-help').textContent = '◀ ▶ slot · ▲ ▼ character · A done · B cancel' + (code ? '' : ' · X delete')
   padEntryPaint()
   show('padentry', 1)
@@ -16009,7 +16248,7 @@ function setRoomTag(on) {
   if (tag) tag.textContent = roomTagOn ? codeText() : ''
   document.body.classList.toggle('tagon', roomTagOn)
   const btn = el('#code-pin')
-  if (btn) btn.textContent = roomTagOn ? 'Hide from corner' : 'Show in corner'
+  if (btn) btn.textContent = roomTagOn ? TEXT.hideFromCorner : TEXT.showInCorner
 }
 
 function showCodeQR() {
@@ -16119,8 +16358,8 @@ function enterFullscreen() {
 function toggleFullscreen() {
   if (isFullscreen()) { try { FS_EXIT && FS_EXIT.call(document) } catch (e) {} ; return }
   if (!enterFullscreen()) {
-    sysMsg('§7Fullscreen is not available in this browser.')
-    if (IS_TOUCH) sysMsg('§8Use Share → Add to Home Screen to lose the URL bar.')
+    sysMsg(TEXT.noFullscreen)
+    if (IS_TOUCH) sysMsg(TEXT.iosHomeScreen)
   }
 }
 
@@ -16314,7 +16553,7 @@ function setLevel(i, gen) {
   if (poll) endVote('cancelled')
   loadLevel(i, gen)
   GAME.match.restart()
-  announce('§e' + LEVELS[levelId].name + '§7 it is.')
+  announce(gameText('levelIs', { level: LEVELS[levelId].name }))
 }
 
 // ---- commands
@@ -16322,43 +16561,43 @@ function setLevel(i, gen) {
 const COMMANDS = {
   help:   { args: '', help: 'list these commands', run: cmdHelp },
   code:   { args: '', help: 'open the room code dialog', nolock: true,
-            run: () => roomCodeStr ? openCodeModal() : sysMsg('§cNo room code yet.') },
+            run: () => roomCodeStr ? openCodeModal() : sysMsg(TEXT.noRoomCode) },
   me:     { args: '<action>', help: 'emote in the third person', run: a => {
-              if (!a) return sysMsg('§cUsage: §f/me <action>')
+              if (!a) return sysMsg(TEXT.usageMe)
               const t = a.slice(0, 160); showChat(myId, t, true); sendChat(t, true) } },
   nick:   { args: '<name>', help: 'change your display name', run: cmdNick },
   char:   { args: '<name|0-3>', help: 'switch character, keeping your damage', run: cmdChar },
   cap:    { args: '[text]', help: "write on Vito's cap, blank for random", run: cmdCap },
   list:   { args: '', help: 'who is in the room', run: cmdList },
   debug:  { args: '', help: 'toggle the debug panel (same as F3)', run: () => {
-              toggleDebug(); sysMsg('§7Debug ' + (dbgOpen ? '§aon' : '§coff')) } },
+              toggleDebug(); sysMsg(gameText('debug', { state: dbgOpen ? TEXT.debugOn : TEXT.debugOff })) } },
   level:  { args: '<name or number>', help: 'host only, change the level', run: a => {
-              if (!isHost) return sysMsg('§cOnly the host picks the level.')
+              if (!isHost) return sysMsg(TEXT.onlyHostLevel)
               const i = levelArg(a)
               if (i < 0) return levelList()
-              if (i === levelId) return sysMsg('§7Already on §f' + LEVELS[i].name)
+              if (i === levelId) return sysMsg(gameText('alreadyOn', { level: LEVELS[i].name }))
               setLevel(i) } },
   vote:   { args: '<level|yes|no|cancel>', help: 'ask the room to change the level, or vote', run: a => {
               const w = String(a || '').trim().toLowerCase(), i = levelArg(w)
               w === 'yes' || w === 'no' ? voteBallot(w === 'yes') : w === 'cancel' ? cancelVote() : i < 0 ? levelList() : voteFor(i) } },
   seed:   { args: '[n] [size 1-4]', help: 'host only, roll a generated level anew', run: a => {
-              if (!isHost) return sysMsg('§cOnly the host picks the level.')
-              if (!levelGen) return sysMsg('§c' + LEVELS[levelId].name + ' is not generated.')
+              if (!isHost) return sysMsg(TEXT.onlyHostLevel)
+              if (!levelGen) return sysMsg(gameText('notGenerated', { level: LEVELS[levelId].name }))
               const [n, size] = String(a || '').trim().split(/\s+/)
               setLevel(levelId, { seed: /^\d+$/.test(n) ? +n : Math.random() * 2 ** 32, ...size && { size: +size } })
-              sysMsg('§7Seed §f' + levelGen.seed + ' §7size §f' + levelGen.size + ' §7(to keep it, put both in the row\'s gen)') } },
+              sysMsg(gameText('seedInfo', { seed: levelGen.seed, size: levelGen.size })) } },
   frags:  { args: '<0-200>', help: 'host only, kills to win (0 = no limit)', run: a => {
-              if (!isHost) return sysMsg('§cOnly the host sets the limits.')
+              if (!isHost) return sysMsg(TEXT.onlyHostLimits)
               const n = parseInt(a, 10)
-              if (isNaN(n) || n < 0 || n > 200) return sysMsg('§cUsage: §f/frags <0-200>')
+              if (isNaN(n) || n < 0 || n > 200) return sysMsg(TEXT.usageFrags)
               GAME.match.frags(n)
-              sysMsg('§7Frag limit: §f' + (n || 'none')) } },
+              sysMsg(gameText('fragLimitIs', { n: n || TEXT.none })) } },
   time:   { args: '<0-60>', help: 'host only, minutes per match (0 = no limit)', run: a => {
-              if (!isHost) return sysMsg('§cOnly the host sets the limits.')
+              if (!isHost) return sysMsg(TEXT.onlyHostLimits)
               const n = parseFloat(a)
-              if (isNaN(n) || n < 0 || n > 60) return sysMsg('§cUsage: §f/time <0-60>')
+              if (isNaN(n) || n < 0 || n > 60) return sysMsg(TEXT.usageTime)
               GAME.match.minutes(n)
-              sysMsg('§7Match length: §f' + (n ? n + ' min' : 'unlimited')) } },
+              sysMsg(gameText('matchLength', { n: n ? gameText('minutes', { n }) : TEXT.unlimited })) } },
   clear:  { args: '', help: 'clear the chat log', run: cmdClear },
   kick:   { args: '<name>', help: 'host only, remove a player', run: cmdKick },
 }
@@ -16368,12 +16607,12 @@ const commandOf = name => Object.hasOwn(COMMANDS, name) ? COMMANDS[name] : Objec
 const commandNames = () => [...Object.keys(COMMANDS), ...Object.keys(GAME.commands)]
 
 function cmdHelp() {
-  sysMsg('§8— §7commands §8—')
+  sysMsg(TEXT.commands)
   for (const name of commandNames()) {
     const c = commandOf(name)
     sysMsg('§f/' + name + (c.args ? ' §7' + c.args : '') + ' §8· §7' + c.help)
   }
-  sysMsg('§8— §7formatting §8—')
+  sysMsg(TEXT.formatting)
   // Built as HTML on purpose: through mcHtml the codes would be applied, not shown
   pushMsg('<span style="color:#8b949e">colour&nbsp;</span>' +
     Object.keys(MC).map(k =>
@@ -16384,53 +16623,52 @@ function cmdHelp() {
     '<u>&amp;n</u>&nbsp;underline &nbsp;<s>&amp;m</s>&nbsp;strike &nbsp;' +
     '<span style="color:#8b949e">&amp;k</span>&nbsp;magic &nbsp;' +
     '<span style="color:#8b949e">&amp;r</span>&nbsp;reset')
-  sysMsg('§8Write §f&&&7 twice for a literal ampersand.')
+  sysMsg(TEXT.ampersandNote)
 }
 
 function cmdNick(a) {
   const n = cleanName(a)
-  if (!n) return sysMsg('§cUsage: §f/nick <name>')
+  if (!n) return sysMsg(TEXT.usageNick)
   myName = n
   if (isHost) { if (!serving) { roster.set(0, { cid: myCid, name: n }); pushRoster() } }
   else sendHost({ k: 'nick', name: n })
-  sysMsg('§7You are now §f' + n)
+  sysMsg(gameText('nickNow', { name: n }))
 }
 
 function cmdChar(a) {
   const q = String(a || '').trim().toLowerCase()
-  if (!q) return sysMsg('§cUsage: §f/char <' +
-    PICKABLE.map(i => CHARS[i].name.toLowerCase()).join('|') + '>')
+  if (!q) return sysMsg(gameText('usageChar', { names: PICKABLE.map(i => CHARS[i].name.toLowerCase()).join('|') }))
   let idx = CHARS.findIndex(c => c.name.toLowerCase() === q)
   if (idx < 0 && /^[0-9]+$/.test(q) && +q < CHARS.length) idx = +q
-  if (idx < 0) return sysMsg('§cNo character called §f' + esc(q))
-  if (CHARS[idx].hidden) return sysMsg('§cYou shift into §f' + CHARS[idx].name + '§c, you do not pick it')
+  if (idx < 0) return sysMsg(gameText('noCharacter', { name: esc(q) }))
+  if (CHARS[idx].hidden) return sysMsg(gameText('shiftInto', { name: CHARS[idx].name }))
   requestChar(idx)
 }
 
 function requestChar(idx) {
-  if (serving) return sysMsg('§cA server plays no character.')
+  if (serving) return sysMsg(TEXT.serverNoCharacter)
   if (!CHARS[idx] || CHARS[idx].hidden) return
   const me = selfChar(), swap = !!me && !!CHARS[idx].team && CHARS[idx].team === CHARS[me.cid]?.team
   if (isHost) {
     const c = players.get(0)
-    if (c && !GAME.rows.switch(c, idx)) return swap ? GAME.rows.refuse(c, idx) : sysMsg('§7Not yet — still changing.')
+    if (c && !GAME.rows.switch(c, idx)) return swap ? GAME.rows.refuse(c, idx) : sysMsg(TEXT.stillChanging)
     if (!swap) roster.set(0, { cid: idx, name: myName }), pushRoster()
   } else {
     sendHost({ k: 'char', cid: idx })
   }
   myCid = settings.cid = idx
   saveSettings()
-  if (!swap) sysMsg('§7Now playing §f' + CHARS[idx].name)
+  if (!swap) sysMsg(gameText('nowPlaying', { name: CHARS[idx].name }))
 }
 
 function cmdCap(a) {
   const want = capText(a)
   if (!want) {
     sendCap('')
-    return sysMsg('§7Cap back to whatever it feels like.')
+    return sysMsg(TEXT.capBackToWhateverIt)
   }
   sendCap(want)
-  sysMsg('§7Your cap now reads §f' + esc(want))
+  sysMsg(gameText('capReads', { cap: esc(want) }))
 }
 
 function sendCap(text) {
@@ -16445,11 +16683,10 @@ function sendCap(text) {
 
 function cmdList() {
   const ids = [...roster.keys()].sort((x, y) => x - y)
-  sysMsg('§7' + ids.length + ' player' + (ids.length === 1 ? '' : 's') + ' connected:')
+  sysMsg(gameText(ids.length === 1 ? 'connectedOne' : 'connectedMany', { n: ids.length }))
   for (const id of ids) {
     const p = roster.get(id)
-    sysMsg('§8· §f' + p.name + ' §7' + CHARS[p.cid].name +
-           (id === 0 ? ' §8[host]' : '') + (id === myId ? ' §8(you)' : ''))
+    sysMsg(gameText('listRow', { name: p.name, char: CHARS[p.cid].name, host: id === 0 ? TEXT.listHost : '', you: id === myId ? TEXT.listYou : '' }))
   }
 }
 
@@ -16461,15 +16698,15 @@ function cmdClear() {
 }
 
 function cmdKick(a) {
-  if (!isHost) return sysMsg('§cOnly the host can kick.')
+  if (!isHost) return sysMsg(TEXT.onlyHostKick)
   const q = String(a || '').trim().toLowerCase()
-  if (!q) return sysMsg('§cUsage: §f/kick <name>')
+  if (!q) return sysMsg(TEXT.usageKick)
   for (const [id, p] of roster) {
     if (id === 0 || p.name.toLowerCase() !== q) continue
     kickId(id)
     return
   }
-  sysMsg('§cNo player called §f' + esc(q))
+  sysMsg(gameText('noPlayer', { name: esc(q) }))
 }
 
 function kickId(id) {
@@ -16479,7 +16716,7 @@ function kickId(id) {
     try { c.send(JSON.stringify({ k: 'kicked', by: myName })) } catch (e) {}
     setTimeout(() => { try { c.close() } catch (e) {} }, 150)
   }
-  if (p) announce('§e' + p.name + ' was kicked')
+  if (p) announce(gameText('kickedAnnounce', { name: p.name }))
 }
 
 function runCommand(line) {
@@ -16487,7 +16724,7 @@ function runCommand(line) {
   const name = (sp < 0 ? line.slice(1) : line.slice(1, sp)).toLowerCase()
   const rest = sp < 0 ? '' : line.slice(sp + 1).trim()
   const cmd = commandOf(name)
-  if (!cmd) return sysMsg('§cUnknown command §f/' + esc(name) + '§c — try §f/help')
+  if (!cmd) return sysMsg(gameText('unknownCommand', { name: esc(name) }))
   cmd.run(rest)
 }
 
@@ -17230,7 +17467,7 @@ function linkInfo(report, under) {
   const box = el('#linkinfo'), text = el('#linkinfo-text')
   if (!box) return
   box.hidden = !report; text.hidden = true; text.textContent = report || ''
-  el('#linkinfo-show').setAttribute('aria-expanded', 'false'); el('#linkinfo-copy').textContent = 'Copy'
+  el('#linkinfo-show').setAttribute('aria-expanded', 'false'); el('#linkinfo-copy').textContent = TEXT.copy
   if (report) under.after?.(box)
 }
 
@@ -17378,7 +17615,7 @@ function startHost() {
   markStart('bots')
   el('#stage-menu').style.display = 'none'
   el('#stage-host').style.display = ''
-  setStatus('Waiting for players…')
+  setStatus(TEXT.waitingForPlayers)
 
   openHostPeer(0)
   if (!serving) { connected = true; beginPlay(); openCharPick() }       // the room opens behind the pick
@@ -17423,7 +17660,7 @@ function openHostPeer(attempt) {
   peer.on('open', () => {
     relinkTries = 0
     if (F.sig < 0) F.sig = sinceLink(F)
-    if (sigSaid && sigSaid.say !== 'back' && phase === 'playing') { sigSaid = { say: 'back', at: sigSaid.at }; sysMsg('§7Signaling is back.') }
+    if (sigSaid && sigSaid.say !== 'back' && phase === 'playing') { sigSaid = { say: 'back', at: sigSaid.at }; sysMsg(TEXT.signalingBack) }
     if (!roomOpen) { roomOpen = true; setRoomTag(roomTagOn)
       if (el('#codereveal')?.textContent === OPENING) revealCode()
       if (el('#codeqr')?.textContent === OPENING) drawCodeQR() }
@@ -17455,7 +17692,7 @@ function openHostPeer(attempt) {
       linkStats(F, p, () => {
         const [short, words] = guestStop(F, p)
         joinNote('never connected (' + short + ')')
-        if (now() - joinToldAt >= JOIN_TELL_MS) { joinToldAt = now(); sysMsg("§7A player couldn't connect: " + words) }
+        if (now() - joinToldAt >= JOIN_TELL_MS) { joinToldAt = now(); sysMsg(gameText('joinFailed', { why: words })) }
         try { c.close() } catch (e) {}
       })
     }, 1000)
@@ -17495,7 +17732,7 @@ const voteCalled = new Map(), voteRefused = new Map()
 const voters = () => [...serving ? [] : [0], ...[...conns.keys()].filter(id => players.has(id))]
 const levelArg = a => { const w = String(a || '').trim().toLowerCase(), n = /^\d+$/.test(w) ? parseInt(w, 10) - 1 : -1
   const i = LEVELS.findIndex(L => L.name.toLowerCase() === w); return i >= 0 ? i : LEVELS[n] ? n : -1 }
-const levelList = () => sysMsg('§cLevels: §f' + LEVELS.map((L, n) => (n + 1) + ' ' + L.name).join('  '))
+const levelList = () => sysMsg(gameText('levelList', { list: LEVELS.map((L, n) => (n + 1) + ' ' + L.name).join('  ') }))
 function callVote(id, lv) {
   const t = now()
   const why = !Number.isInteger(lv) || lv < 0 || lv >= LEVELS.length ? 'No such level.' : lv === levelId ? 'Already on ' + LEVELS[lv].name + '.'
@@ -17527,7 +17764,7 @@ function endVote(end) {
 const cancelVote = () => { if (isHost && poll) endVote('cancelled') }
 function takePoll(d) {
   if (d.end !== undefined) {
-    if (pollSeen && ['passed', 'failed', 'cancelled'].includes(d.end)) sysMsg('§7The vote for §f' + LEVELS[pollSeen.lv].name + '§7 ' + (d.end === 'cancelled' ? 'was called off' : d.end) + '.')
+    if (pollSeen && ['passed', 'failed', 'cancelled'].includes(d.end)) sysMsg(gameText('voteEnded', { level: LEVELS[pollSeen.lv].name, end: TEXT.voteEnd[d.end] }))
     pollSeen = null; myBallot = false
     return
   }
@@ -17543,7 +17780,7 @@ function drawPoll() {
   const p = pollSeen
   hud('voteOn', el('#vote'), 'display', p ? 'block' : 'none')
   if (!p) return
-  hud('voteText', el('#vote-text'), 'textContent', p.by + ' wants ' + LEVELS[p.lv].name + ': ' + p.yes + ' yes / ' + p.no + ' no (' + Math.max(0, Math.ceil((p.until - now()) / 1000)) + ' s)')
+  hud('voteText', el('#vote-text'), 'textContent', gameText('voteText', { by: p.by, level: LEVELS[p.lv].name, yes: p.yes, no: p.no, s: Math.max(0, Math.ceil((p.until - now()) / 1000)) }))
   hud('voted', el('#vote'), '.voted', myBallot)
   hud('voteHost', el('#vote-cancel'), 'display', isHost ? '' : 'none')
 }
@@ -17601,7 +17838,7 @@ function startServer() {
 function beginServing() {
   phase = 'playing'
   kickedBy = null
-  setStatus('Serving. Join from another machine with the room code.', 'ok')
+  setStatus(TEXT.serving, 'ok')
 }
 
 function endServing() {
@@ -17764,8 +18001,8 @@ function startJoin(code, again) {
   // a rejoin asks for the character it had at once; the pick opens only if the host gives it another
   predicted = newChar(myCid, 6, 0); admitted = false; helloAt = 0; picking = !again; rejoinPick = !!again
   clearTimeout(relinkTimer); relinkTimer = 0; relinkTries = 0
-  const t0 = now(), stage = t => phase === 'connecting' && setStatus('Connecting… ' + t)
-  stage('to the signaling server')
+  const t0 = now(), stage = t => phase === 'connecting' && setStatus(gameText('connecting', { stage: t }))
+  stage(TEXT.stageSignaling)
   const asked = roomCodeStr, nonce = globalThis.crypto?.getRandomValues ? [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('') : ''
   // this join's facts and its one failure: the words in the status, the report under them, then the rejoin's next step
   const J = linkFacts(false), fail = after => {
@@ -17776,7 +18013,7 @@ function startJoin(code, again) {
     linkStats(J, c?.peerConnection, () => {
       // overtaken by the join going on, it is no failure
       if (phase !== 'connecting' || peer !== me) { if (peer === me) J.end = 0; return }
-      setStatus('Could not connect. ' + joinSay(J, !!rejoinTry), 'err'); linkInfo(joinReport(J, !!rejoinTry), el('#status'))
+      setStatus(gameText('couldNotConnect', { why: joinSay(J, !!rejoinTry) }), 'err'); linkInfo(joinReport(J, !!rejoinTry), el('#status'))
       rejoinMissed(J)
       after?.()
     })
@@ -17812,7 +18049,7 @@ function startJoin(code, again) {
       const s = m?.type === 'CANDIDATE' && m.payload?.connectionId === c.connectionId && m.payload.candidate?.candidate
       if (s) { const [, , protocol, , address, , , type] = s.split(' '); countKind(J.remote, candKind({ type, protocol, address })) }
     })
-    stage('asking the host')
+    stage(TEXT.stageAsking)
     // each second the link's stage; after JOIN_WAIT_MS without the room, the join has failed
     const watch = setInterval(() => {
       if (phase !== 'connecting' || c.open && !gate) return clearInterval(watch)
@@ -17835,7 +18072,7 @@ function startJoin(code, again) {
     const refuse = () => {
       endSession('This room has changed hands', 'The server answering ' + asked + ' is not the one this page played with before, so someone else may have ' +
         'taken its code. Nothing of it was shown, and this page will not go back to it by itself.', true)
-      el('#end-rejoin').textContent = 'Join anyway'; trustNext = asked
+      el('#end-rejoin').textContent = TEXT.joinAnyway; trustNext = asked
     }
     c.on('open', () => { watchLink(c, null); const known = !!globalThis.crypto?.subtle && !!pinsRead()[asked]; J.pin = known ? 'waiting' : 'none'; if (!known) pass() })
     c.on('data', raw => {
@@ -17871,7 +18108,7 @@ function hostLevel(lv, ls, lh) {
   const L = LEVELS[lv], gen = L && L.gen && Array.isArray(ls) && { seed: ls[0] >>> 0, size: clamp(ls[1] | 0, 1, 32) }
   if (lv !== levelId || gen && (gen.seed !== levelGen.seed || gen.size !== levelGen.size)) {
     if (!L) {
-      if (!levelMissTold) sysMsg('§cThe host is playing a level this copy of the game does not have.')
+      if (!levelMissTold) sysMsg(TEXT.hostLevelMissing)
       levelMissTold = true
       return
     }
@@ -17880,7 +18117,7 @@ function hostLevel(lv, ls, lh) {
     loadLevel(lv, gen)
   }
   if (lh !== undefined && lh >>> 0 !== LV.hash && !levelMissTold) {
-    sysMsg('§cYour copy of the game differs from the host\'s: download the latest')
+    sysMsg(TEXT.copyDiffers)
     levelMissTold = true
   }
 }
@@ -18136,7 +18373,7 @@ function clearSession() {
   const pe = el('#pause')
   if (pe) pe.classList.remove('open')
   for (const c of [...conns.values(), ...joining.values(), ...refusing]) { try { c.close() } catch (e) {} }
-  el('#end-rejoin').textContent = 'Rejoin'
+  el('#end-rejoin').textContent = TEXT.rejoin
   conns.clear(); joining.clear(); refusing.clear(); inputs.clear(); inputSeq.clear(); lastChatSeq.clear(); lastChatAt.clear()
   inQ.clear(); inAck.clear()
   players.clear(); roster.clear()
@@ -18194,7 +18431,7 @@ function rejoinLater(code, restart) {
   const wait = (quick ? rejoinPlan[rejoinTry] : TAIL_MS) * (1 + (2 * Math.random() - 1) * REJOIN_SPREAD)
   if (!quick && (rejoinTry >= rejoinPlan.length + TAIL_TRIES || now() + wait > tailEnd)) { rejoinTry = 0; return }      // spent: the end screen as the last try left it
   rejoinTry++
-  if (quick) { el('#end-title').textContent = 'Reconnecting…'; el('#end-rejoin').style.display = 'none' }
+  if (quick) { el('#end-title').textContent = TEXT.reconnecting; el('#end-rejoin').style.display = 'none' }
   rejoinTimer = setTimeout(() => { rejoinTimer = 0; if (phase === 'ended') startJoin(code, true) }, wait)
 }
 function rejoinStop() { clearTimeout(rejoinTimer); rejoinTimer = 0; rejoinTry = 0 }
@@ -18225,7 +18462,7 @@ function initEndModal() {
   // copied, or where the clipboard refuses, shown to be selected
   el('#linkinfo-copy').onclick = async () => {
     const ok = await copyText(el('#linkinfo-text').textContent)
-    el('#linkinfo-copy').textContent = ok ? 'Copied' : 'Select it below'
+    el('#linkinfo-copy').textContent = ok ? TEXT.copied : TEXT.selectBelow
     if (!ok) { el('#linkinfo-text').hidden = false; el('#linkinfo-show').setAttribute('aria-expanded', 'true') }
   }
   el('#end-rejoin').onclick = () => {
@@ -18247,10 +18484,10 @@ function beginPlay() {
   setStatus('')   // the menu is hidden: its line goes with it
   document.body.classList.add('playing')
   if (!joinPick()) lockPointer()
-  sysMsg('§7Connected. §8T to chat · /help for codes · /code for the room code')
+  sysMsg(TEXT.connected)
   if (qualityAuto && qualityAuto !== QNAMES[0])
-    sysMsg('§7Quality §f' + qualityAuto + '§7 — chosen for this machine. Settings can change it.')
-  if (softGL() && !softTold) { softTold = true; sysMsg('§eThis browser draws without graphics acceleration, so the game may not keep up here.') }
+    sysMsg(gameText('qualityAuto', { quality: qualityAuto }))
+  if (softGL() && !softTold) { softTold = true; sysMsg(TEXT.softGraphics) }
 }
 
 function remoteAt(t) {
@@ -18457,7 +18694,7 @@ function bcastSegLoader(refuse) {
 // refusal is final, it is tried again while still named: at once if it played since its last failure, else each wait
 // twice the last and at most BCAST_RETRY_MAX_MS
 function bcastFail(u, why, final) {
-  if (bc.told !== u) { bc.told = u; sysMsg('§7The broadcast from ' + bcastOrigin(u) + ' cannot show here: ' + why + '.') }
+  if (bc.told !== u) { bc.told = u; sysMsg(gameText('bcastCannot', { origin: bcastOrigin(u), why })) }
   bcastQuit()
   if (!final) bc.retryAt = now() + (bc.played ? 0 : Math.min(BCAST_RETRY_MS * 2 ** bc.retries++, BCAST_RETRY_MAX_MS))
   bc.played = false
@@ -18628,7 +18865,7 @@ function teamsChanged() {
 function setMode(m) {
   if (!MODES.includes(m)) return false
   const humans = conns.size + (serving ? 0 : 1)
-  if (m === 'waves' && humans > WAVES_PLAYERS) { sysMsg('§cWaves takes ' + WAVES_PLAYERS + ' players; ' + humans + ' are here.'); return false }
+  if (m === 'waves' && humans > WAVES_PLAYERS) { sysMsg(gameText('wavesTakes', { max: WAVES_PLAYERS, n: humans })); return false }
   gameMode = m
   for (const c of players.values()) if (!c.bot && !sideOffered(sideOf(c))) moveTo(c, START)
   pushRoster()
@@ -18726,7 +18963,8 @@ function hidesAround(x, z, R, kinds) {
 function dropRevive(c) {
   const H = reviveRow(), free = s => !pickups.some(p => Math.hypot(p.x - s[0], p.z - s[2]) < 2), any = a => a[Math.random() * a.length | 0]
   const off = s => Math.hypot(s[0] - c.x, s[2] - c.z)
-  const spot = c && any(hidesAround(c.x, c.z, H.revive.near, H.revive.hide).filter(free).sort((a, b) => off(a) - off(b)).slice(0, 3))
+  const spots = c ? hidesAround(c.x, c.z, H.revive.near, H.revive.hide).filter(free) : [], kind = c && any(H.revive.hide.filter(k => spots.some(s => s[3] === k)))
+  const spot = kind && any(spots.filter(s => s[3] === kind).sort((a, b) => off(a) - off(b)).slice(0, 3))
   let at
   if (spot) at = [spot[0], spot[1] + 0.75, spot[2]]
   else { const s = any(SPAWNS.filter(free).length ? SPAWNS.filter(free) : SPAWNS); at = [s[0], s[1] - staticRay(s[0], s[1], s[2], 0, -1, 0, 30) + 0.75, s[2]] }
@@ -18808,7 +19046,7 @@ function vehicleTick(list, credit, touch, dt) {
     c.hp -= stat(c, 'take', o.V.ram * into)
     if (was && !hookHit(by, c, L ? GUNS[o.launchG].name : o.K.name, was)) continue
     knockChar(c, dx / d, 0.3, dz / d, into * 0.5)
-    if (downed(c)) by ? credit(by.id, by)(c, L ? GUNS[o.launchG] : { name: o.K.name }) : fell(c, 'was run over by a ' + o.K.name, o.K.name)
+    if (downed(c)) by ? credit(by.id, by)(c, L ? GUNS[o.launchG] : { name: o.K.name }) : fell(c, gameText('runOver', { vehicle: o.K.name }), o.K.name)
   }
   for (const o of objs) if (o.V) {
     if (o.v0) {                         // m/s lost this step
@@ -18841,7 +19079,7 @@ function boom(o, list, credit) {
     c.hp -= stat(c, 'take', B.dmg * k)
     if (was && !hookHit(by, c, o.K.name, was)) continue
     knockChar(c, dx / (d || 1), 0.5, dz / (d || 1), B.knock * k)
-    if (downed(c)) by ? credit(by.id, by)(c, { name: o.K.name }) : fell(c, 'was caught in a ' + o.K.name + '\'s blast', o.K.name)
+    if (downed(c)) by ? credit(by.id, by)(c, { name: o.K.name }) : fell(c, gameText('caughtInBlast', { vehicle: o.K.name }), o.K.name)
   }
   for (const p of objs) if (p !== o && p.V) {         // chained ones blow on their own turn
     const d = Math.hypot(p.x - at[0], p.y - at[1], p.z - at[2])
@@ -19145,7 +19383,7 @@ function rebalance(c) {
   if (!balanced() || mine - rest < 2) return
   const to = fallbackRow(c.id)
   moveTo(c, to); pushRoster()
-  announce('§e' + (roster.get(c.id)?.name || 'A player') + ' §7moves to the §f' + SIDES[CHARS[to].side].name + '§7 to balance the teams.')
+  announce(gameText('balance', { name: roster.get(c.id)?.name || TEXT.aPlayer, side: SIDES[CHARS[to].side].name }))
 }
 const moveTo = (c, cid) => { becomeChar(c, cid); const p = roster.get(c.id); if (p) p.cid = cid }
 
@@ -19155,7 +19393,7 @@ function switchChar(c, cid) {
   if (gameMode === 'tdm' && !c.bot && C && !C.hidden && !offEvent(C)) {
     const why = tdmRefusal(c.id, cid)
     if (why) return tell(c.id, '§7' + why), false
-    if (cid !== (roster.get(c.id)?.cid ?? c.cid)) tell(c.id, '§7You play §f' + C.name + '§7 from the next round.')
+    if (cid !== (roster.get(c.id)?.cid ?? c.cid)) tell(c.id, gameText('playNextRound', { name: C.name }))
     return true
   }
   if (!C || C.hidden || offEvent(C) || cid === c.cid || c.dead > 0 || c.shiftCool > 0) return false
@@ -19207,59 +19445,54 @@ GAME.match = { frags: setFragLimit, minutes: setMatchMinutes, restart: () => { h
 // the commands this game adds to the page's own
 GAME.commands = {
   event:  { args: '<name|auto|off>', help: 'host only, the seasonal event', run: a => {
-              if (!isHost) return sysMsg('§cOnly the host picks the event.')
+              if (!isHost) return sysMsg(TEXT.onlyHostEvent)
               const w = String(a || '').trim().toLowerCase(), k = eventPicks().find(p => p.toLowerCase() === w)
-              if (!k) return sysMsg('§7Event: §f' + eventLabel(settings.event || 'auto') + ' §7(' + eventPicks().map(eventLabel).join(', ') + ')')
+              if (!k) return sysMsg(gameText('eventIs', { event: eventLabel(settings.event || 'auto'), picks: eventPicks().map(eventLabel).join(', ') }))
               pickEvent(k) } },
   spawn:  { args: '<name|rangers|tmnt|all>', help: 'host only, bring enemies in now', run: a => {
-              if (!isHost) return sysMsg('§cOnly the host controls the enemies.')
+              if (!isHost) return sysMsg(TEXT.onlyHostEnemies)
               const want = String(a || '').trim().toLowerCase()
               const on = fieldedTeams(), rows = BOTS.map((b, i) => i).filter(i => !on.has(BOTS[i].team)).filter(i => want === 'all' ||
                 want === 'rangers' && !BOTS[i].rare ||
                 (want === 'tmnt' || want === 'turtles') && BOTS[i].crew ||
                 BOTS[i].name.toLowerCase() === want)
               if (!want || !rows.length)
-                return sysMsg('§cEnemies: §f' + BOTS.map(b => b.name).join(' ') +
-                              ' §7or §frangers tmnt all')
+                return sysMsg(gameText('enemiesList', { names: BOTS.map(b => b.name).join(' ') }))
               const got = rows.filter(addBot)
               if (got.length && conns.size) pushRoster()
-              sysMsg(got.length ? '§7Spawned §f' + got.map(i => BOTS[i].name).join(', ')
-                                : '§7Already out.') } },
+              sysMsg(got.length ? gameText('spawned', { names: got.map(i => BOTS[i].name).join(', ') }) : TEXT.alreadyOut) } },
   voice:  { args: '[name] [n]', help: 'hear a line, or how the voices are getting on', run: a => {
               const [who, n] = String(a || '').trim().split(/\s+/)
-              if (!voiceWorker) return sysMsg(settings.voices ? '§7Voices start in a game with the sound on.'
-                                                              : '§7AI voices are off: Settings turns them on.')
-              if (!who) return sysMsg('§7' + voiceStatus()[0] + '. Chatterbox ' + voiceStatus()[1] + '.')
+              if (!voiceWorker) return sysMsg(settings.voices ? TEXT.voicesStart : TEXT.voicesOff)
+              if (!who) return sysMsg(gameText('voiceStatus', { ready: voiceStatus()[0], stage: voiceStatus()[1] }))
               const name = Object.keys(SPEECH).find(k => k.toLowerCase() === who.toLowerCase())
-              if (!name) return sysMsg('§cVoices: §f' + Object.keys(SPEECH).join(' '))
+              if (!name) return sysMsg(gameText('voiceList', { names: Object.keys(SPEECH).join(' ') }))
               const i = Math.max(1, parseInt(n, 10) || 1) - 1, key = name + ':' + i
-              if (!voiceBuf.has(key)) return sysMsg('§7Not made yet. ' + voiceStatus()[0] + '.')
+              if (!voiceBuf.has(key)) return sysMsg(gameText('voiceNotMade', { ready: voiceStatus()[0] }))
               voiceBusy = 0
               say(name, i)
-              sysMsg('§7' + name + ' ' + (i + 1) + ', voice §f' + SPEECH[name][0] +
-                     (sfxLive() ? '' : ' §c(sound is off)')) } },
+              sysMsg(gameText('voiceLine', { name, n: i + 1, voice: SPEECH[name][0], off: sfxLive() ? '' : TEXT.voiceSoundOff })) } },
   despawn:{ args: '', help: 'host only, remove every enemy', run: () => {
-              if (!isHost) return sysMsg('§cOnly the host controls the enemies.')
+              if (!isHost) return sysMsg(TEXT.onlyHostEnemies)
               if (gameMode === 'ffa') BOT_COUNT = 0, stepSquad()
               spawnList([])
-              sysMsg('§7Cleared.') } },
+              sysMsg(TEXT.cleared) } },
   wave:   { args: '<n|name>', help: 'host only, jump straight to a wave', run: a => {
-              if (!isHost) return sysMsg('§cOnly the host controls the enemies.')
-              if (gameMode !== 'waves') return sysMsg('§cNot in waves — the host panel sets the mode')
+              if (!isHost) return sysMsg(TEXT.onlyHostEnemies)
+              if (gameMode !== 'waves') return sysMsg(TEXT.notInWaves)
               const want = String(a || '').trim().toLowerCase()
               let i = WAVES.findIndex(w => w.name.toLowerCase() === want)
               if (i < 0 && /^\d+$/.test(want)) i = parseInt(want, 10) - 1
               if (i < 0 || i >= WAVES.length)
-                return sysMsg('§cWaves: §f' +
-                  WAVES.map((w, n) => (n + 1) + ' ' + w.name).join('  '))
+                return sysMsg(gameText('waveList', { list: WAVES.map((w, n) => (n + 1) + ' ' + w.name).join('  ') }))
               startWave(i) } },
   bots:   { args: '<0-6>', help: 'host only, set how many enemies', run: a => {
-              if (!isHost) return sysMsg('§cOnly the host controls the enemies.')
+              if (!isHost) return sysMsg(TEXT.onlyHostEnemies)
               const n = parseInt(a, 10)
               if (isNaN(n) || n < 0 || n > regulars())
-                return sysMsg('§cUsage: §f/bots <0-' + regulars() + '>')
+                return sysMsg(gameText('usageBots', { max: regulars() }))
               spawnBots(n)
-              sysMsg('§7Enemies: §f' + BOT_COUNT) } },
+              sysMsg(gameText('enemiesNow', { n: BOT_COUNT })) } },
 }
 // why the room refuses character i to this player now, '' if it doesn't
 // the outfits this device has, by id: unlocked by the host's word, kept in localStorage. A player can edit its own storage to
@@ -19311,10 +19544,10 @@ GAME.rows = {
     if (offEvent(CHARS[cid])) cid = START
     if (!sideOffered(CHARS[cid].side)) {
       cid = fallbackRow(id)
-      tell(id, '§eThis room plays ' + gameMode + ': ' + Object.keys(SIDES).filter(sideOffered).map(k => SIDES[k].name).join(', ') + ' only')
+      tell(id, gameText('roomPlays', { mode: gameMode, sides: Object.keys(SIDES).filter(sideOffered).map(k => SIDES[k].name).join(', ') }))
     } else if (sideLocked(CHARS[cid].side, id).locked || taken(CHARS[cid].team, id)) {
       cid = fallbackRow(id)
-      tell(id, '§eThe room changed while you picked: you play §f' + CHARS[cid].name + '§e. Pause → Character to change.')
+      tell(id, gameText('roomChanged', { name: CHARS[cid].name }))
     }
     const why = tdmRefusal(id, cid)
     if (why) {
@@ -19370,7 +19603,7 @@ function pickEvent(k) {
   if (!isHost) return hostEvent()
   if (eventAt(new Date()) === eventOn) return
   GAME.match.restart()
-  announce('§7Event: §f' + (eventOn ? eventOn.name : 'off'))
+  announce(gameText('eventAnnounce', { event: eventOn ? eventOn.name : TEXT.off }))
 }
 let vhsTimer = 0, vhsAt = 0, litBase = null
 function setEvent(E) {
@@ -20072,7 +20305,7 @@ function drawTab(others) {
   const tab = el('#tab')
   tab.style.display = tabOpen ? 'grid' : 'none'
   if (!tabOpen) { lastTabSig = null; return }
-  hud('tabHead', el('#tabhead'), 'textContent', 'STANDINGS' + (gameMode === 'ffa' ? ' · ' + (fragLimit ? 'first to ' + fragLimit : 'no limit') : ''))
+  hud('tabHead', el('#tabhead'), 'textContent', TEXT.standings + (gameMode === 'ffa' ? ' · ' + (fragLimit ? gameText('firstTo', { n: fragLimit }) : TEXT.noLimit) : ''))
   const rows = standings(others)
   const sig = rows.map(r => r.id + ':' + r.kills).join(',')
   const me = isHost ? players.get(0) : predicted
@@ -20098,11 +20331,11 @@ function drawResults(others) {
   const who = (roster.get(top.id) || {}).name || (top.id === myId ? myName : '?')
   const me = selfChar(), heroes = gameMode === 'tdm' ? [me && { id: myId, cid: me.cid, dead: me.dead }, ...others].filter(o => o && GAME.participant(o.id, o.cid).side === TDM.hero) : []
   const hero = heroes.find(o => !(o.dead > 0)), won = hero && (roster.get(hero.id)?.name || GAME.participant(hero.id, hero.cid).name)
-  el('#restitle').textContent = gameMode === 'tdm' ? (won ? won.toUpperCase() + ' WINS' : 'THE SQUAD WINS')
-    : top.id === myId ? 'YOU WIN' : who + ' WINS'
+  el('#restitle').textContent = gameMode === 'tdm' ? (won ? gameText('titleWins', { name: won.toUpperCase() }) : TEXT.squadWins)
+    : top.id === myId ? TEXT.youWin : gameText('titleWins', { name: who })
   el('#resrows').innerHTML = scoreRows(rows)
-  el('#resnext').textContent = 'Next round in ' + left + (isHost ? ' on ' + LEVELS[nextLevel >= 0 ? nextLevel : levelId].name +
-    (IS_TOUCH ? ' (tap a level to change it)' : ' (press 1-' + Math.min(9, LEVELS.length) + ' to change it)') : '')
+  el('#resnext').textContent = gameText('nextRoundIn', { n: left }) + (isHost ? gameText('nextOn', { level: LEVELS[nextLevel >= 0 ? nextLevel : levelId].name }) +
+    (IS_TOUCH ? TEXT.tapLevel : gameText('pressLevel', { max: Math.min(9, LEVELS.length) })) : '')
   const lv = el('#reslevels')
   if (isHost && !lv.children.length) buildLevelCards(lv, levelId, pickNext, !IS_TOUCH)
   if (isHost && nextLevel < 0) markLevel(lv, levelId)
@@ -20135,15 +20368,14 @@ function drawServer(t) {
              (bot ? '' : '<button data-kick="' + r.id + '">kick</button>') + '</td></tr>'
     }).join('')
   }
-  const match = resultsLeft > 0 ? 'next round in ' + Math.ceil(resultsLeft) + 's'
-    : matchLeft > 0 ? mmss(matchLeft) + ' left'
-    : fragLimit ? 'first to ' + fragLimit : 'no limit'
-  hud('srvHead', el('#srv-head'), 'textContent', LEVELS[levelId].name + ' · ' +
-      humans + ' player' + (humans === 1 ? '' : 's') + ' · ' + (rows.length - humans) + ' enemies · ' + match)
+  const match = resultsLeft > 0 ? gameText('nextRoundSecs', { n: Math.ceil(resultsLeft) })
+    : matchLeft > 0 ? gameText('timeLeft', { t: mmss(matchLeft) })
+    : fragLimit ? gameText('firstTo', { n: fragLimit }) : TEXT.noLimit
+  hud('srvHead', el('#srv-head'), 'textContent', gameText('srvHead', { level: LEVELS[levelId].name, players: gameText(humans === 1 ? 'playerOne' : 'playerMany', { n: humans }), enemies: rows.length - humans, match }))
   const up = Math.floor((t - servedAt) / 1000)
   const since = Math.floor(up / 3600) + ':' + String(Math.floor(up / 60) % 60).padStart(2, '0') + ':' +
                 String(up % 60).padStart(2, '0')
-  const link = !peer ? '-' : peer.disconnected ? 'lost, retrying' : peer.open ? 'connected' : 'connecting'
+  const link = !peer ? TEXT.linkNone : peer.disconnected ? TEXT.linkLost : peer.open ? TEXT.linkUp : TEXT.linkOpening
   const row = (k1, v1, k2, v2) => k1.padEnd(8) + v1.padStart(11) + '    ' + k2.padEnd(11) + v2
   hud('srvStats', el('#srv-stats'), 'textContent', [
     row('tick', players.size ? Math.round(tickRate) + ' Hz' : 'idle',
@@ -20154,8 +20386,8 @@ function drawServer(t) {
     row('uptime', since, 'signaling', link)].join('\n'))
   hud('srvBots', el('#srv-bots'), 'textContent', String(BOT_COUNT))
   hud('srvLevel', el('#srv-level'), 'textContent', LEVELS[levelId].name + ' ▸')
-  hud('srvFrags', el('#srv-frags'), 'textContent', fragLimit ? String(fragLimit) : 'none')
-  hud('srvTime', el('#srv-time'), 'textContent', timeLimit ? +(timeLimit / 60).toFixed(2) + ' min' : 'untimed')
+  hud('srvFrags', el('#srv-frags'), 'textContent', fragLimit ? String(fragLimit) : TEXT.none)
+  hud('srvTime', el('#srv-time'), 'textContent', timeLimit ? gameText('minutes', { n: +(timeLimit / 60).toFixed(2) }) : TEXT.untimed)
 }
 
 const FRAG_STEPS = [0, 5, 10, 15, 20, 25, 30, 40, 50, 75, 100, 150, 200]
@@ -20246,7 +20478,7 @@ function drawHud(me, others, t) {
   for (const [k, s] of [['fireD', '#btn-fire'], ['altD', '#btn-alt'], ['gunD', '#gun .g'], ['ammoD', '#gun .a'], ['bagD', '#bag']])
     hud(k, el(s), 'display', seat && !seat[1] ? 'none' : '')
   hud('vehD', el('#veh'), 'display', seat ? 'block' : 'none')
-  hud('useTxt', el('#btn-use'), 'textContent', seat ? 'EXIT' : 'USE'); hud('jumpTxt', el('#btn-jump'), 'textContent', seat ? 'H-BRAKE' : 'JUMP')
+  hud('useTxt', el('#btn-use'), 'textContent', seat ? TEXT.btnExit : TEXT.btnUse); hud('jumpTxt', el('#btn-jump'), 'textContent', seat ? TEXT.btnHBrake : TEXT.btnJump)
   if (car) {
     const hp = isHost ? car.hp : vehHp ?? car.V.hp, v = car.body?.getLinearVelocity()
     hud('vhpW', el('#vhpfill'), 'width', (clamp(hp / car.V.hp, 0, 1) * 100).toFixed(1) + '%')
@@ -20262,7 +20494,7 @@ function drawHud(me, others, t) {
   hud('flying', document.body, '.flying', !!FC.jet && !FC.jet.flier)
   hud('flier', document.body, '.flier', !!FC.jet?.flier)
   hud('zipper', document.body, '.zipper', !!FC.swing)
-  hud('descendL', el('#btn-descend'), 'textContent', FC.swing ? 'ZIP' : 'DOWN')
+  hud('descendL', el('#btn-descend'), 'textContent', FC.swing ? TEXT.btnZip : TEXT.btnDown)
   const cycles = !!FC.manyGuns || !gunsOf(me) && [].concat(FC.atk ?? []).length > 1
   hud('many', document.body, '.manyguns', cycles)
   teamSeen = teamNow(me, others)
@@ -20298,21 +20530,20 @@ function drawHud(me, others, t) {
       all.filter(o => isHero(o.id, o.cid)).map(bar).join(''))
   }
   const use = liftOf(me) > 0 ? 'lift' : objs.some(p => takeable(me, p)) ? 'use' : sewerHint(me)
-  const K = padLast ? padHints() : HINT_KEYS
-  if (watchName) hud('hud', el('#hud'), 'textContent', 'SPECTATING ' + watchName + '  ·  ' + (IS_TOUCH && !padLast ? 'FIRE' : K.fire) + ' next  ·  ' +
-    (IS_TOUCH && !padLast ? 'ATK' : K.alt) + ' previous' + clock)
+  const K = padLast ? padHints() : HINT_KEYS, S = TEXT.hintSep
+  if (watchName) hud('hud', el('#hud'), 'textContent', gameText('spectating', { name: watchName, next: IS_TOUCH && !padLast ? TEXT.btnFire : K.fire, prev: IS_TOUCH && !padLast ? TEXT.btnAtk : K.alt }) + clock)
   else hud('hud', el('#hud'), 'textContent', IS_TOUCH && !padLast
-    ? nm + '  ·  FIRE ' + G.name + dives(G) + (cycles ? '  ·  WPN next' : '') + (P ? '  ·  ATK ' + P.name + dives(P) : '') + (use ? '  ·  USE ' + use : '') + clock
-    : nm + '  ·  ' + K.move + ' move  ·  ' + K.sprint + ' sprint  ·  ' + K.jump + ' ' + (FC.jet?.flier ? 'fly/rise  ·  ' + K.down + ' down' : 'jump' + (FC.swing ? '  ·  ' + K.down + ' zip' : '')) +
-      '  ·  ' + K.fire + ' ' + G.name +
+    ? nm + S + gameText('hintTouchFire', { gun: G.name }) + dives(G) + (cycles ? S + TEXT.hintTouchWpn : '') + (P ? S + gameText('hintTouchAtk', { attack: P.name }) + dives(P) : '') + (use ? S + gameText('hintTouchUse', { use }) : '') + clock
+    : nm + S + gameText('hintMove', { key: K.move }) + S + gameText('hintSprint', { key: K.sprint }) + S + (FC.jet?.flier ? gameText('hintFly', { key: K.jump }) + S + gameText('hintDown', { key: K.down }) : gameText('hintJump', { key: K.jump }) + (FC.swing ? S + gameText('hintZip', { key: K.down }) : '')) +
+      S + gameText('hintFire', { key: K.fire, gun: G.name }) +
       dives(G) +
-      (cycles ? '  ·  ' + K.next + ' next' : '') +
-      (P ? '  ·  ' + K.alt + ' ' + P.name : '') +
+      (cycles ? S + gameText('hintNext', { key: K.next }) : '') +
+      (P ? S + gameText('hintAlt', { key: K.alt, attack: P.name }) : '') +
       dives(P) +
-      (use ? '  ·  ' + K.use + ' ' + use : '') +
-      (FC.shift !== undefined ? '  ·  ' + K.shift + ' shift form' : '') +
-      '  ·  ' + K.chat + ' chat  ·  ' + K.scores + ' scores' +
-      (locked || chatOpen || padLast ? '' : '  ·  click to capture mouse') + clock)
+      (use ? S + gameText('hintUse', { key: K.use, use }) : '') +
+      (FC.shift !== undefined ? S + gameText('hintShift', { key: K.shift }) : '') +
+      S + gameText('hintChat', { key: K.chat }) + S + gameText('hintScores', { key: K.scores }) +
+      (locked || chatOpen || padLast ? '' : S + TEXT.hintCapture) + clock)
   if (pauseOpen && hintPad !== (padLast && padHints())) pauseHint()
 }
 
@@ -20504,13 +20735,13 @@ class Arena extends ENABLE3D.Scene3D {
       GAME.view.serverInit()
       wireMenu()
       setStatus('')
-      const broke = m => { if (phase === 'connecting' || picking) setStatus('Something broke: ' + m, 'err') }
+      const broke = m => { if (phase === 'connecting' || picking) setStatus(gameText('brokeStatus', { why: m }), 'err') }
       addEventListener('error', e => broke(e.message))
       addEventListener('unhandledrejection', e => broke(String(e.reason && e.reason.message || e.reason)))
       thumbsOn = true; idleThumbs(); joinLink()
     } catch (e) {
       console.error(e)
-      setStatus('Startup failed: ' + ((e && e.message) || e), 'err')
+      setStatus(gameText('startupFailed', { why: (e && e.message) || e }), 'err')
       return
     }
     loadModels()          // failures keep the capsules
@@ -20597,7 +20828,7 @@ Promise.all([ammoReady, OBJECTS.some(K => K.shape === 'hull') && loadHull().catc
     renderer: new THREE.WebGLRenderer({ antialias: !IS_TOUCH, powerPreference: 'high-performance' }),
     camera: new THREE.PerspectiveCamera(settings.fov, innerWidth / innerHeight, 0.1, 320),
   })
-}).catch(e => setStatus('Physics failed to load: ' + e, 'err'))
+}).catch(e => setStatus(gameText('physicsFailed', { why: e }), 'err'))
 
 const nameNow = () => { myName = cleanName(nameIn.value) || suggestedName() }
 function wireMenu() {
