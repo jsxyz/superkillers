@@ -9656,7 +9656,7 @@ function onBodyLoaded(B, gltf, image) {
     gltf.scene.traverse(n => { if (n !== gltf.scene) { n.updateMatrix(); n.matrixAutoUpdate = false } })      // the drive sets its joints' matrices
   }
   B.rig = gltf.scene.getObjectByName('body65')
-  const worn = new Map(), wear = m => worn.get(m) || worn.set(m, Object.assign(m.clone(), { map: Object.assign(m.map.clone(), { image, needsUpdate: true }) })).get(m)
+  const worn = new Map(), wear = m => worn.get(m) || worn.set(m, Object.assign(m.clone(), { map: Object.assign(m.map.clone(), { source: new THREE.Source(image), needsUpdate: true }) })).get(m)      // its own source: a clone's image is the shared one
   const template = far => { const g = new (servedBody())(), s = cloneSkinned(gltf.scene)
     s.traverse(n => { if (n.isSkinnedMesh && isFar(n) !== far) n.visible = false })
     for (const n of s.getObjectsByProperty('visible', false)) n.removeFromParent()
@@ -10541,6 +10541,8 @@ function cityInstances(g, material, rows, pose) {
 }
 // atlas rows: road sections, middle to kerb, 8 m along
 const STREET_ROWS = { avenue: [0, 112, 7], street: [116, 180, 4], zebra: [184, 232, 3], kerb: [236, 244, 1], face: [248, 256, 1] }   // px, m
+// m from an avenue's middle: its plain asphalt, between the centre line and the first lane line; a crossing's v runs over it
+const STREET_PLAIN = [0.3, 3.3]
 // how far the level's surface textures filter along a slant: 4 on a GPU; not at all on software GL, which pays for
 // every extra sample (one llvmpipe walks a pixel's whole footprint, without bound at a grazing angle)
 const texAniso = () => softGL() ? 1 : renderer?.capabilities?.getMaxAnisotropy ? Math.min(4, renderer.capabilities.getMaxAnisotropy()) : 1
@@ -10597,7 +10599,8 @@ function streetGround(street, walks = [], into) {
     const ex = edges(X, bx.map(r => r.slice(0, 2))), ez = edges(Z, bz.map(r => r.slice(0, 2))), inside = (bs, a, b) => bs.find(r => a >= r[0] - 1e-6 && b <= r[1] + 1e-6)
     for (let i = 0; i + 1 < ex.length; i++) for (let j = 0; j + 1 < ez.length; j++) {
       const x0 = ex[i], x1 = ex[i + 1], z0 = ez[j], z1 = ez[j + 1], rx = inside(bx, x0, x1), rz = inside(bz, z0, z1)
-      if (rx && rz) quad(road, x0, z0, x1, z1, x => [x / 8, row('avenue', 1.5)])
+      if (rx && rz) for (let t = z0, h = STREET_PLAIN[1] - STREET_PLAIN[0]; t < z1 - 1e-6; t += h)
+        quad(road, x0, t, x1, Math.min(t + h, z1), (x, z) => { const w = (z - z0) % (2 * h); return [x / 8, row('avenue', STREET_PLAIN[0] + (w <= h ? w : 2 * h - w))] })
       else if (!rx && !rz) quad(pave, x0, z0, x1, z1, (x, z) => [x / TILE_M, z / TILE_M])
       else {
         const [, , mid, kind] = rx || rz, a0 = rx ? z0 : x0, a1 = rx ? z1 : x1, meets = c => (rx ? bz : bx).some(r => Math.abs(r[1] - c) < 1e-6 || Math.abs(r[0] - c) < 1e-6)
@@ -10606,7 +10609,8 @@ function streetGround(street, walks = [], into) {
           const b0 = cuts[s], b1 = cuts[s + 1], zebra = s === 0 && meets(a0) || s === cuts.length - 2 && meets(a1)
           const uv = (x, z) => { const along = rx ? z : x, across = (rx ? x : z) - mid
             return zebra ? [across / 8, row('zebra', (along - b0) / (b1 - b0) * 3)] : [along / 8, row(kind, across)] }
-          rx ? quad(road, x0, b0, x1, b1, uv) : quad(road, b0, z0, b1, z1, uv)
+          const [c0, c1] = rx ? [x0, x1] : [z0, z1], cut = c0 < mid - 1e-6 && mid < c1 - 1e-6 ? [c0, mid, c1] : [c0, c1]
+          for (let k = 0; k + 1 < cut.length; k++) rx ? quad(road, cut[k], b0, cut[k + 1], b1, uv) : quad(road, b0, cut[k], b1, cut[k + 1], uv)
         }
       }
     }
