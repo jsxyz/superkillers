@@ -2030,7 +2030,7 @@ const MODELS = {
 //   body or a reskin keeps to it; a row's `bones` set its lengths, and its served body is built on them
 // HANDS: a served body's fingers, in degrees at each finger's _01, _02 and _03 joints, bent toward the palm from the body's bind
 // (fingers straight); the thumb's fourth turns it in toward the index. rest always; grip blended in on a hand holding a weapon
-// (the gun hand, and the other on a paired or two-handed one); trigger: the gun hand's index, along the guard. Joints are named
+// (the gun hand, and the other on a paired or two-handed one); trigger: the gun hand's index while it aims, along the guard. Joints are named
 // <finger>_0<1-3>_<l|r>, with hand_<l|r> and <finger>_04_leaf_<l|r>
 const HANDS = { fingers: ['thumb', 'index', 'middle', 'ring', 'pinky'],
   rest: { thumb: [20, 20, 20, 60], index: [20, 30, 25], middle: [25, 35, 25], ring: [30, 40, 25], pinky: [35, 40, 25] },
@@ -2039,9 +2039,9 @@ const HANDS = { fingers: ['thumb', 'index', 'middle', 'ring', 'pinky'],
 const BODIES = {
   sam: { file: 'sam.1a38a080.glb', far: 'sam_lod' },
   samBlood: { file: 'sam.1a38a080.glb', far: 'sam_lod', map: 'sam_blood.b4ba8569.webp' },
-  beck: { file: 'beck.beff2a08.glb', far: 'beck_lod' },
-  beckBikini: { file: 'beck_bikini.37d5d093.glb', far: 'beck_lod' },
-  beckMagical: { file: 'beck_magical.0ab4ad25.glb', far: 'beck_lod' },
+  beck: { file: 'beck.a53a603a.glb', far: 'beck_lod' },
+  beckBikini: { file: 'beck_bikini.e031ed3f.glb', far: 'beck_lod' },
+  beckMagical: { file: 'beck_magical.3de7ab76.glb', far: 'beck_lod' },
 }
 const ASSET_SITE = 'https://jsxyz.github.io/superkillers/assets/'
 const BODY_LIBS = [
@@ -2575,34 +2575,34 @@ const PROP_MODELS = {
 // A row's `file` is a recording under assets/; `say` and `seed` describe it to a generative model (sfxMake)
 const SOUNDS = {
   // ---- weapons, as they fire: every weapon needs one, each distinct
-  Pistol: { say: 'a short, punchy pistol shot', seed: 0, file: 'pistol.e23fb46a.ogg' },
-  Scatter: { say: 'a booming shotgun blast with a pump-action rack after it', seed: 0, file: 'scatter.f394aff6.ogg' },
-  Needler: { say: 'a tiny, sharp, high needle-gun tick', seed: 0, file: 'needler.c3e64acf.ogg' },
+  Pistol: { say: 'a short, punchy pistol shot', seed: 0, file: 'pistol.a7448d52.ogg' },
+  Scatter: { say: 'a booming shotgun blast with a pump-action rack after it', seed: 0, file: 'scatter.b28e6d55.ogg' },
+  Needler: { say: 'a tiny, sharp, high needle-gun tick', seed: 0, file: 'needler.ee83da29.ogg' },
   Railer: { say: 'a crack and a long descending electric zing, with a low hum left behind', seed: 0, file: 'railer.24cb091c.ogg' },
-  'Bitter Sword': { say: 'a sword swish ending in a thin, ringing steel tone', seed: 0, file: 'bitter-sword.bbc7b95f.ogg' },
-  Lance: { say: 'a buzzy energy lance discharge, falling in pitch', seed: 0, file: 'lance.3dce52ee.ogg' },
+  'Bitter Sword': { say: 'a sword swish ending in a thin, ringing steel tone', seed: 0, file: 'bitter-sword.4b20e338.ogg' },
+  Lance: { say: 'a buzzy energy lance discharge, falling in pitch', seed: 0, file: 'lance.d2e896bd.ogg' },
   'Lance charge': { say: 'an energy lance winding up, rising and wavering, to fit its wind-up', seed: 0, file: 'lance-charge.c16b5fb4.ogg' },
   Sparker: { say: 'a crackling, buzzing electric spark', seed: 0, file: 'sparker.dfe5e6d0.ogg' },
-  Slug: { say: 'a heavy, low, thudding slug cannon', seed: 0, file: 'slug.e8fc97c7.ogg' },
-  Hammer: { say: 'a heavy hammer swung through the air and a dull thump', seed: 0, file: 'hammer.a4b54976.ogg' },
+  Slug: { say: 'a heavy, low, thudding slug cannon', seed: 0, file: 'slug.b8e8356c.ogg' },
+  Hammer: { say: 'a heavy hammer swung through the air and a dull thump', seed: 0, file: 'hammer.a89d113e.ogg' },
   Flurry: { say: 'one light, quick whip of air from a blur of punches, played every 220 ms, so short and quiet', seed: 0, file: 'flurry.26f8cfe4.ogg' },
   Katana: { say: 'two fast blade cuts, one after the other, and a faint steel ring', seed: 0, file: 'katana.cfd943db.ogg' },
-  Sai: { say: 'a quick, sharp jab with a metallic glint', seed: 0, file: 'sai.2cdad948.ogg' },
+  Sai: { say: 'a quick, sharp jab with a metallic glint', seed: 0, file: 'sai.a5039f2e.ogg' },
   Nunchaku: { say: 'a wooden whirl and a light wooden tok', seed: 0, file: 'nunchaku.5170af6e.ogg' },
-  'Bo Staff': { say: 'a wooden staff whooshing round into a solid knock', seed: 0, file: 'bo-staff.77ab0162.ogg' },
+  'Bo Staff': { say: 'a wooden staff whooshing round into a solid knock', seed: 0, file: 'bo-staff.fc693c24.ogg' },
   Shoryuken: { say: 'a rising uppercut whoosh that climbs in pitch, with the connect under it', seed: 0, file: 'shoryuken.e12ceba1.ogg' },
-  Hadoken: { say: 'a roaring fireball released from the hands', seed: 0, file: 'hadoken.cb37e67a.ogg' },
+  Hadoken: { say: 'a roaring fireball released from the hands', seed: 0, file: 'hadoken.44cafc34.ogg' },
   'Hadoken charge': { say: 'energy gathering between cupped hands, building, to fit its wind-up', seed: 0, file: 'hadoken-charge.aa17f2b9.ogg' },
   Raygun: { say: 'a classic sci-fi raygun pew with a warbling fall', seed: 0, file: 'raygun.2532e7c3.ogg' },
-  Zap: { say: 'a harsh, buzzing electric zap', seed: 0, file: 'zap.52f5af75.ogg' },
-  Spoiler: { say: 'a soft two-note chime', seed: 0, file: 'spoiler.e4eeb765.ogg' },
-  'Belly Flop': { say: 'a huge, heavy body slam onto the ground', seed: 0, file: 'belly-flop.3a626479.ogg' },
+  Zap: { say: 'a harsh, buzzing electric zap', seed: 0, file: 'zap.f459115d.ogg' },
+  Spoiler: { say: 'a soft two-note chime', seed: 0, file: 'spoiler.0e38f867.ogg' },
+  'Belly Flop': { say: 'a huge, heavy body slam onto the ground', seed: 0, file: 'belly-flop.8e3ab0f9.ogg' },
   'Ground Slam': { say: 'a sonic boom diving in, then a fist cracking the ground like a quake', seed: 0, file: 'ground-slam.3c4f4501.ogg' },
-  Static: { say: 'a crackle of radio static over a low mains hum', seed: 0, file: 'static.a48681d0.ogg' },
+  Static: { say: 'a crackle of radio static over a low mains hum', seed: 0, file: 'static.8f93047a.ogg' },
   'Super Punch': { say: 'a single colossal punch landing like a thunderclap', seed: 0, file: 'super-punch.b4de5d0a.ogg' },
   'Pie Construct': { say: 'a deep humming energy whoosh as a huge glowing shape swings past', seed: 0, file: 'pie-construct.ecc31029.ogg' },
-  'Mallet Construct': { say: 'a humming energy swing ending in a heavy hollow thud', seed: 0, file: 'mallet-construct.cd4b5eb3.ogg' },
-  'Ring Blaster': { say: 'a bright, ringing green energy zap', seed: 0, file: 'ring-blaster.5facea6c.ogg' },
+  'Mallet Construct': { say: 'a humming energy swing ending in a heavy hollow thud', seed: 0, file: 'mallet-construct.1d72ce65.ogg' },
+  'Ring Blaster': { say: 'a bright, ringing green energy zap', seed: 0, file: 'ring-blaster.20920bfd.ogg' },
   'Heat Vision': { say: 'a searing, crackling heat-ray hum from the eyes', seed: 0, file: 'heat-vision.37f0fc50.ogg' },
   'Speed Dash': { say: 'a crackling electric whoosh as he blurs off at super speed', seed: 0, file: 'speed-dash.3bd82cc1.ogg' },
   'Talon Rake': { say: 'a vicious claw rake tearing through the air in a wide arc, talons ripping', seed: 0, file: 'talon-rake.51956205.ogg' },
@@ -2610,19 +2610,19 @@ const SOUNDS = {
   'Extinction Breath charge': { say: 'a deep growl and a rising rush of fire building in a monster\'s throat, to fit its wind-up', seed: 0, file: 'extinction-breath-charge.0439735a.ogg' },
   'Xeno Punch': { say: 'two fast fist impacts with a sharp crackle of energy', seed: 0, file: 'xeno-punch.9e70f15a.ogg' },
   'Beam Blast': { say: 'a bright, ringing energy beam fired in one burst', seed: 0, file: 'beam-blast.eb2f30b0.ogg' },
-  'Energy Whip': { say: 'a crackling energy whip lashing out and snapping at full length', seed: 0, file: 'energy-whip.626f1acc.ogg' },
+  'Energy Whip': { say: 'a crackling energy whip lashing out and snapping at full length', seed: 0, file: 'energy-whip.0057fb68.ogg' },
   'Freeze Breath': { say: 'a long icy exhale, crackling into frost', seed: 0, file: 'freeze-breath.d7974c66.ogg' },
-  'Spider Strike': { say: 'a fast, springy punch landing with a heavy smack', seed: 0, file: 'spider-strike.f7feb338.ogg' },
+  'Spider Strike': { say: 'a fast, springy punch landing with a heavy smack', seed: 0, file: 'spider-strike.0cd1a9d3.ogg' },
   'Web Shooter': { say: 'a quick sticky thwip of a web line firing', seed: 0, file: 'web-shooter.578fe6bd.ogg' },
   'Bat Combo': { say: 'three fast martial-arts strikes, fabric snapping and knuckles thudding', seed: 0, file: 'bat-combo.82d36c4f.ogg' },
-  'Bat Uppercut': { say: 'a heavy rising uppercut with a grunt and a hollow thud', seed: 0, file: 'bat-uppercut.ea1b9966.ogg' },
-  Batarang: { say: 'a thrown metal boomerang whirring away with a sharp metallic whistle', seed: 0, file: 'batarang.1e03563d.ogg' },
-  'Chain Whip': { say: 'a heavy chain whip cracking through the air with a rattle of links', seed: 0, file: 'chain-whip.9f599970.ogg' },
+  'Bat Uppercut': { say: 'a heavy rising uppercut with a grunt and a hollow thud', seed: 0, file: 'bat-uppercut.cb4b768e.ogg' },
+  Batarang: { say: 'a thrown metal boomerang whirring away with a sharp metallic whistle', seed: 0, file: 'batarang.5a7c260e.ogg' },
+  'Chain Whip': { say: 'a heavy chain whip cracking through the air with a rattle of links', seed: 0, file: 'chain-whip.dd3a293a.ogg' },
   Necroplasm: { say: 'a wet, crackling blast of green dark energy with a low demonic growl', seed: 0, file: 'necroplasm.781d5297.ogg' },
   'Necroplasm charge': { say: 'green dark energy gathering with a rising, wavering hiss, to fit its wind-up', seed: 0, file: 'necroplasm-charge.bfa1f757.ogg' },
-  'Moon Kick': { say: 'a quick graceful kick with a bright sparkling chime', seed: 0, file: 'moon-kick.b9eb87c5.ogg' },
-  'Moon Tiara': { say: 'a glowing tiara spinning away with a bright rising chime', seed: 0, file: 'moon-tiara.800082b0.ogg' },
-  'Moon Healing Escalation': { say: 'a warm, shimmering wash of soft bells swelling and fading', seed: 0, file: 'moon-healing-escalation.182b1262.ogg' },
+  'Moon Kick': { say: 'a quick graceful kick with a bright sparkling chime', seed: 0, file: 'moon-kick.8957e39e.ogg' },
+  'Moon Tiara': { say: 'a glowing tiara spinning away with a bright rising chime', seed: 0, file: 'moon-tiara.7eefc317.ogg' },
+  'Moon Healing Escalation': { say: 'a warm, shimmering wash of soft bells swelling and fading', seed: 0, file: 'moon-healing-escalation.694d6425.ogg' },
   'Disguise Pen': { say: 'a quick magical click and a swirl of sparkles', seed: 0, file: 'disguise-pen.d05e8680.ogg' },
   'Moon Spiral Heart Attack': { say: 'a wet, tearing rip of flesh and a crack of ribs', seed: 0, file: 'moon-spiral-heart-attack.9ace6b79.ogg' },
   Heartbeat: { say: 'a single deep, wet heartbeat thump', seed: 0, file: 'heartbeat.68269234.ogg' },
@@ -2632,15 +2632,15 @@ const SOUNDS = {
   hit: { say: 'the hit confirmation: a short, bright tick above the gunfire, the same every time, since players learn it', seed: 0, file: 'hit.b3b157ce.ogg' },
   kill: { say: 'a kill confirmation: the hit tick and a bright note after it', seed: 0, file: 'kill.2479940b.ogg' },
   hurt: { say: 'being hit: a dull body thud, played as loud as the damage', seed: 0, file: 'hurt.e8269702.ogg' },
-  die: { say: 'dying: a falling, fading groan of a tone', seed: 0, file: 'die.b8f1cc33.ogg' },
+  die: { say: 'dying: a falling, fading groan of a tone', seed: 0, file: 'die.37c4c7c7.ogg' },
   spawn: { say: 'respawning: a short, rising shimmer', seed: 0, file: 'spawn.647eb906.ogg' },
-  jump: { say: 'a jump: a brief upward whoosh of effort', seed: 0, file: 'jump.616db1aa.ogg' },
+  jump: { say: 'a jump: a brief upward whoosh of effort', seed: 0, file: 'jump.8e374391.ogg' },
   land: { say: 'landing on your feet, played louder for a longer fall', seed: 0, file: 'land.fd14c361.ogg' },
   pad: { say: 'a jump pad launching you: a springy, rising boing', seed: 0, file: 'pad.554a876b.ogg' },
-  gun: { say: 'picking up a new weapon: a clack and a cock', seed: 0, file: 'gun.16e7db85.ogg' },
-  power: { say: 'picking up a power: a short rising arpeggio', seed: 0, file: 'power.1dc3ea83.ogg' },
+  gun: { say: 'picking up a new weapon: a clack and a cock', seed: 0, file: 'gun.0fe12588.ogg' },
+  power: { say: 'picking up a power: a short rising arpeggio', seed: 0, file: 'power.c90e9dc0.ogg' },
   heal: { say: 'picking up health: two soft rising notes', seed: 0, file: 'heal.1284a66d.ogg' },
-  powerdown: { say: 'a power running out: two falling notes', seed: 0, file: 'powerdown.61230124.ogg' },
+  powerdown: { say: 'a power running out: two falling notes', seed: 0, file: 'powerdown.3cc30114.ogg' },
   swap: { say: 'changing weapon, or a weapon running dry: a small mechanical click', seed: 0, file: 'swap.df9c02d3.ogg' },
   shift: { say: 'turning into another character: a warping, rising sweep', seed: 0, file: 'shift.c17b8b59.ogg' },
   thrust: { say: 'a flyer\'s thrusters: a steady, airy hiss that loops for as long as they fire', seed: 0, file: 'thrust.0487c227.ogg' },
@@ -2652,13 +2652,13 @@ const SOUNDS = {
 
   // ---- carried things, where they are; '<object> pickup' for one's own
   pickup: { say: 'lifting something off the ground: a scrape and a short grunt of effort', seed: 0, file: 'pickup.ffcf83d0.ogg' },
-  throw: { say: 'something heavy hurled through the air: a low whoosh', seed: 0, file: 'throw.5e4a0f1a.ogg' },
+  throw: { say: 'something heavy hurled through the air: a low whoosh', seed: 0, file: 'throw.2f627336.ogg' },
 
   // ---- the match
   frags: { say: 'the leader is 3, then 1, kills from the limit: two short alert notes', seed: 0, file: 'frags.9a2dadf1.ogg' },
   'frags mine': { say: 'you are 3, then 1, kills from the limit: the same alert, higher', seed: 0, file: 'frags-mine.07c32571.ogg' },
-  win: { say: 'the round over and you on top: a rising fanfare', seed: 0, file: 'win.c80155f8.ogg' },
-  over: { say: 'the round over and you beaten: a short falling phrase', seed: 0, file: 'over.de0f34b2.ogg' },
+  win: { say: 'the round over and you on top: a rising fanfare', seed: 0, file: 'win.4146eb4f.ogg' },
+  over: { say: 'the round over and you beaten: a short falling phrase', seed: 0, file: 'over.9d22115a.ogg' },
   ui: { say: 'the volume slider\'s preview: one soft tone at the new level', seed: 0, file: 'ui.a989bef0.ogg' },
 }
 // Chatterbox speech tokens (13 bits, base64), >= 5 s; SPEECH adds a seed: the voice
@@ -9595,18 +9595,20 @@ function fingersOf(body) {
   }
   return out
 }
-const NO_GRIP = { r: 0, l: 0, gun: 'r' }, fq = [], fq2 = []
-// its fingers, from HANDS by each hand's grip (the avatar's userData.grip), set again only when a grip changes
+// each avatar's grip by its root mesh (drawHeld's): each hand's share of HANDS.grip, the gun hand, and the aim's weight
+const GRIPS = new WeakMap(), NO_GRIP = { r: 0, l: 0, gun: 'r', aim: 0 }, fq = [], fq2 = []
+// its fingers, from HANDS by each hand's grip (its avatar's GRIPS entry), set again only when a grip changes
 function poseFingers(g, D, R) {
   let o = g
-  while (o && !o.userData.grip) o = o.parent
-  const G = o?.userData.grip || NO_GRIP, key = G.r.toFixed(2) + G.l.toFixed(2) + G.gun
+  while (o && !GRIPS.has(o)) o = o.parent
+  const G = o ? GRIPS.get(o) : NO_GRIP, key = G.r.toFixed(2) + G.l.toFixed(2) + G.gun + G.aim.toFixed(2)
   if (R.fingers === key) return
   R.fingers = key
   R.fb ||= D.fingers.map(f => g.getObjectByName(f.name))
   const q = fq[0] ||= new THREE.Quaternion(), t = fq2[0] ||= new THREE.Quaternion(), rad = Math.PI / 180
   D.fingers.forEach((f, i) => {
-    const b = R.fb[i], w = G[f.s] || 0, to = f.f === 'index' && f.s === G.gun ? HANDS.trigger : HANDS.grip[f.f], from = HANDS.rest[f.f]
+    const b = R.fb[i], w = G[f.s] || 0, aim = f.f === 'index' && f.s === G.gun ? G.aim : 0, from = HANDS.rest[f.f], hold = HANDS.grip[f.f]
+    const to = aim ? hold.map((x, j) => x + ((HANDS.trigger[j] ?? x) - x) * aim) : hold
     if (!b) return
     q.copy(f.q).multiply(t.setFromAxisAngle(f.curl, (from[f.k] + (to[f.k] - from[f.k]) * w) * rad))
     if (f.turnIn) q.multiply(t.setFromAxisAngle(f.turnIn, (from[3] + (to[3] - from[3]) * w) * rad))
@@ -9824,6 +9826,7 @@ function loadModels() {
   for (const B of Object.values(BODIES)) queueBody(B, false)          // every body, in the background
   loadServed().catch(e => console.warn('served parts unavailable:', e && e.message))
   loadCars().catch(e => console.warn('cars unavailable:', e && e.message))
+  kitLoad()
 }
 
 // seeded and pure: draws alike on every screen and realm
@@ -10399,7 +10402,7 @@ function interiorFrame() {
 // ---- street furniture: STREET_KIT's file, a node per item. A chunk's rows merge into a mesh per pass (tall casts shadows, low
 // does not, far stands in past the near LOD); a part is an item's triangles in metres. Until the file arrives, or with none, an item
 // draws as its collision boxes in its `fall` colour, and the chunks drawn so far take the file's meshes when it comes
-const kit = { file: null, parts: new Map(), chunks: [], load: null }
+const kit = { file: null, parts: new Map(), chunks: [], load: null, run: null }
 // one for each draw of the world: a rebuild disposes what its meshes held
 const kitMaterial = () => kit.file ? kit.file.material.clone() : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75 })
 function kitPart(name, far) {
@@ -10498,7 +10501,7 @@ const kitDummy = () => new THREE.BufferGeometry().setAttribute('position', new T
 function cityPropMeshes(rows, near, far, cx, cz) {
   if (!rows.length) return
   kitLoad()
-  const entry = { meshes: [] }, K = STREET_KIT, add = (part, pass, group, shadow, at) => {
+  const entry = { meshes: [], cx, cz }, K = STREET_KIT, add = (part, pass, group, shadow, at) => {
     const lamp = pass === 'lamp', g = lamp ? lampGeometry(part) : propGeometry(part, pass) || part.length && !kit.file && kitDummy()
     if (!g) return
     const m = new THREE.Mesh(g, lamp ? lampMaterial() : kitMaterial())
@@ -10517,23 +10520,43 @@ function cityPropMeshes(rows, near, far, cx, cz) {
     add(quarter, 'low', near, false, at)
   }
   add(rows, 'lamp', near, false, [cx, 0, cz])
+  if (kit.file) return
   if (kit.chunks.length > 256) kit.chunks = kit.chunks.filter(e => { let o = e.meshes[0][0]; while (o.parent) o = o.parent; return o === scene })
   kit.chunks.push(entry)
 }
-// the file's meshes replace the boxes in the chunks drawn so far
+// the file's meshes replace the boxes a chunk at a time, nearest first: a chunk's parts are built KIT_STEPS to a frame (and within KIT_MS) and all its
+// meshes take them in one step, so no frame draws it half-swapped. The file's material is compiled first. A chunk made after the file arrives takes it as it is built
+const KIT_STEPS = 3, KIT_MS = 2
 function kitTaken(gltf) {
   kit.file = { scene: gltf.scene, material: gltf.scene.getObjectByProperty('isMesh', true).material }
   kit.parts.clear(); gltf.scene.updateMatrixWorld(true)
-  const material = kitMaterial()
-  for (const e of kit.chunks) for (const [m, pass, rows] of e.meshes) { const g = propGeometry(rows, pass); if (!g) continue; m.geometry.dispose(); m.geometry = g; m.material = material }
+  const at = camera ? camera.position : { x: 0, z: 0 }, far = e => Math.hypot(e.cx - at.x, e.cz - at.z)
+  kit.run = kitSwapSteps(kit.chunks.splice(0).sort((a, b) => far(a) - far(b)))
 }
-// from assets/ beside the page, else the published site; none opened from a file. One try
+function* kitSwapSteps(pending) {
+  const material = kitMaterial()
+  let ready = !(camera && !renderHeadless && renderer?.compileAsync)
+  if (!ready) renderer.compileAsync(new THREE.Mesh(kitDummy(), material), camera, scene).catch(() => {}).then(() => { ready = true })
+  while (!ready) yield
+  for (const e of pending) {
+    const made = []
+    for (const [m, pass, rows] of e.meshes) { made.push(propGeometry(rows, pass)); yield }
+    e.meshes.forEach(([m], i) => { if (made[i]) { m.geometry.dispose(); m.geometry = made[i]; m.material = material } })
+    e.done = true
+  }
+}
+// a frame's share of the swap: up to `steps` parts, fewer if `over()` says its time is spent
+function kitSwap(steps = KIT_STEPS, over = () => false) {
+  for (let i = 0; i < steps && kit.run; i++) {
+    if (kit.run.next().done) kit.run = null
+    else if (over()) return
+  }
+}
+// from assets/ beside the page, else the published site; none opened from a file. One try, asked for at boot with the other served files
 function kitLoad() {
   if (kit.load || typeof location === 'undefined' || location.protocol === 'file:') return
   kit.load = (async () => {
-    const env = await (self.THREE = THREE, geoLoad(BODY_LIBS)), D = env.Meshopt.MeshoptDecoder
-    try { D.useWorkers(2) } catch (e) {}
-    const loader = new env.GLTF.GLTFLoader().setMeshoptDecoder(D)
+    const { loader } = await servedGLTF()
     for (const url of [ASSET_DIR + STREET_KIT.file, ASSET_SITE + STREET_KIT.file]) {
       try { kitTaken(await loader.loadAsync(url)); return } catch (e) { console.warn('street kit ' + url + ' failed:', e && e.message) }
     }
@@ -11139,6 +11162,7 @@ function applyView() {
 function rebuildWorld() {
   if (!worldGroup) return
   chunkDraws.length = 0
+  kit.run = null; kit.chunks.length = 0           // nothing swaps into the level being taken down
   clearScars(); sharedMats.clear()
   const geometries = new Set(), materials = new Set()
   worldGroup.traverse(n => {
@@ -12464,8 +12488,8 @@ function heldGun(id, state, t) {
 function drawHeld(id, state, t, view = null, fade = 1) {
   const a = avatars.get(id)
   if (!a) return
-  const grip = a.mesh.userData.grip ||= { r: 0, l: 0, gun: 'r' }
-  grip.r = grip.l = 0
+  const grip = GRIPS.get(a.mesh) || GRIPS.set(a.mesh, { r: 0, l: 0, gun: 'r', aim: 0 }).get(a.mesh)
+  grip.r = grip.l = grip.aim = 0
   if (!state || state.dead > 0) { if (a.held) a.held.visible = false; return }
   const gun = heldGun(id, state, t), age = a.shotAt === undefined ? Infinity : t - a.shotAt
   if (a.chargeAt !== undefined && a.chargeGun !== gun) a.chargeAt = undefined
@@ -12489,6 +12513,7 @@ function drawHeld(id, state, t, view = null, fade = 1) {
   }
   grip.gun = (a.socket ||= handSocket(a)).object.name.endsWith('_l') ? 'l' : 'r'
   grip[grip.gun] = 1; grip[grip.gun === 'r' ? 'l' : 'r'] = G.pair ? 1 : a.stance?.hands === 2 ? a.seatAim?.k || 0 : 0
+  grip.aim = a.seatAim?.active ? a.seatAim.k ?? 1 : 0
   const held = a.held, kick = age >= 0 ? Math.max(0, 1 - age / KICK_MS) ** 2 : 0, power = G.melee || G.tether ? 0.3 : shotPower(G)
   held.visible = true
   if (view) {
@@ -20311,6 +20336,8 @@ function frameBody() {
   }
   try { if (phase === 'menu') prepMenu(); prepareStep() } catch (e) { prepQueue.shift(); prepAt = null; frameFailed('prep', e) }      // a failing row drops only itself
   try { bodyLoad() } catch (e) { frameFailed('bodies', e) }
+  // the street kit's swap, in play only on a frame no slower than the page's usual (as the bodies' loads)
+  try { if (kit.run && (offPlay() || bodyDts.at(-1) <= BODY_CALM * [...bodyDts].sort((a, b) => a - b)[bodyDts.length >> 1])) { const t0 = now(); kitSwap(KIT_STEPS, () => now() - t0 > KIT_MS) } } catch (e) { kit.run = null; frameFailed('kit', e) }
   try { drawSlices() } catch (e) { frameFailed('chunk', e) }
   try { interiorFrame() } catch (e) { frameFailed('interiors', e) }
   if (screensDirty) try { screensDraw() } catch (e) { frameFailed('screens', e) }
