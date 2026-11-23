@@ -1945,8 +1945,8 @@ const MODELS = {
     crouchRun: [['leg_upper', -0.6, 0, 0], ['leg_lower', 1, 0, 0], ['body_upper', 0.35, 0, 0]],      // a crouched run, over the walk
     // a knee's and an elbow's turn about its hinge (x) from the rig rest, straight: each bends one way only
     hinge: { leg_lower: [0, 3], arm_lower: [-3, 0] },
-    rest: [['leg_upperL', -0.26, 0, 0], ['leg_lowerL', 0.45, 0, 0], ['leg_upperL', 0, 0, -0.05], ['leg_upperR', 0, 0, 0.05], ['body_lower', 0, 0, 0.11],
-      ['body_upper', 0, 0, -0.16], ['arm_upperL', 0, 0, 0.04], ['arm_upperR', 0, 0, 0.17], ['arm_lower', 0.25, 0, 0]],
+    rest: [['leg_upperL', -0.26, 0, 0], ['leg_lowerL', 0.45, 0, 0], ['leg_upperL', 0, 0, -0.05], ['leg_upperR', 0, 0, 0.05], ['body_IK', 0, 0, -0.11], ['body_lower', 0, -0.2, 0.11],
+      ['body_upper', 0, 0.21, -0.16], ['arm_upperL', 0, 0, 0.04], ['arm_upperR', 0, 0, 0.17], ['arm_lower', 0.25, 0, 0]],
     sway: [[640, [['body_upper', 0.015, 0, 0]]], [1100, [['body_lower', 0, 0, 0.02], ['leg_upperL', 0, 0, -0.012], ['leg_upperR', 0, 0, 0.012]]]],
     bones: { leg_upper: [1, 2.09, 1], leg_lower: [1, 2.09, 1.25], arm_upper: [1, 1.46, 1], arm_lower: [1, 1.46, 1], head: [0.69, 0.69, 0.69], body_upper: [0.71, 1.09, 1], body_lower: [1, 1.15, 1] },
     hold: 0.5,
@@ -9552,14 +9552,15 @@ function onModelLoaded(M, gltf) {
 
 // a served body rides its avatar's box_man rig: placed by the affine map that takes four of box_man's bind joints, as the
 // file records them, onto the rig's; each frame its driven joints take box_man's world turns (two bones blended where it
-// has more joints than box_man), the rest keep their own pose. Its node updates drive it, so every measure sees it posed.
+// has more joints than box_man), the rest keep their own pose. Every world-matrix update through it drives it, a joint's own
+// query too, so every measure sees it posed as box_man stands now.
 const FIT_JOINTS = ['head', 'leg_lowerL', 'leg_lowerR', 'knee_IKL']
 const DRIVES = new Map(), driven = new WeakMap()
 let ServedBody, dv, dq, dq2, dm
 // made on first use: a realm without three never meets it
 const servedBody = () => ServedBody ||= ((dv = new THREE.Vector3(), dq = new THREE.Quaternion(), dq2 = new THREE.Quaternion(), dm = new THREE.Matrix4()), class ServedBody extends THREE.Group {
   updateMatrixWorld(force) { driveBody(this); super.updateMatrixWorld(force) }
-  updateWorldMatrix(parents, children) { super.updateWorldMatrix(parents, false); if (children) { driveBody(this); for (const c of this.children) c.updateWorldMatrix(false, true) } }
+  updateWorldMatrix(parents, children) { super.updateWorldMatrix(parents, false); driveBody(this); if (children) for (const c of this.children) c.updateWorldMatrix(false, true) }
 })
 // world turns as quaternion chains: box_man's from its Armature down, the body's from its own top down
 function driveBody(g) {
@@ -9589,6 +9590,7 @@ function driveBody(g) {
       if (g.matrixAutoUpdate) g.updateMatrix()
       dm.multiplyMatrices(g.parent.matrixWorld, g.matrix)
       for (const o of e.via) dm.multiply(o.matrix)
+      R.box[e.a].updateWorldMatrix(true, false)
       e.bone.position.copy(dv.copy(e.ta).applyMatrix4(R.box[e.a].matrixWorld).applyMatrix4(dm.invert()))
     }
     e.bone.matrix.compose(e.bone.position, dq2, e.bone.scale)
