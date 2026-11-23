@@ -8495,7 +8495,8 @@ const servedOn = () => typeof createImageBitmap === 'function' && !!THREE.ImageB
 const servedTier = () => (QUALITY[settings.quality] || QUALITY.high).tex
 function servedImage(file) {
   servedLoader ||= new THREE.ImageBitmapLoader().setOptions({ imageOrientation: 'flipY', premultiplyAlpha: 'none', colorSpaceConversion: 'none' })
-  return new Promise(done => servedLoader.load(ASSET_DIR + file, done, undefined, () => done(null)))
+  // its texture closes the bitmap when it is replaced, so three's cache must not hand it out again
+  return new Promise(done => servedLoader.load(ASSET_DIR + file, img => { THREE.Cache.remove(ASSET_DIR + file); done(img) }, undefined, () => done(null)))
 }
 const flatTexture = (css, srgb) => {
   const cv = document.createElement('canvas'), g = cv.getContext('2d'), t = new THREE.CanvasTexture(cv)
