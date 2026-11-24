@@ -8860,7 +8860,7 @@ function servedTake(file, gltf) {
     }
     const g = new THREE.BufferGeometry()
     g.setAttribute('position', new THREE.BufferAttribute(p, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nr, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2))
-    if (a.color) g.setAttribute('color', new THREE.BufferAttribute(Float32Array.from({ length: c * a.color.itemSize }, (_, i) => a.color.array[i]), a.color.itemSize))
+    if (a.color) g.setAttribute('color', new THREE.BufferAttribute(Float32Array.from({ length: c * 3 }, (_, i) => [a.color.getX, a.color.getY, a.color.getZ][i % 3].call(a.color, i / 3 | 0)), 3))      // normalised as stored
     g.setIndex(Array.from(n.geometry.index.array)); g.computeBoundingSphere(); g.userData.shared = true
     SERVED.set(file + ':' + n.name, g)
   })
@@ -10551,10 +10551,11 @@ function kitTaken(gltf, per = KIT_ROWS) {
 function* kitSwapSteps(pending, per) {
   const material = kitMaterial()
   if (!kit.warm) {
+    for (const [name, I] of Object.entries(STREET_KIT.items)) { kitPart(name); if (I.far) kitPart(name, true); yield }
     let ready = !(camera && !renderHeadless && renderer?.compileAsync)
+    while (!ready && !(pickOpen || phase === 'playing')) yield          // compiled for the level's final lights
     if (!ready) renderer.compileAsync(new THREE.Mesh(kitDummy(), material), camera, scene).catch(() => {}).then(() => { ready = true })
     while (!ready) yield
-    for (const [name, I] of Object.entries(STREET_KIT.items)) { kitPart(name); if (I.far) kitPart(name, true); yield }
     kit.warm = true
   }
   while (pending.length) {
@@ -11189,6 +11190,7 @@ function rebuildWorld() {
   if (!worldGroup) return
   chunkDraws.length = 0
   kit.run = null; kit.chunks.length = 0; kit.queue.length = 0           // nothing swaps into the level being taken down
+  worldWarmed = false
   clearScars(); sharedMats.clear()
   const geometries = new Set(), materials = new Set()
   worldGroup.traverse(n => {
@@ -13174,6 +13176,18 @@ function goreInit() {
   })
   return true
 }
+// made, uploaded and compiled once, while the pick screen shows (the level is built then, so its lights are final): compileAsync passes over what is not visible, so the meshes show for the call
+let goreWarmed = false
+function goreWarm() {
+  if (goreWarmed || !goreOn() || !scene?.fog || !camera || !renderer.compileAsync || !pickOpen || !goreInit()) return
+  goreWarmed = true
+  for (const k of GORE_KINDS) {
+    const m = goreSt[k].mesh
+    renderer.initTexture(m.material.map)
+    m.visible = true
+    try { renderer.compileAsync(m, camera, scene).catch(() => {}) } finally { m.visible = false }
+  }
+}
 function goreClear() {
   if (!goreSt) return
   goreSt.queue.length = 0; goreSt.seen.clear(); goreSt.live = 0
@@ -13691,7 +13705,7 @@ function fxWarm() {
 function* fxBuildSteps(Q) {
   while (!camera) yield
   const built = yield* particlesSteps(Q)
-  yield
+  while (!(pickOpen || phase === 'playing')) yield          // compiled for the level's final lights
   fxQ = built
   renderer.compileAsync(fxQ.R, camera, scene).catch(() => {})
 }
@@ -14083,6 +14097,14 @@ let fxWarmed = null
 // effects under the floor) and once a WORLD_PEEK_MS, so what play first shows is compiled already
 const WORLD_PEEK_MS = 1000
 let worldAt = -Infinity
+let worldWarmed = false
+// under the pick screen, once its level's lights are final: ask for the far sun's depth pass and a peek of the world now, not at play's first frame
+function worldWarm() {
+  if (worldWarmed || !pickOpen || renderHeadless || !renderer || !camera) return
+  const far = sunLight?.userData.far
+  if (far?.visible && !far.shadow.map) { far.shadow.needsUpdate = true; worldAt = -Infinity; return }
+  worldWarmed = true
+}
 const worldHidden = () => underCover && !prepShown.length && !fxWarmed?.parent && now() - worldAt < WORLD_PEEK_MS
 const fxBare = m => new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', dyn(9, 3)), m)
 function warmEffects() {
@@ -20382,6 +20404,8 @@ function frameBody() {
   // the street kit's swap, in play only on a frame no slower than the page's usual (as the bodies' loads)
   try { if (kit.run && calmFrame()) offPlay() ? kitSwap(4 * KIT_STEPS, now, KIT_IDLE_MS) : kitSwap(KIT_STEPS, now, KIT_MS) } catch (e) { kit.run = null; frameFailed('kit', e) }
   try { fxStep() } catch (e) { fxRun = null; frameFailed('fx', e) }
+  try { goreWarm() } catch (e) { goreWarmed = true; frameFailed('gore', e) }
+  try { worldWarm() } catch (e) { worldWarmed = true; frameFailed('world', e) }
   try { drawSlices() } catch (e) { frameFailed('chunk', e) }
   try { interiorFrame() } catch (e) { frameFailed('interiors', e) }
   if (screensDirty) try { screensDraw() } catch (e) { frameFailed('screens', e) }
