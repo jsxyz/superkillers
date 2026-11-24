@@ -11332,6 +11332,36 @@ function ghost(obj, prot, fade) {
 // their programs, so a first sight builds and compiles nothing. A frame: bodySteps and far detail steps for PREP_MS, or one kept copy alone.
 const prepQueue = [], prepKept = new Map(), prepReady = new Map(), prepShown = [], PREP_MS = 6
 let prepAt = null
+// in play, spares: the rows the local player can change into (the pick list, its teams, their form shifts; on touch, only
+// the worn row's team and shifts), each prepared
+// once nothing else waits, its record kept until worn. prepSpare: their keys, the list refreshed every SPARE_MS; a row
+// that fails SPARE_TRIES times is left to its change
+const prepSpare = new Set(), spareTries = new Map(), SPARE_MS = 1000, SPARE_TRIES = 3
+let spareAt = -Infinity, spares = []
+function spareRows() {
+  const me = selfChar()
+  if (!me || phase !== 'playing' || joinPick() || !(me.id >= 0)) return []
+  // a touch device holds only the worn row's team and form shifts: the whole pick list costs a phone ~100 MB
+  const rows = new Set(IS_TOUCH ? (teamOf(me.cid) ? members(teamOf(me.cid)) : []) : pickAll().flatMap(i => teamOf(i) ? members(teamOf(i)) : [i]))
+  for (const i of [...rows, me.cid]) if (CHARS[i]?.shift !== undefined) rows.add(CHARS[i].shift)
+  const first = CHARS[me.cid]?.shift
+  return [...rows].filter(i => CHARS[i] && i !== me.cid).sort((a, b) => (b === first) - (a === first)).map(i => [me.id, i])
+}
+// the next spare not ready, queued alone once no other row waits
+function queueSpare() {
+  if (prepQueue.some(Array.isArray)) return
+  if (now() - spareAt >= SPARE_MS) { spareAt = now(); spares = spareRows(); prepSpare.clear(); for (const p of spares) prepSpare.add(GAME.looks.key(...p)) }
+  const cid = selfChar()?.cid
+  const p = spares.find(p => { const k = GAME.looks.key(...p)
+    if (prepReady.has(k)) { spareTries.delete(k); return false }
+    const M = modelFor(...p)          // a rig row waits for its rig: queued unloaded, it would hold the queue
+    return p[1] !== cid && (M.kind === 'built' || !!M.proto) && (spareTries.get(k) || 0) < SPARE_TRIES })
+  if (!p) return
+  const k = GAME.looks.key(...p), B = BODIES[GAME.participant(...p)?.mesh]
+  spareTries.set(k, (spareTries.get(k) || 0) + 1)
+  if (B && !B.template) { queueBody(B, false); (bodyWaiting.get(B) || bodyWaiting.set(B, []).get(B)).push(p) }      // last in line; its record goes when its body arrives
+  prepQueue.push(p)
+}
 // a body's per-geometry caches as steps (its far geometries' with far): extremeY's runs, skinPick, cullSkin's boxes
 function* warmSteps(root, far) {
   const meshes = []
@@ -11402,8 +11432,16 @@ function prepareDamage(id, cid) {
     }
   })
 }
+function keepPrepared(key, mesh, a, id) {
+  prepKept.set(key, mesh)
+  if (damagePartsOf(a, id).length) prepareDamage(id, a.cid)
+  // the spawn-protection ghost too; then one frame under the floor, never culled, for its shadow's depth programs
+  renderer.compileAsync(mesh, camera, scene).then(() => { ghost(mesh, 1); return renderer.compileAsync(mesh, camera, scene) })
+    .then(() => { mesh.position.set(0, -30, 0); mesh.traverse(n => { n.frustumCulled = false }); avatarGroup.add(mesh); prepShown.push([mesh, 1]) }).catch(() => {})
+}
 function prepareStep() {
   const t0 = now(), idle = offPlay(), more = () => now() - t0 < (idle ? PREP_MS : 1)
+  if (phase === 'playing' && !serving && renderer && !renderHeadless) queueSpare()
   if (!drawSkip) for (let i = prepShown.length - 1; i >= 0; i--) if (--prepShown[i][1] < 0) avatarGroup.remove(prepShown.splice(i, 1)[0][0])
   if (!idle && chunkDraws.length) return // in play, queued chunks go first
   let fresh = true
@@ -11415,6 +11453,12 @@ function prepareStep() {
     }
     if (!Array.isArray(prepQueue[0])) { if (!offPlay()) return; const E = prepQueue[0]; if ((E.gen ||= E.steps()).next().done) prepQueue.shift(); fresh = false; continue }
     const [id, cid] = prepQueue[0], M = modelFor(id, cid), key = GAME.looks.key(id, cid)
+    if (prepAt?.keep) {          // a spare's kept copy, a frame of its own
+      const { mesh, a } = prepAt.keep
+      prepAt = null; prepQueue.shift()
+      const copy = cloneSkinned(mesh); ownMaterials(copy); keepPrepared(key, copy, a, id)
+      return
+    }
     if (M.kind !== 'built' && !M.proto) return
     if (!bodyStep(prepAt ||= {}, M, id, cid, key, more)) { fresh = false; continue }
     if (camera && id >= 0 && !detailCache.has(key)) { (prepAt.far ||= farSteps(id, cid, profOf(id, cid), GAME.participant(id, cid))).next(); fresh = false; continue }
@@ -11423,21 +11467,23 @@ function prepareStep() {
     const had = avatars.get(id), body = prepAt?.inst
     avatars.delete(id)
     try {
-      const r = (prepAt.avatar ||= avatarSteps(id, cid, 0, body)).next()
+      let r                  // its steps while the frame's budget lasts
+      do r = (prepAt.avatar ||= avatarSteps(id, cid, 0, body)).next(); while (!r.done && more())
       if (!r.done) return
       let mesh = r.value
       prepAt = null
       avatarGroup.remove(mesh)
+      const a = avatars.get(id), spare = !!had && !offPlay() && prepSpare.has(key)
+      if (offPlay() || !had || spare) prepReady.set(key, { id, proto: M.proto, a })
+      if (spare) {           // its record kept for the change; its copy, if it has none yet, the next frame
+        if (!prepKept.has(key)) { prepAt = { keep: { mesh, a } }; return }
+        prepQueue.shift(); return
+      }
       if (offPlay() || !had) {
-        prepReady.set(key, { id, proto: M.proto, a: avatars.get(id) })
         mesh = cloneSkinned(mesh)
         ownMaterials(mesh)
       }
-      prepKept.set(key, mesh)
-      if (damagePartsOf(avatars.get(id), id).length) prepareDamage(id, cid)
-      // the spawn-protection ghost too; then one frame under the floor, never culled, for its shadow's depth programs
-      renderer.compileAsync(mesh, camera, scene).then(() => { ghost(mesh, 1); return renderer.compileAsync(mesh, camera, scene) })
-        .then(() => { mesh.position.set(0, -30, 0); mesh.traverse(n => { n.frustumCulled = false }); avatarGroup.add(mesh); prepShown.push([mesh, 1]) }).catch(() => {})
+      keepPrepared(key, mesh, a, id)
     } finally { if (had) avatars.set(id, had); else avatars.delete(id) }
     prepQueue.shift()      // after the kept copy: a row that throws is still the head the frame's catch drops
     return
@@ -11446,7 +11492,7 @@ function prepareStep() {
 
 function clearPrepared(keepRoster = false) {
   for (const [key, { a }] of prepReady) {
-    if (keepRoster && [...roster].some(([id, p]) => !avatars.has(id) && GAME.looks.key(id, p.cid) === key)) continue
+    if (keepRoster && ([...roster].some(([id, p]) => !avatars.has(id) && GAME.looks.key(id, p.cid) === key) || prepSpare.has(key) && phase === 'playing')) continue
     a.mixer?.stopAllAction(); freeMaterials(a.mesh); prepReady.delete(key)
   }
 }
