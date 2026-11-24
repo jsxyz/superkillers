@@ -1557,6 +1557,9 @@ const THEME = {
   wall: ['#2b3240', '#232935', '#343d4e'],
   pad: 0x58a6ff,                      // jump pad colour
   ramp: [-4.5, 15],                   // map shading height range (m)
+  // the light: the hemisphere's sky and ground colours and intensity, the sun's colour and intensity, the sky fill on what the sun
+  // doesn't light (× the sky colour) and the N·L band over which the sun takes over from it
+  light: { sky: 0x8fa6c4, ground: 0x141820, hemi: 1.1, sun: [0xffffff, 1.5], fill: 2.0, handover: [-0.35, 0.65] },     // a level's theme may set its own (not fill, handover)
   textures: {},                       // pictures served from assets/, by slot: { color: { size: file }, normal: { size: file } }; the sizes are QUALITY's tex
 }
 // LEVELS: brushes, pads ('x y z [item it always rolls]'), spawns, objects ('x y z Kind [yaw] [seed]'), theme, gen
@@ -1628,7 +1631,7 @@ const LEVELS = [
     } } },
   { name: 'City', screens: [{ buildings: 6, roofs: 8 }], gen: { kind: 'city', seed: 2026, size: 20, cores: [[-180, -260], [330, 290]],
       heights: [[140, 72, 168, 0], [300, 36, 120, 0], [520, 16.8, 54, 1], [800, 8.4, 25.2, 1], [Infinity, 4.2, 8.4, 2]] },
-    theme: { fog: [0x252b3a], view: [31, 192], textures: {
+    theme: { fog: [0x252b3a], view: [31, 192], light: { sky: 0xa8a6b4 }, textures: {
       facade: { color: { 512: 'city-facade-512.c7178f31.webp', 1024: 'city-facade-1024.dc08b76c.webp' }, normal: { 1024: 'city-facade-n-1024.ed152ace.webp' } },
       street: { color: { 512: 'city-street-1024.4e69d3c7.webp', 1024: 'city-street-2048.094a5083.webp' } },
       paving: { color: { 512: 'city-paving-512.157174a6.webp', 1024: 'city-paving-1024.52c4085a.webp' }, normal: { 1024: 'city-paving-n-1024.2bd569ee.webp' } },
@@ -10010,7 +10013,7 @@ float getSunShadow() {
 // What the sun does not light, the sky fills: a surface in the sun's shadow, or turned from it, takes SUN_FILL of the
 // hemisphere light's sky colour as well, and a sunlit surface takes none. If three's lights chunk is not the shape this
 // expects, nothing is patched (SUN_FILLED is false).
-const SUN_FILL = 2.0
+const SUN_FILL = THEME.light.fill, SUN_HANDOVER = THEME.light.handover
 const SUN_FILLED = (() => {
   const C = THREE.ShaderChunk, begin = C.lights_fragment_begin
   if (typeof begin !== 'string') return false
@@ -10019,7 +10022,7 @@ const SUN_FILLED = (() => {
   C.lights_fragment_begin = begin.slice(0, end) + `
 #if UNROLLED_LOOP_INDEX == 0 && NUM_HEMI_LIGHTS > 0
 	reflectedLight.indirectDiffuse += ${SUN_FILL.toFixed(2)} * hemisphereLights[ 0 ].skyColor * BRDF_Lambert( material.diffuseColor )
-		* ( 1.0 - clamp( directLight.color.g / max( directionalLights[ 0 ].color.g, 0.0001 ), 0.0, 1.0 ) * smoothstep( 0.0, 0.3, dot( geometryNormal, directLight.direction ) ) );
+		* ( 1.0 - clamp( directLight.color.g / max( directionalLights[ 0 ].color.g, 0.0001 ), 0.0, 1.0 ) * smoothstep( ${SUN_HANDOVER[0].toFixed(2)}, ${SUN_HANDOVER[1].toFixed(2)}, dot( geometryNormal, directLight.direction ) ) );
 #endif` + begin.slice(end)
   return true
 })()
@@ -10893,8 +10896,9 @@ function initGraphicsLifecycle() {
 function buildWorld() {
   setHeadless(renderHeadless)
 
-  scene3d.lights.hemisphereLight({ skyColor: 0x8fa6c4, groundColor: 0x141820, intensity: 1.1 })
-  const sun = sunLight = scene3d.lights.directionalLight({ color: 0xffffff, intensity: 1.5 })
+  const L = THEME.light
+  scene3d.lights.hemisphereLight({ skyColor: L.sky, groundColor: L.ground, intensity: L.hemi })
+  const sun = sunLight = scene3d.lights.directionalLight({ color: L.sun[0], intensity: L.sun[1] })
   sun.position.set(12, 22, 8)
   sun.castShadow = shadowsWanted(sunTier)
   sun.shadow.mapSize.set(1024, 1024)
@@ -11219,6 +11223,9 @@ function rebuildWorld() {
   const [sky] = LV.theme.fog
   scene.background = new THREE.Color(sky)
   scene.fog = new THREE.Fog(sky); applyView()
+  { const Lt = { ...THEME.light, ...LV.theme.light }, hemi = scene.children.find(n => n.isHemisphereLight)
+    if (hemi) hemi.color.setHex(Lt.sky), hemi.groundColor.setHex(Lt.ground), hemi.intensity = Lt.hemi
+    if (sunLight) sunLight.color.setHex(Lt.sun[0]), sunLight.intensity = Lt.sun[1] }
   if (sunLight) {
     sunHome.set(12, 22, 8).multiplyScalar(ARENA > 96 && LV.scenery?.length ? Math.max(4, (LV.theme.ramp[1] + 30) / 22) : 4)
     sunLight.position.copy(sunHome); sunLight.target.position.set(0, 0, 0)
@@ -19983,7 +19990,7 @@ function pickEvent(k) {
   GAME.match.restart()
   announce(gameText('eventAnnounce', { event: eventOn ? eventOn.name : TEXT.off }))
 }
-let vhsTimer = 0, vhsAt = 0, litBase = null
+let vhsTimer = 0, vhsAt = 0
 function setEvent(E) {
   if (E === eventOn) return
   if (eventOn) document.body.classList.remove(eventOn.theme.cls)
@@ -20007,7 +20014,7 @@ function eventWorld() {
   if (scene?.fog?.isFog !== true) return
   scene.background.set(LV.theme.fog[0]); scene.fog.color.set(LV.theme.fog[0])
   const hemi = scene.children.find(n => n.isHemisphereLight)
-  litBase ||= [sunLight.color.getHex(), sunLight.intensity, hemi?.color.getHex(), hemi?.intensity]
+  const Lt = { ...THEME.light, ...(LV.base || LV.theme).light }, litBase = [Lt.sun[0], Lt.sun[1], Lt.sky, Lt.hemi]
   const [sc, si, hc, hi] = w ? [w.sun[0], litBase[1] * w.sun[1], w.hemi[0], litBase[3] * w.hemi[1]] : litBase
   sunLight.color.setHex(sc); sunLight.intensity = si
   if (hemi) hemi.color.setHex(hc), hemi.intensity = hi
