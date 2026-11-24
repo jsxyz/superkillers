@@ -9690,14 +9690,14 @@ function wearServed(root, B, key, skin) {
   const at = n => bindAt(rig, rig.skeleton.bones.findIndex(b => b.name === n))
   const X = B.rig.userData, cols = ps => new THREE.Matrix4().set(...[0, 1, 2].flatMap(k => ps.map(p => p[k])), 1, 1, 1, 1)
   const T = cols(FIT_JOINTS.map(n => new THREE.Vector3().setFromMatrixPosition(at(n)).toArray())).multiply(cols(FIT_JOINTS.map(n => X.rig[n])).invert())
-  if (!DRIVES.has(key)) DRIVES.set(key, X.drive.map(([name, a, b, f, W]) => { const Wt = T.clone().multiply(new THREE.Matrix4().fromArray(W))
+  if (DRIVES.get(key)?.body !== B) DRIVES.set(key, X.drive.map(([name, a, b, f, W]) => { const Wt = T.clone().multiply(new THREE.Matrix4().fromArray(W))
     const Ca = at(a).invert().multiply(Wt), Cb = at(b).invert().multiply(Wt)
     return { name, a, b, f, at: name === 'pelvis', qa: new THREE.Quaternion().setFromRotationMatrix(dm.extractRotation(Ca)), qb: new THREE.Quaternion().setFromRotationMatrix(dm.extractRotation(Cb)),
       ta: new THREE.Vector3().setFromMatrixPosition(Ca) } }))
   const body = cloneSkinned(meshDetail ? B.farTemplate : B.template)
   body.traverse(n => { if (n.isMesh) { n.material = n.material.clone(); if (B.tint) tintServed(n.material, B, skin) } })
   body.userData.drive = key
-  DRIVES.get(key).fingers ||= fingersOf(body)
+  DRIVES.get(key).body = B; DRIVES.get(key).fingers ||= fingersOf(body)
   root.updateMatrixWorld(true)        // at its bind: bone · inverse maps the rig's bind space to the world
   rig.parent.matrixWorld.clone().invert().multiply(rig.skeleton.bones[0].matrixWorld).multiply(rig.skeleton.boneInverses[0]).multiply(T)
     .decompose(body.position, body.quaternion, body.scale)
@@ -9726,7 +9726,8 @@ function onBodyLoaded(B, gltf, image) {
     if (image) s.traverse(n => { if (n.isMesh && n.material.map) n.material = wear(n.material) })
     g.add(...s.children); return g }
   B.template = template(false); B.farTemplate = meshes.some(isFar) ? template(true) : B.template
-  builtBounds.clear(); walkLows.clear(); detailCache.clear(); DRIVES.clear(); prepAt = null
+  builtBounds.clear(); walkLows.clear(); detailCache.clear(); prepAt = null
+  for (const [k, D] of DRIVES) if (D.body === B) DRIVES.delete(k)        // only this body's: the looks wearing others keep driving
   if (MODELS.man.proto) bodyArrived(B)
   if (typeof pickArts !== 'undefined') {           // the portraits of whoever wears it, drawn again (where the pick screen exists)
     for (const i of [...pickArts.keys()]) if ((teamOf(i) ? members(teamOf(i)) : [i]).some(c => BODIES[CHARS[c]?.mesh] === B)) pickArts.delete(i)
@@ -11133,6 +11134,15 @@ function sewerAtmos(on) {
 }
 // the street's manhole covers near the camera, as one instanced mesh of rings and lids, placed again each 32 m it moves
 const SEWER_COVER = { reach: 140, ring: 0x7b8086, lid: 0x34383d }
+// the covers' program (an instanced MeshBasic with per-instance colour), compiled under the pick screen, not at the first cover in view
+let coverWarmed = false
+function coverWarm() {
+  if (coverWarmed || !LV.sewer || !pickOpen || !camera || !scene?.fog || !renderer.compileAsync) return
+  coverWarmed = true
+  const m = new THREE.InstancedMesh(new THREE.CylinderGeometry(1, 1, 1, 16), new THREE.MeshBasicMaterial(), 1)
+  m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(3), 3)
+  renderer.compileAsync(m, camera, scene).catch(() => {})
+}
 function sewerCovers(plan, p, hide) {
   const D = sewerDraw
   if (!D.covers) {
@@ -11190,7 +11200,7 @@ function rebuildWorld() {
   if (!worldGroup) return
   chunkDraws.length = 0
   kit.run = null; kit.chunks.length = 0; kit.queue.length = 0           // nothing swaps into the level being taken down
-  worldWarmed = false
+  worldWarmed = carWarmed = coverWarmed = false
   clearScars(); sharedMats.clear()
   const geometries = new Set(), materials = new Set()
   worldGroup.traverse(n => {
@@ -12648,6 +12658,16 @@ function onCarsLoaded(gltf, BGU) {
   const map = material.map
   map.anisotropy = Math.min(4, renderer?.capabilities.getMaxAnisotropy() || 1)
   carFleet = { geo, BGU, material: new (carPaint())({ map, roughness: material.roughness, metalness: material.metalness }), joined: new Map(), looks: new Map(), wheels: null, wheelN: 0 }
+}
+// compiled under the pick screen, once its file is in and the level's lights are final: the cars' paint material on a body and on the instanced wheels,
+// the two programs a car's first sight made in play. castShadow follows carModel / carWheelOut, whose depth programs compile with the shadow pass
+let carWarmed = false
+function carWarm() {
+  if (carWarmed || !carFleet || !pickOpen || !camera || !scene?.fog || !renderer.compileAsync) return
+  const F = carFleet, body = F.geo[Object.keys(F.geo).find(k => k.endsWith('_0') && !k.startsWith(CAR_MODELS.wheel))], wheel = F.geo[CAR_MODELS.wheel + '_1'] || F.geo[CAR_MODELS.wheel + '_0']
+  carWarmed = true
+  if (body) renderer.compileAsync(new THREE.Mesh(body, F.material.clone()), camera, scene).catch(() => {})
+  if (wheel) renderer.compileAsync(new THREE.InstancedMesh(wheel, F.material, 1), camera, scene).catch(() => {})
 }
 // a driven car's served look: its variant's style, a paint by its seed; null without one
 function carLook(K, seed, id) {
@@ -20406,6 +20426,8 @@ function frameBody() {
   try { fxStep() } catch (e) { fxRun = null; frameFailed('fx', e) }
   try { goreWarm() } catch (e) { goreWarmed = true; frameFailed('gore', e) }
   try { worldWarm() } catch (e) { worldWarmed = true; frameFailed('world', e) }
+  try { carWarm() } catch (e) { carWarmed = true; frameFailed('cars', e) }
+  try { coverWarm() } catch (e) { coverWarmed = true; frameFailed('covers', e) }
   try { drawSlices() } catch (e) { frameFailed('chunk', e) }
   try { interiorFrame() } catch (e) { frameFailed('interiors', e) }
   if (screensDirty) try { screensDraw() } catch (e) { frameFailed('screens', e) }
