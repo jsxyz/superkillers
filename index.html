@@ -17031,7 +17031,7 @@ function requestChar(idx) {
     if (!swap) sysMsg(gameText('nowPlaying', { name: CHARS[idx].name }))
   } else {
     sendHost({ k: 'char', cid: idx })
-    if (myCid !== idx) charWait = { idx, swap }      // the host's roster row is the confirmation, not the ask
+    if (myCid !== idx) charAsks.set(idx, { swap, at: now() })      // the host's roster row is the confirmation, not the ask
   }
 }
 
@@ -17960,10 +17960,10 @@ function pushRoster() {
 // a whole token is back by the time a deferred one goes: it is spent, not asked for again
 function rosterSend() { rosterLater = 0; rosterFill(); rosterTokens--; broadcast({ k: 'roster', list: rosterList() }) }
 
-// the ask a guest made while the host has not put it on its row yet: the roster row is the confirmation, so the guest's
-// own character, its saved setting and its "now playing" all wait for it, and a refused ask says nothing beyond the host's
-// reason
-let charWait = null
+// a guest's own character is its host's roster row, adopted whenever the row changes (its pick, a team swap, a move the host made);
+// an ask the row has not shown yet is kept for CHAR_ASK_MS, so "now playing" follows only a character the guest asked for
+const CHAR_ASK_MS = 5000
+const charAsks = new Map()
 function applyRoster(list) {
   const seen = new Set()
   for (const [id, cid, name, cap] of list) {
@@ -18377,7 +18377,7 @@ function startJoin(code, again) {
   scarsLater = false; if (!scarMesh) prepareScars()
   roomCodeStr = code.trim().toUpperCase()
   // a rejoin asks for the character it had at once; the pick opens only if the host gives it another
-  predicted = newChar(myCid, 6, 0); admitted = false; helloAt = 0; picking = !again; rejoinPick = !!again, charWait = null
+  predicted = newChar(myCid, 6, 0); admitted = false; helloAt = 0; picking = !again; rejoinPick = !!again, charAsks.clear()
   clearTimeout(relinkTimer); relinkTimer = 0; relinkTries = 0
   const t0 = now(), stage = t => phase === 'connecting' && setStatus(gameText('connecting', { stage: t }))
   stage(TEXT.stageSignaling)
@@ -18530,14 +18530,17 @@ function rosterTake() {
   rosterWait = 0; rosterTookAt = now()
   const list = rosterNext; rosterNext = null
   applyRoster(list)
-  if (charWait && roster.get(myId)?.cid === charWait.idx) {
-    myCid = settings.cid = charWait.idx
+  const row = roster.get(myId), had = myCid
+  for (const [k, a] of charAsks) if (now() - a.at > CHAR_ASK_MS) charAsks.delete(k)
+  if (row && row.cid !== myCid) {
+    const ask = charAsks.get(row.cid)
+    myCid = settings.cid = row.cid
     saveSettings()
-    if (!charWait.swap) sysMsg(gameText('nowPlaying', { name: GAME.rows.of(charWait.idx).name }))
-    charWait = null
+    if (ask && !ask.swap) sysMsg(gameText('nowPlaying', { name: GAME.rows.of(row.cid).name }))
+    charAsks.clear()
   }
   if (pickOpen) paintPicker()
-  if (rejoinPick && roster.has(myId)) { rejoinPick = false; if (roster.get(myId).cid !== myCid) openCharPick() }
+  if (rejoinPick && row) { rejoinPick = false; if (row.cid !== had) openCharPick() }
 }
 const GUEST_MSGS = {
   welcome: { apply: d => {
