@@ -8878,6 +8878,7 @@ const servedKeys = new Set()
 // every built body made so far is made again from the file's parts
 function servedDone() {
   BUILT_CACHE.clear(); builtBounds.clear(); walkLows.clear(); detailCache.clear(); prepKept.clear(); prepAt = null
+  if (typeof pickBodies !== 'undefined') pickBodies.clear()      // a portrait part-built from the code starts again
   // a built body's batches were made from its code shapes: dropped, so it and every body built after take the file's
   for (const cache of [builtGeo, farGeo]) for (const k of [...cache.keys()]) if (servedKeys.has(k.split(':')[0])) cache.delete(k)
   if (MODELS.man.proto) rebuildAvatars()
