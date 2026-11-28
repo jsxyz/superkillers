@@ -8882,9 +8882,7 @@ function servedDone() {
 async function loadServed() {
   const want = [...new Set(Object.values(MODELS).map(M => M.served).filter(Boolean))]
   if (!want.length || location.protocol === 'file:') return
-  const env = await (self.THREE = THREE, geoLoad(BODY_LIBS)), D = env.Meshopt.MeshoptDecoder
-  try { D.useWorkers(2) } catch (e) {}
-  const loader = new env.GLTF.GLTFLoader().setMeshoptDecoder(D)
+  const { loader } = await servedGLTF()
   let got = false
   for (const file of want) for (const url of [ASSET_DIR + file, ASSET_SITE + file]) {
     try { servedTake(file, await loader.loadAsync(url)); got = true; break } catch (e) { console.warn('served ' + url + ' failed:', e && e.message) }
@@ -9758,7 +9756,7 @@ function bodyArrived(B) {
   }
   if (typeof prepareRows === 'function') prepareRows(waiting)
 }
-// the bodies the roster wears, from ASSET_DIR beside the page, else from the published site; none opened from a file
+// the loader every served file shares: the glTF libraries fetched and compiled once, one meshopt decoder with its workers
 let gltfLoading = null
 const servedGLTF = () => gltfLoading ||= (self.THREE = THREE, geoLoad(BODY_LIBS)).then(env => {
   const D = env.Meshopt.MeshoptDecoder
