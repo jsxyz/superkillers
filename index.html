@@ -1919,7 +1919,7 @@ const VEHICLES = [
 //   distance m each next level starts at
 // VEHICLE_STYLES: by VEHICLES row, one entry per variant: its style in CAR_MODELS and the paints a car of it picks from
 //   by its seed
-const CAR_MODELS = { file: 'cars.e48a969c.glb', wheel: 'wheel', lods: [14, 40] }
+const CAR_MODELS = { file: 'cars.14a2acff.glb', wheel: 'wheel', lods: [14, 40] }
 const VEHICLE_STYLES = {
   Car: [
     { style: 'sedan', paints: [0x7d1d22, 0x24345a, 0xd8dbde, 0x3e4248, 0x56606b, 0x17564a] },
@@ -9756,13 +9756,14 @@ function bodyArrived(B) {
   }
   if (typeof prepareRows === 'function') prepareRows(waiting)
 }
-// the loader every served file shares: the glTF libraries fetched and compiled once, one meshopt decoder with its workers
+// the loader every served file shares: the glTF libraries fetched and compiled once, one meshopt decoder with its workers; a load
+// that fails is dropped, so the next caller tries again and the one that failed keeps its code-built look
 let gltfLoading = null
 const servedGLTF = () => gltfLoading ||= (self.THREE = THREE, geoLoad(BODY_LIBS)).then(env => {
   const D = env.Meshopt.MeshoptDecoder
   try { D.useWorkers(2) } catch (e) {}
   return { env, loader: new env.GLTF.GLTFLoader().setMeshoptDecoder(D) }
-})
+}).catch(e => { gltfLoading = null; throw e })
 // The queue, soonest needed first: a match's rows and the next wave's go to its head (prepareRows), and so does a body an avatar wants
 // now; the rest follow from startup. One step a frame (bodyLoad): the fetch and decode run off the frame, then the arrival, then the
 // tinted material's compile, each a frame of its own, and in play only on a frame no slower than the page's usual.
